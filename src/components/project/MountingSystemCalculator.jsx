@@ -1,48 +1,61 @@
 import React, { useState } from 'react';
+import { base44 } from '@/api/base44Client';
+import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Wind, Snowflake, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Wind, Snowflake, AlertTriangle, CheckCircle2, Ruler } from 'lucide-react';
+import MountingDrawing from './MountingDrawing';
 
 const SYSTEMS = {
   weland: {
     label: 'Weland',
-    models: ['Weland TakFot', 'Weland ByggelBalk', 'Weland Krok S', 'Weland Krok L'],
-    maxSnow: 3.5,  // kN/m²
-    maxWind: 1.2,
+    models: [
+      { name: 'Weland TakFot', maxSnow: 3.5, maxWind: 1.2, hookSpacingMM: 900 },
+      { name: 'Weland ByggelBalk', maxSnow: 4.0, maxWind: 1.3, hookSpacingMM: 1000 },
+      { name: 'Weland Krok S', maxSnow: 3.0, maxWind: 1.1, hookSpacingMM: 800 },
+      { name: 'Weland Krok L', maxSnow: 4.2, maxWind: 1.4, hookSpacingMM: 1100 },
+    ],
     description: 'Svensk tillverkare, passar plåttak och tegelpannor',
   },
   nordmount: {
     label: 'Nordmount',
-    models: ['NordMount Basic', 'NordMount Pro', 'NordMount Flat'],
-    maxSnow: 4.0,
-    maxWind: 1.4,
+    models: [
+      { name: 'NordMount Basic', maxSnow: 3.5, maxWind: 1.2, hookSpacingMM: 900 },
+      { name: 'NordMount Pro', maxSnow: 4.5, maxWind: 1.5, hookSpacingMM: 1100 },
+      { name: 'NordMount Flat', maxSnow: 3.0, maxWind: 1.1, hookSpacingMM: 800 },
+    ],
     description: 'Nordisk standard, robust mot snö och kyla',
   },
   mafi: {
     label: 'Mafi',
-    models: ['Mafi Classic', 'Mafi Plus', 'Mafi Universal'],
-    maxSnow: 3.0,
-    maxWind: 1.1,
+    models: [
+      { name: 'Mafi Classic', maxSnow: 3.0, maxWind: 1.1, hookSpacingMM: 800 },
+      { name: 'Mafi Plus', maxSnow: 3.5, maxWind: 1.2, hookSpacingMM: 900 },
+      { name: 'Mafi Universal', maxSnow: 3.8, maxWind: 1.3, hookSpacingMM: 1000 },
+    ],
     description: 'Kostnadseffektivt, passar de flesta taktyper',
   },
   k2: {
     label: 'K2 Systems',
-    models: ['K2 MountSystems MF2+', 'K2 CrossRail', 'K2 PitchedRoof'],
-    maxSnow: 4.5,
-    maxWind: 1.6,
+    models: [
+      { name: 'K2 MountSystems MF2+', maxSnow: 4.5, maxWind: 1.6, hookSpacingMM: 1200 },
+      { name: 'K2 CrossRail', maxSnow: 4.0, maxWind: 1.4, hookSpacingMM: 1100 },
+      { name: 'K2 PitchedRoof', maxSnow: 5.0, maxWind: 1.8, hookSpacingMM: 1200 },
+    ],
     description: 'Premiumsystem, certifierat för nordiska förhållanden',
   },
   schletter: {
     label: 'Schletter',
-    models: ['Schletter FlatFix', 'Schletter PV-Eco', 'Schletter FixZ'],
-    maxSnow: 3.8,
-    maxWind: 1.3,
+    models: [
+      { name: 'Schletter FlatFix', maxSnow: 3.8, maxWind: 1.3, hookSpacingMM: 1000 },
+      { name: 'Schletter PV-Eco', maxSnow: 3.5, maxWind: 1.2, hookSpacingMM: 900 },
+      { name: 'Schletter FixZ', maxSnow: 4.2, maxWind: 1.5, hookSpacingMM: 1100 },
+    ],
     description: 'Tyskt premium, lång livslängd',
   },
 };
 
-// Snow zones Sweden (simplified, skz 1–4)
 const SNOW_ZONES = [
   { label: 'Zon 1 – Sydkusten', value: 0.6 },
   { label: 'Zon 2 – Mellansverige', value: 1.5 },
@@ -50,7 +63,6 @@ const SNOW_ZONES = [
   { label: 'Zon 4 – Fjälltrakterna', value: 4.5 },
 ];
 
-// Wind zones Sweden
 const WIND_ZONES = [
   { label: 'Vindzon 1 – Inlandet skyddat', value: 0.6 },
   { label: 'Vindzon 2 – Normalt läge', value: 0.8 },
@@ -60,34 +72,49 @@ const WIND_ZONES = [
 
 export default function MountingSystemCalculator({ project }) {
   const [selectedBrand, setSelectedBrand] = useState('');
-  const [selectedModel, setSelectedModel] = useState('');
+  const [selectedModel, setSelectedModel] = useState(null);
   const [snowZone, setSnowZone] = useState('');
   const [windZone, setWindZone] = useState('');
   const [roofAngle, setRoofAngle] = useState('30');
+  const [selectedPanelId, setSelectedPanelId] = useState('');
   const [showResult, setShowResult] = useState(false);
+  const [showDrawing, setShowDrawing] = useState(false);
 
-  const roofArea = project.roof_width_m && project.roof_height_m
+  const { data: products = [] } = useQuery({
+    queryKey: ['products-panels-mounting'],
+    queryFn: () => base44.entities.Product.filter({ category: 'solpanel' }),
+  });
+
+  const selectedProduct = products.find(p => p.id === selectedPanelId);
+
+  const roofArea = project?.roof_width_m && project?.roof_height_m
     ? parseFloat(project.roof_width_m) * parseFloat(project.roof_height_m)
     : null;
 
-  const calculate = () => setShowResult(true);
-
+  const angle = parseFloat(roofAngle) || 30;
   const snowLoad = snowZone ? parseFloat(snowZone) : null;
   const windLoad = windZone ? parseFloat(windZone) : null;
-  const angle = parseFloat(roofAngle) || 30;
 
-  // Snow: adjust for roof angle (Eurokod factor)
+  // Eurokod snow: μ1 shape factor
   const muFactor = angle <= 30 ? 0.8 : angle <= 60 ? 0.8 * (60 - angle) / 30 : 0;
-  const designSnow = snowLoad ? (snowLoad * muFactor).toFixed(2) : null;
-
-  // Wind: simplified uplift pressure (angle factor)
+  const designSnow = snowLoad ? (snowLoad * muFactor) : null;
+  // Wind: cpe uplift (negative = uplift)
   const cpe = angle < 15 ? -1.3 : angle < 30 ? -0.9 : -0.7;
-  const designWind = windLoad ? Math.abs(cpe * windLoad).toFixed(2) : null;
+  const designWind = windLoad ? Math.abs(cpe * windLoad) : null;
 
-  const system = selectedBrand ? SYSTEMS[selectedBrand] : null;
-  const snowOk = system && designSnow ? parseFloat(designSnow) <= system.maxSnow : null;
-  const windOk = system && designWind ? parseFloat(designWind) <= system.maxWind : null;
-  const totalLoad = designSnow && designWind ? (parseFloat(designSnow) + parseFloat(designWind)).toFixed(2) : null;
+  const modelData = selectedModel;
+  const snowOk = modelData && designSnow != null ? designSnow <= modelData.maxSnow : null;
+  const windOk = modelData && designWind != null ? designWind <= modelData.maxWind : null;
+  const totalLoad = designSnow != null && designWind != null ? designSnow + designWind : null;
+
+  // Recommended hook spacing based on load
+  const recommendedHookSpacing = modelData
+    ? Math.min(modelData.hookSpacingMM, totalLoad ? Math.round(1200 / (1 + totalLoad * 0.3)) : modelData.hookSpacingMM)
+    : null;
+
+  const panelCount = selectedProduct && roofArea
+    ? Math.floor((roofArea * 0.85) / ((selectedProduct.width_mm / 1000) * (selectedProduct.height_mm / 1000)))
+    : null;
 
   return (
     <div className="space-y-4">
@@ -101,11 +128,9 @@ export default function MountingSystemCalculator({ project }) {
             {Object.entries(SYSTEMS).map(([key, sys]) => (
               <button
                 key={key}
-                onClick={() => { setSelectedBrand(key); setSelectedModel(''); setShowResult(false); }}
+                onClick={() => { setSelectedBrand(key); setSelectedModel(null); setShowResult(false); setShowDrawing(false); }}
                 className={`p-3 rounded-xl border-2 text-left transition-all ${
-                  selectedBrand === key
-                    ? 'border-primary bg-primary/5'
-                    : 'border-border hover:border-primary/40'
+                  selectedBrand === key ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'
                 }`}
               >
                 <p className="font-semibold text-sm">{sys.label}</p>
@@ -120,22 +145,58 @@ export default function MountingSystemCalculator({ project }) {
               <div className="flex flex-wrap gap-2">
                 {SYSTEMS[selectedBrand].models.map(m => (
                   <button
-                    key={m}
-                    onClick={() => { setSelectedModel(m); setShowResult(false); }}
+                    key={m.name}
+                    onClick={() => { setSelectedModel(m); setShowResult(false); setShowDrawing(false); }}
                     className={`px-3 py-1.5 rounded-lg border text-sm transition-all ${
-                      selectedModel === m
-                        ? 'bg-primary text-white border-primary'
-                        : 'border-border hover:border-primary/50'
+                      selectedModel?.name === m.name ? 'bg-primary text-white border-primary' : 'border-border hover:border-primary/50'
                     }`}
                   >
-                    {m}
+                    {m.name}
                   </button>
                 ))}
               </div>
+              {selectedModel && (
+                <div className="mt-3 flex gap-3 flex-wrap text-xs">
+                  <Badge variant="outline">Max snölast: {selectedModel.maxSnow} kN/m²</Badge>
+                  <Badge variant="outline">Max vindlast: {selectedModel.maxWind} kN/m²</Badge>
+                  <Badge variant="outline">Max krok c/c: {selectedModel.hookSpacingMM} mm</Badge>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
       </Card>
+
+      {/* Panel selection */}
+      {selectedModel && (
+        <Card className="border-0 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Ruler className="w-4 h-4 text-primary" /> Välj solpanel (för klämzoner & ritning)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <select
+              value={selectedPanelId}
+              onChange={e => setSelectedPanelId(e.target.value)}
+              className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
+            >
+              <option value="">Välj panel...</option>
+              {products.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.name} – {p.power_watts}W  ({p.width_mm}×{p.height_mm} mm)
+                </option>
+              ))}
+            </select>
+            {selectedProduct && (
+              <div className="mt-2 flex gap-2 flex-wrap text-xs">
+                <Badge variant="outline">{selectedProduct.width_mm} × {selectedProduct.height_mm} mm</Badge>
+                <Badge variant="outline">Klämzon: {Math.round(selectedProduct.height_mm * 0.1)}–{Math.round(selectedProduct.height_mm * 0.33)} mm från kant</Badge>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Load inputs */}
       {selectedModel && (
@@ -178,10 +239,7 @@ export default function MountingSystemCalculator({ project }) {
               <div>
                 <label className="text-xs font-medium text-muted-foreground block mb-1.5">Takvinkel (grader)</label>
                 <input
-                  type="number"
-                  min="0"
-                  max="90"
-                  value={roofAngle}
+                  type="number" min="0" max="90" value={roofAngle}
                   onChange={e => { setRoofAngle(e.target.value); setShowResult(false); }}
                   className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
                   placeholder="t.ex. 30"
@@ -189,7 +247,7 @@ export default function MountingSystemCalculator({ project }) {
               </div>
               {roofArea && (
                 <div>
-                  <label className="text-xs font-medium text-muted-foreground block mb-1.5">Takyta (från mått)</label>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1.5">Takyta (från projekt)</label>
                   <div className="border border-border rounded-xl px-3 py-2 text-sm bg-muted/30 text-muted-foreground">
                     {roofArea.toFixed(1)} m²
                   </div>
@@ -197,11 +255,7 @@ export default function MountingSystemCalculator({ project }) {
               )}
             </div>
 
-            <Button
-              onClick={calculate}
-              disabled={!snowZone || !windZone}
-              className="gap-2 w-full sm:w-auto"
-            >
+            <Button onClick={() => setShowResult(true)} disabled={!snowZone || !windZone} className="gap-2 w-full sm:w-auto">
               Beräkna laster
             </Button>
           </CardContent>
@@ -209,7 +263,7 @@ export default function MountingSystemCalculator({ project }) {
       )}
 
       {/* Results */}
-      {showResult && system && (
+      {showResult && modelData && (
         <Card className={`border-0 shadow-sm ${snowOk && windOk ? 'bg-green-50' : 'bg-red-50'}`}>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
@@ -219,14 +273,14 @@ export default function MountingSystemCalculator({ project }) {
               }
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="bg-white rounded-xl p-3 shadow-sm">
                 <div className="flex items-center gap-1 mb-1">
                   <Snowflake className="w-3.5 h-3.5 text-sky-500" />
                   <p className="text-xs text-muted-foreground">Snölast (design)</p>
                 </div>
-                <p className="text-xl font-bold">{designSnow}</p>
+                <p className="text-xl font-bold">{designSnow?.toFixed(2)}</p>
                 <p className="text-xs text-muted-foreground">kN/m²</p>
               </div>
               <div className="bg-white rounded-xl p-3 shadow-sm">
@@ -234,37 +288,36 @@ export default function MountingSystemCalculator({ project }) {
                   <Wind className="w-3.5 h-3.5 text-blue-500" />
                   <p className="text-xs text-muted-foreground">Vindlast (design)</p>
                 </div>
-                <p className="text-xl font-bold">{designWind}</p>
+                <p className="text-xl font-bold">{designWind?.toFixed(2)}</p>
                 <p className="text-xs text-muted-foreground">kN/m²</p>
               </div>
               <div className="bg-white rounded-xl p-3 shadow-sm">
                 <p className="text-xs text-muted-foreground mb-1">Total last</p>
-                <p className="text-xl font-bold">{totalLoad}</p>
+                <p className="text-xl font-bold">{totalLoad?.toFixed(2)}</p>
                 <p className="text-xs text-muted-foreground">kN/m²</p>
               </div>
-              {roofArea && (
-                <div className="bg-white rounded-xl p-3 shadow-sm">
-                  <p className="text-xs text-muted-foreground mb-1">Total kraft</p>
-                  <p className="text-xl font-bold">{totalLoad ? (parseFloat(totalLoad) * roofArea * 1000).toFixed(0) : '–'}</p>
-                  <p className="text-xs text-muted-foreground">N ({(parseFloat(totalLoad || 0) * (roofArea || 0)).toFixed(1)} kN)</p>
-                </div>
-              )}
+              <div className="bg-white rounded-xl p-3 shadow-sm">
+                <p className="text-xs text-muted-foreground mb-1">Krok c/c-avstånd</p>
+                <p className="text-xl font-bold">{recommendedHookSpacing}</p>
+                <p className="text-xs text-muted-foreground">mm</p>
+              </div>
             </div>
 
+            {/* Capacity checks */}
             <div className="space-y-2 text-sm">
-              <div className="flex items-center justify-between p-2 bg-white rounded-lg">
-                <span>Snölastkapacitet {system.label} {selectedModel}</span>
+              <div className="flex items-center justify-between p-2 bg-white rounded-lg flex-wrap gap-2">
+                <span>Snölastkapacitet – {modelData.name}</span>
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold">max {system.maxSnow} kN/m²</span>
+                  <span className="font-semibold">max {modelData.maxSnow} kN/m²</span>
                   <Badge className={snowOk ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}>
                     {snowOk ? '✓ OK' : '✗ UNDERDIMENSIONERAT'}
                   </Badge>
                 </div>
               </div>
-              <div className="flex items-center justify-between p-2 bg-white rounded-lg">
-                <span>Vindlastkapacitet {system.label} {selectedModel}</span>
+              <div className="flex items-center justify-between p-2 bg-white rounded-lg flex-wrap gap-2">
+                <span>Vindlastkapacitet – {modelData.name}</span>
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold">max {system.maxWind} kN/m²</span>
+                  <span className="font-semibold">max {modelData.maxWind} kN/m²</span>
                   <Badge className={windOk ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}>
                     {windOk ? '✓ OK' : '✗ UNDERDIMENSIONERAT'}
                   </Badge>
@@ -272,15 +325,75 @@ export default function MountingSystemCalculator({ project }) {
               </div>
             </div>
 
+            {/* Mounting specs summary */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+              {selectedProduct && (
+                <>
+                  <div className="bg-white rounded-lg p-2 shadow-sm">
+                    <p className="text-muted-foreground">Skena pos. 1 (uppifrån)</p>
+                    <p className="font-bold">{Math.round(selectedProduct.height_mm * 0.2)} mm</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-2 shadow-sm">
+                    <p className="text-muted-foreground">Skena pos. 2 (nedifrån)</p>
+                    <p className="font-bold">{Math.round(selectedProduct.height_mm * 0.2)} mm</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-2 shadow-sm">
+                    <p className="text-muted-foreground">Klämzon</p>
+                    <p className="font-bold">{Math.round(selectedProduct.height_mm * 0.1)}–{Math.round(selectedProduct.height_mm * 0.33)} mm</p>
+                  </div>
+                </>
+              )}
+              <div className="bg-white rounded-lg p-2 shadow-sm">
+                <p className="text-muted-foreground">Skena c/c (krok)</p>
+                <p className="font-bold">{recommendedHookSpacing} mm</p>
+              </div>
+              <div className="bg-white rounded-lg p-2 shadow-sm">
+                <p className="text-muted-foreground">Skenöverhäng</p>
+                <p className="font-bold">150 mm</p>
+              </div>
+              <div className="bg-white rounded-lg p-2 shadow-sm">
+                <p className="text-muted-foreground">Formfaktor μ</p>
+                <p className="font-bold">{muFactor.toFixed(2)}</p>
+              </div>
+            </div>
+
             {(!snowOk || !windOk) && (
-              <div className="mt-3 p-3 bg-red-100 border border-red-200 rounded-xl text-sm text-red-800">
-                <strong>Rekommendation:</strong> Välj ett starkare system som K2 Systems MF2+ eller Nordmount Pro för dessa lastförhållanden.
+              <div className="p-3 bg-red-100 border border-red-200 rounded-xl text-sm text-red-800">
+                <strong>Rekommendation:</strong> Välj ett starkare system som K2 PitchedRoof eller Nordmount Pro för dessa lastförhållanden.
               </div>
             )}
 
-            <p className="text-xs text-muted-foreground mt-3">
-              Beräkning enligt Eurokod SS-EN 1991-1-3 (snö) och SS-EN 1991-1-4 (vind). Formfaktor μ = {muFactor.toFixed(2)}, vindtryckskoefficient cpe = {cpe}.
+            {/* Show drawing button */}
+            <Button
+              variant="outline"
+              className="w-full gap-2"
+              onClick={() => setShowDrawing(v => !v)}
+            >
+              {showDrawing ? 'Dölj montageritning' : '📐 Visa montageritning med mått'}
+            </Button>
+
+            <p className="text-xs text-muted-foreground">
+              Beräkning enligt Eurokod SS-EN 1991-1-3 (snö) och SS-EN 1991-1-4 (vind). μ={muFactor.toFixed(2)}, cpe={cpe}.
             </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Mounting drawing */}
+      {showDrawing && selectedModel && (
+        <Card className="border-0 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-base">📐 Montageritning</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <MountingDrawing
+              project={project}
+              selectedProduct={selectedProduct}
+              systemBrand={selectedBrand ? SYSTEMS[selectedBrand].label : ''}
+              systemModel={selectedModel?.name || ''}
+              panelCount={panelCount}
+              recommendedHookSpacingMM={recommendedHookSpacing}
+            />
           </CardContent>
         </Card>
       )}
