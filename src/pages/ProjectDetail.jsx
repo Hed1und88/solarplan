@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, Sun, Cable, Battery, ShoppingCart, Save } from 'lucide-react';
+import { ArrowLeft, Sun, Cable, Battery, ShoppingCart, BarChart2 } from 'lucide-react';
+import SolarDataPanel from '@/components/project/SolarDataPanel';
 import PanelPlacementTab from '@/components/project/PanelPlacementTab';
 import StringMarkingTab from '@/components/project/StringMarkingTab';
 import BatteryTab from '@/components/project/BatteryTab';
@@ -63,7 +64,7 @@ export default function ProjectDetail() {
       </div>
 
       <Tabs defaultValue="panels" className="space-y-4">
-        <TabsList className="grid grid-cols-4 w-full max-w-lg">
+        <TabsList className="grid grid-cols-5 w-full max-w-xl">
           <TabsTrigger value="panels" className="gap-1.5 text-xs sm:text-sm">
             <Sun className="w-4 h-4" /> <span className="hidden sm:inline">Paneler</span>
           </TabsTrigger>
@@ -75,6 +76,9 @@ export default function ProjectDetail() {
           </TabsTrigger>
           <TabsTrigger value="products" className="gap-1.5 text-xs sm:text-sm">
             <ShoppingCart className="w-4 h-4" /> <span className="hidden sm:inline">Produkter</span>
+          </TabsTrigger>
+          <TabsTrigger value="solar" className="gap-1.5 text-xs sm:text-sm">
+            <BarChart2 className="w-4 h-4" /> <span className="hidden sm:inline">Soldata</span>
           </TabsTrigger>
         </TabsList>
 
@@ -89,6 +93,9 @@ export default function ProjectDetail() {
         </TabsContent>
         <TabsContent value="products">
           <ProductSelectionTab project={project} onUpdate={updateMutation.mutate} />
+        </TabsContent>
+        <TabsContent value="solar">
+          <SolarDataPanel project={project} />
         </TabsContent>
       </Tabs>
     </div>

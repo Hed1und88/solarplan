@@ -26,6 +26,14 @@
       "default": "planering",
       "description": "Projektstatus"
     },
+    "roof_width_m": {
+      "type": "number",
+      "description": "Takbredd i meter"
+    },
+    "roof_height_m": {
+      "type": "number",
+      "description": "Takdjup/h\u00f6jd i meter"
+    },
     "roof_image_url": {
       "type": "string",
       "description": "Bild p\u00e5 taket"

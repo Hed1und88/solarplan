@@ -8,6 +8,7 @@ export default function ImageCanvas({ imageUrl, items, onItemsChange, itemRender
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [imageLoaded, setImageLoaded] = useState(false);
   const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
 
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
@@ -101,18 +102,24 @@ export default function ImageCanvas({ imageUrl, items, onItemsChange, itemRender
   if (!imageUrl) {
     return (
       <div className="border-2 border-dashed rounded-2xl p-12 text-center bg-muted/30 hover:bg-muted/50 transition-colors">
-        <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleFileChange} className="hidden" />
+        {/* Two separate inputs: one for gallery, one for camera */}
+        <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={handleFileChange}
+          className="hidden"
+        />
         <Upload className="w-12 h-12 text-muted-foreground/40 mx-auto mb-4" />
         <h3 className="font-semibold mb-2">{label || 'Ladda upp bild'}</h3>
         <p className="text-sm text-muted-foreground mb-4">Ta ett foto eller välj en bild från galleriet</p>
         <div className="flex gap-3 justify-center">
           <Button variant="outline" className="gap-2" onClick={() => fileInputRef.current?.click()}>
-            <Upload className="w-4 h-4" /> Välj bild
+            <Upload className="w-4 h-4" /> Välj från galleri
           </Button>
-          <Button className="gap-2" onClick={() => {
-            fileInputRef.current.setAttribute('capture', 'environment');
-            fileInputRef.current?.click();
-          }}>
+          <Button className="gap-2" onClick={() => cameraInputRef.current?.click()}>
             <Camera className="w-4 h-4" /> Ta foto
           </Button>
         </div>
@@ -127,10 +134,14 @@ export default function ImageCanvas({ imageUrl, items, onItemsChange, itemRender
           <Move className="w-3.5 h-3.5" /> Dra för att flytta objekt
         </p>
         <div className="flex gap-2">
+          <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
+          <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handleFileChange} className="hidden" />
           <Button variant="outline" size="sm" className="gap-1" onClick={() => fileInputRef.current?.click()}>
-            <RotateCcw className="w-3.5 h-3.5" /> Byt bild
+            <Upload className="w-3.5 h-3.5" /> Galleri
           </Button>
-          <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleFileChange} className="hidden" />
+          <Button variant="outline" size="sm" className="gap-1" onClick={() => cameraInputRef.current?.click()}>
+            <Camera className="w-3.5 h-3.5" /> Kamera
+          </Button>
         </div>
       </div>
       <div
