@@ -63,11 +63,15 @@ export default function PanelPlacementTab({ project, onUpdate }) {
     const cols = Math.floor(rw / pw);
     const rows = Math.floor(rh / ph);
 
+    // Panel size as % of image — assume image width covers the roof width
+    // wPct = panel_width_m / roof_width_m * 100, but capped at a visible size
+    const wPct = (pw / rw) * 100;
+    const hPct = (ph / rh) * 100;
+
     const newPanels = [];
     let count = 0;
     for (let r = 0; r < rows && count < toAdd; r++) {
       for (let c = 0; c < cols && count < toAdd; c++) {
-        // Center each panel in its cell, as % of canvas
         const xPct = ((c * pw + pw / 2) / rw) * 100;
         const yPct = ((r * ph + ph / 2) / rh) * 100;
         newPanels.push({
@@ -77,6 +81,8 @@ export default function PanelPlacementTab({ project, onUpdate }) {
           power_watts: selectedProduct.power_watts,
           width_mm: selectedProduct.width_mm,
           height_mm: selectedProduct.height_mm,
+          w_pct: wPct,
+          h_pct: hPct,
           x: xPct,
           y: yPct,
         });

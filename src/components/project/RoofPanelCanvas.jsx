@@ -3,12 +3,10 @@ import { Button } from '@/components/ui/button';
 import { Upload, Camera, Maximize2 } from 'lucide-react';
 import RoofEditor from './RoofEditor';
 
-// Preview panel — pure % sizing so it matches the image
-function PreviewPanel({ panel, roofWidthM, roofHeightM }) {
-  const rw = roofWidthM || 10;
-  const rh = roofHeightM || 8;
-  const wPct = panel.width_mm  ? (panel.width_mm  / 1000 / rw) * 100 : (1.1 / rw) * 100;
-  const hPct = panel.height_mm ? (panel.height_mm / 1000 / rh) * 100 : (1.76 / rh) * 100;
+// Preview panel — size stored as w_pct/h_pct (% of image) on each panel object
+function PreviewPanel({ panel }) {
+  const wPct = panel.w_pct || 8;
+  const hPct = panel.h_pct || 13;
   return (
     <div style={{
       position: 'absolute',
@@ -107,12 +105,7 @@ export default function RoofPanelCanvas({
           />
 
           {imageLoaded && panels.map(panel => (
-            <PreviewPanel
-              key={panel.id}
-              panel={panel}
-              roofWidthM={roofWidthM}
-              roofHeightM={roofHeightM}
-            />
+            <PreviewPanel key={panel.id} panel={panel} />
           ))}
 
           {imageLoaded && obstacles.map(obs => (
