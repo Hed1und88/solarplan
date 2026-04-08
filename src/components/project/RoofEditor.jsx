@@ -398,21 +398,26 @@ export default function RoofEditor({
     const minX = Math.min(...xs); const maxX = Math.max(...xs);
     const minY = Math.min(...ys); const maxY = Math.max(...ys);
 
-    const MARGIN = 0.5; // % margin
+    const INSET = 0.05; // tiny inset so edges don't sit exactly on polygon boundary
     const newPanels = [];
-    let y = minY + panelHPct / 2 + MARGIN;
-    while (y + panelHPct / 2 <= maxY - MARGIN) {
-      let x = minX + panelWPct / 2 + MARGIN;
-      while (x + panelWPct / 2 <= maxX - MARGIN) {
-        // Check all four corners + center are inside polygon
-        const testPts = [
-          { x, y },
-          { x: x - panelWPct / 2 + 0.2, y: y - panelHPct / 2 + 0.2 },
-          { x: x + panelWPct / 2 - 0.2, y: y - panelHPct / 2 + 0.2 },
-          { x: x - panelWPct / 2 + 0.2, y: y + panelHPct / 2 - 0.2 },
-          { x: x + panelWPct / 2 - 0.2, y: y + panelHPct / 2 - 0.2 },
-        ];
-        if (testPts.every(pt => pointInPolygon(pt.x, pt.y, polygon))) {
+
+    // Test 9 points (3x3 grid) inside panel to ensure it's fully within polygon
+    const panelFits = (cx, cy) => {
+      const hw = panelWPct / 2 - INSET;
+      const hh = panelHPct / 2 - INSET;
+      for (let di = -1; di <= 1; di++) {
+        for (let dj = -1; dj <= 1; dj++) {
+          if (!pointInPolygon(cx + dj * hw * 0.9, cy + di * hh * 0.9, polygon)) return false;
+        }
+      }
+      return true;
+    };
+
+    let y = minY + panelHPct / 2;
+    while (y + panelHPct / 2 <= maxY) {
+      let x = minX + panelWPct / 2;
+      while (x + panelWPct / 2 <= maxX) {
+        if (panelFits(x, y)) {
           newPanels.push({
             id: `${Date.now()}-${newPanels.length}`,
             product_id: selectedProduct.id,
