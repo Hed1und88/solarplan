@@ -1,0 +1,80 @@
+{
+  "name": "Product",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Produktnamn"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "solpanel",
+        "batteri",
+        "vaxelriktare",
+        "optimerare",
+        "kabel",
+        "montagesystem",
+        "ovrigt"
+      ],
+      "description": "Produktkategori"
+    },
+    "brand": {
+      "type": "string",
+      "description": "Varum\u00e4rke"
+    },
+    "model": {
+      "type": "string",
+      "description": "Modellbeteckning"
+    },
+    "power_watts": {
+      "type": "number",
+      "description": "Effekt i Watt (f\u00f6r paneler/batterier)"
+    },
+    "capacity_kwh": {
+      "type": "number",
+      "description": "Kapacitet i kWh (f\u00f6r batterier)"
+    },
+    "price": {
+      "type": "number",
+      "description": "Pris i SEK"
+    },
+    "unit": {
+      "type": "string",
+      "enum": [
+        "st",
+        "m",
+        "set",
+        "paket"
+      ],
+      "default": "st",
+      "description": "Enhet"
+    },
+    "width_mm": {
+      "type": "number",
+      "description": "Bredd i mm"
+    },
+    "height_mm": {
+      "type": "number",
+      "description": "H\u00f6jd i mm"
+    },
+    "image_url": {
+      "type": "string",
+      "description": "Produktbild URL"
+    },
+    "description": {
+      "type": "string",
+      "description": "Produktbeskrivning"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Aktiv i sortimentet"
+    }
+  },
+  "required": [
+    "name",
+    "category",
+    "price"
+  ]
+}

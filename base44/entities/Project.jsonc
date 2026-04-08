@@ -1,0 +1,86 @@
+{
+  "name": "Project",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Projektnamn"
+    },
+    "customer_name": {
+      "type": "string",
+      "description": "Kundnamn"
+    },
+    "address": {
+      "type": "string",
+      "description": "Adress"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "planering",
+        "projektering",
+        "offert",
+        "installation",
+        "klart"
+      ],
+      "default": "planering",
+      "description": "Projektstatus"
+    },
+    "roof_image_url": {
+      "type": "string",
+      "description": "Bild p\u00e5 taket"
+    },
+    "panel_layout_data": {
+      "type": "string",
+      "description": "JSON-data f\u00f6r panelplacering p\u00e5 taket"
+    },
+    "existing_installation_image_url": {
+      "type": "string",
+      "description": "Bild p\u00e5 befintlig anl\u00e4ggning"
+    },
+    "string_layout_data": {
+      "type": "string",
+      "description": "JSON-data f\u00f6r slingmarkering"
+    },
+    "battery_image_url": {
+      "type": "string",
+      "description": "Bild f\u00f6r batteriplanering"
+    },
+    "battery_layout_data": {
+      "type": "string",
+      "description": "JSON-data f\u00f6r batteriplacering"
+    },
+    "selected_products": {
+      "type": "array",
+      "description": "Valda produkter med antal",
+      "items": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string"
+          },
+          "product_name": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number"
+          },
+          "unit_price": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "total_cost": {
+      "type": "number",
+      "description": "Total kostnad i SEK"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Anteckningar"
+    }
+  },
+  "required": [
+    "name"
+  ]
+}
