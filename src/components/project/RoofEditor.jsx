@@ -387,7 +387,7 @@ export default function RoofEditor({
       if (pixPerim > 0) mPerPct = mPerim / pixPerim;
     }
     // Fallback: use roofWidthM
-    if (!mPerPct) mPerPct = (roofWidthM || 10) / 100;
+    if (!mPerPct) mPerPct = 10 / 100;
 
     const panelWPct = (selectedProduct.width_mm / 1000) / mPerPct;
     const panelHPct = (selectedProduct.height_mm / 1000) / mPerPct;
