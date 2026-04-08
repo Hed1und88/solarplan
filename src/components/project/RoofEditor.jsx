@@ -97,6 +97,10 @@ export default function RoofEditor({
   const draggingId = useRef(null);
   const dragOffset = useRef({ x: 0, y: 0 });
 
+  // Drag polygon corner
+  const [draggingCornerIdx, setDraggingCornerIdx] = useState(null);
+  const draggingCornerRef = useRef(null);
+
   // Always-current refs
   const panRef = useRef({ x: 0, y: 0 });
   const zoomRef = useRef(1);
@@ -111,6 +115,7 @@ export default function RoofEditor({
   useEffect(() => { polygonRef.current = polygon; }, [polygon]);
   useEffect(() => { polyDoneRef.current = polyDone; }, [polyDone]);
   useEffect(() => { isDrawingModeRef.current = isDrawingMode; }, [isDrawingMode]);
+  useEffect(() => { draggingCornerRef.current = draggingCornerIdx; }, [draggingCornerIdx]);
 
   // ── Image load ────────────────────────────────────────────────────────────
   const handleImgLoad = () => {
@@ -226,6 +231,18 @@ export default function RoofEditor({
   }, [startLongPress]);
 
   const handleMouseMove = useCallback((e) => {
+    // Move polygon corner
+    if (draggingCornerRef.current !== null) {
+      const pos = clientToImgPct(e.clientX, e.clientY);
+      const idx = draggingCornerRef.current;
+      setPolygon(prev => {
+        const next = prev.map((pt, i) => i === idx ? pos : pt);
+        polygonRef.current = next;
+        onPolygonChange?.(next);
+        return next;
+      });
+      return;
+    }
     if (isPanning.current && !isDrawingModeRef.current) {
       const dx = e.clientX - panStart.current.x;
       const dy = e.clientY - panStart.current.y;
@@ -242,13 +259,20 @@ export default function RoofEditor({
           : p
       ));
     }
-  }, [cancelLongPress, clientToImgPct, onPanelsChange]);
+  }, [cancelLongPress, clientToImgPct, onPanelsChange, onPolygonChange]);
 
   const handleMouseUp = useCallback((e) => {
     cancelLongPress();
     const wasPanning = isPanning.current;
     isPanning.current = false;
     draggingId.current = null;
+
+    // Release corner drag on mouse up
+    if (draggingCornerRef.current !== null) {
+      setDraggingCornerIdx(null);
+      draggingCornerRef.current = null;
+      return;
+    }
 
     if (isDrawingModeRef.current) {
       // In drawing mode, every click adds a point
@@ -374,7 +398,7 @@ export default function RoofEditor({
   const fillWithPanels = useCallback(() => {
     if (!polyDone || polygon.length < 3 || !selectedProduct) return;
 
-    // Determine scale: meters per % unit
+    // Determine scale: meters per % unit (using perimeter ratio)
     const filledLengths = polygon.map((_, i) => parseFloat(edgeLengths[i]));
     let mPerPct = null;
     if (!filledLengths.some(isNaN) && filledLengths.length >= 3) {
@@ -386,8 +410,12 @@ export default function RoofEditor({
       }
       if (pixPerim > 0) mPerPct = mPerim / pixPerim;
     }
-    // Fallback: use roofWidthM
-    if (!mPerPct) mPerPct = 10 / 100;
+    // Fallback: assume polygon spans ~10m across its bounding box
+    if (!mPerPct) {
+      const xs = polygon.map(p => p.x);
+      const bboxW = Math.max(...xs) - Math.min(...xs);
+      mPerPct = bboxW > 0 ? 10 / bboxW : 0.1;
+    }
 
     const panelWPct = (selectedProduct.width_mm / 1000) / mPerPct;
     const panelHPct = (selectedProduct.height_mm / 1000) / mPerPct;
@@ -398,28 +426,29 @@ export default function RoofEditor({
     const minX = Math.min(...xs); const maxX = Math.max(...xs);
     const minY = Math.min(...ys); const maxY = Math.max(...ys);
 
-    const INSET = 0.05; // tiny inset so edges don't sit exactly on polygon boundary
-    const newPanels = [];
+    // Safety: panel must be smaller than bounding box
+    if (panelWPct <= 0 || panelHPct <= 0 || panelWPct > (maxX - minX) * 2 || panelHPct > (maxY - minY) * 2) return;
 
-    // Test 9 points (3x3 grid) inside panel to ensure it's fully within polygon
+    // Check all 4 corners (slightly inset) are inside polygon
     const panelFits = (cx, cy) => {
-      const hw = panelWPct / 2 - INSET;
-      const hh = panelHPct / 2 - INSET;
-      for (let di = -1; di <= 1; di++) {
-        for (let dj = -1; dj <= 1; dj++) {
-          if (!pointInPolygon(cx + dj * hw * 0.9, cy + di * hh * 0.9, polygon)) return false;
-        }
-      }
-      return true;
+      const hw = panelWPct / 2 * 0.98;
+      const hh = panelHPct / 2 * 0.98;
+      return (
+        pointInPolygon(cx - hw, cy - hh, polygon) &&
+        pointInPolygon(cx + hw, cy - hh, polygon) &&
+        pointInPolygon(cx - hw, cy + hh, polygon) &&
+        pointInPolygon(cx + hw, cy + hh, polygon)
+      );
     };
 
+    const newPanels = [];
     let y = minY + panelHPct / 2;
-    while (y + panelHPct / 2 <= maxY) {
+    while (y <= maxY - panelHPct / 2) {
       let x = minX + panelWPct / 2;
-      while (x + panelWPct / 2 <= maxX) {
+      while (x <= maxX - panelWPct / 2) {
         if (panelFits(x, y)) {
           newPanels.push({
-            id: `${Date.now()}-${newPanels.length}`,
+            id: `panel-${Date.now()}-${newPanels.length}`,
             product_id: selectedProduct.id,
             product_name: selectedProduct.name,
             power_watts: selectedProduct.power_watts,
@@ -522,7 +551,12 @@ export default function RoofEditor({
         {polyDone && (
           <>
             <span className="text-blue-400 font-medium">✓ Takyta klar ({polygon.length} hörn)</span>
-            {!selectedProduct && <span className="text-yellow-400">— Välj en solpanel för att fylla ytan</span>}
+            {draggingCornerIdx !== null
+              ? <span className="text-orange-400">● Drar hörn {draggingCornerIdx + 1} — släpp för att placera</span>
+              : !selectedProduct
+              ? <span className="text-yellow-400">— Välj en solpanel för att fylla ytan</span>
+              : <span className="text-gray-400">— Dra i hörnen för att justera takyta</span>
+            }
           </>
         )}
         {/* Long-press progress */}
@@ -563,7 +597,8 @@ export default function RoofEditor({
 
           {/* Polygon overlay (SVG in % coordinates) */}
           <svg style={{
-            position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', overflow: 'visible', pointerEvents: 'none'
+            position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', overflow: 'visible',
+            pointerEvents: polyDone ? 'auto' : 'none',
           }} viewBox="0 0 100 100" preserveAspectRatio="none">
             {/* Filled polygon */}
             {polyDone && polygon.length >= 3 && (
@@ -585,25 +620,34 @@ export default function RoofEditor({
               return (
                 <text key={i} x={mx} y={my} fill="white" fontSize="2.5"
                   textAnchor="middle" dominantBaseline="middle"
-                  style={{ filter: 'drop-shadow(0 0 2px rgba(0,0,0,0.9))' }}>
+                  style={{ filter: 'drop-shadow(0 0 2px rgba(0,0,0,0.9))', pointerEvents: 'none' }}>
                   {len}m
                 </text>
               );
             })}
-            {/* Points */}
-            {polygon.map((pt, i) => (
-              <g key={i}>
-                {i === 0 && polyDone ? (
-                  <circle cx={pt.x} cy={pt.y} r="1.5" fill="#22c55e" stroke="white" strokeWidth="0.3" />
-                ) : i === 0 ? (
-                  <circle cx={pt.x} cy={pt.y} r="2" fill="none" stroke="#22c55e" strokeWidth="0.5" strokeDasharray="0.5 0.5">
-                    {/* Pulsing target for first point */}
-                  </circle>
-                ) : null}
-                <circle cx={pt.x} cy={pt.y} r="1" fill={i === 0 ? '#22c55e' : '#facc15'} stroke="white" strokeWidth="0.2" />
-                <text x={pt.x + 1.5} y={pt.y - 1} fill="white" fontSize="2" style={{ filter: 'drop-shadow(0 0 2px black)' }}>{i + 1}</text>
-              </g>
-            ))}
+            {/* Corner points — draggable when polyDone */}
+            {polygon.map((pt, i) => {
+              const isDragging = draggingCornerIdx === i;
+              return (
+                <g key={i} style={{ cursor: polyDone ? (isDragging ? 'grabbing' : 'grab') : 'default' }}
+                  onMouseDown={polyDone ? (e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    setDraggingCornerIdx(i);
+                    draggingCornerRef.current = i;
+                  } : undefined}
+                >
+                  {/* Large invisible hit area */}
+                  <circle cx={pt.x} cy={pt.y} r="3" fill="transparent" />
+                  {/* Visible point */}
+                  <circle cx={pt.x} cy={pt.y} r={isDragging ? 2 : 1.5}
+                    fill={isDragging ? '#f97316' : (i === 0 ? '#22c55e' : '#facc15')}
+                    stroke="white" strokeWidth="0.4" />
+                  <text x={pt.x + 1.8} y={pt.y - 1.2} fill="white" fontSize="2"
+                    style={{ filter: 'drop-shadow(0 0 2px black)', pointerEvents: 'none' }}>{i + 1}</text>
+                </g>
+              );
+            })}
           </svg>
 
           {/* Panels */}
