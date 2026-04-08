@@ -218,6 +218,8 @@ export default function RoofEditor({
   const handleMouseDown = useCallback((e) => {
     if (e.button !== 0) return;
     if (draggingId.current) return;
+    // Don't start panning if a corner drag just started
+    if (draggingCornerRef.current !== null) return;
     if (!isDrawingModeRef.current) {
       // Start long-press if NOT already in drawing mode
       if (!polyDoneRef.current) {
@@ -429,23 +431,24 @@ export default function RoofEditor({
     // Safety: panel must be smaller than bounding box
     if (panelWPct <= 0 || panelHPct <= 0 || panelWPct > (maxX - minX) * 2 || panelHPct > (maxY - minY) * 2) return;
 
-    // Check all 4 corners (slightly inset) are inside polygon
+    // Check a 3x3 grid of sample points inside panel (80% of half-size inset)
+    const SAMPLES = [-0.8, 0, 0.8];
     const panelFits = (cx, cy) => {
-      const hw = panelWPct / 2 * 0.98;
-      const hh = panelHPct / 2 * 0.98;
-      return (
-        pointInPolygon(cx - hw, cy - hh, polygon) &&
-        pointInPolygon(cx + hw, cy - hh, polygon) &&
-        pointInPolygon(cx - hw, cy + hh, polygon) &&
-        pointInPolygon(cx + hw, cy + hh, polygon)
-      );
+      const hw = panelWPct / 2;
+      const hh = panelHPct / 2;
+      for (const dy of SAMPLES) {
+        for (const dx of SAMPLES) {
+          if (!pointInPolygon(cx + dx * hw, cy + dy * hh, polygon)) return false;
+        }
+      }
+      return true;
     };
 
     const newPanels = [];
     let y = minY + panelHPct / 2;
-    while (y <= maxY - panelHPct / 2) {
+    while (y <= maxY - panelHPct / 2 + 0.001) {
       let x = minX + panelWPct / 2;
-      while (x <= maxX - panelWPct / 2) {
+      while (x <= maxX - panelWPct / 2 + 0.001) {
         if (panelFits(x, y)) {
           newPanels.push({
             id: `panel-${Date.now()}-${newPanels.length}`,

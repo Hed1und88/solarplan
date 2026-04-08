@@ -24,6 +24,10 @@ export default function ProductFormModal({ product, onSave, onClose }) {
     capacity_kwh: product?.capacity_kwh || '',
     width_mm: product?.width_mm || '',
     height_mm: product?.height_mm || '',
+    voc_v: product?.voc_v || '',
+    isc_a: product?.isc_a || '',
+    vmp_v: product?.vmp_v || '',
+    imp_a: product?.imp_a || '',
     description: product?.description || '',
     image_url: product?.image_url || '',
   });
@@ -48,6 +52,10 @@ export default function ProductFormModal({ product, onSave, onClose }) {
     if (form.capacity_kwh) data.capacity_kwh = Number(form.capacity_kwh);
     if (form.width_mm) data.width_mm = Number(form.width_mm);
     if (form.height_mm) data.height_mm = Number(form.height_mm);
+    if (form.voc_v) data.voc_v = Number(form.voc_v);
+    if (form.isc_a) data.isc_a = Number(form.isc_a);
+    if (form.vmp_v) data.vmp_v = Number(form.vmp_v);
+    if (form.imp_a) data.imp_a = Number(form.imp_a);
 
     if (product?.id) {
       await base44.entities.Product.update(product.id, data);
@@ -117,10 +125,21 @@ export default function ProductFormModal({ product, onSave, onClose }) {
             <Field label="Kapacitet (kWh)" type="number" value={form.capacity_kwh} onChange={v => set('capacity_kwh', v)} placeholder="10" />
           )}
           {form.category === 'solpanel' && (
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Bredd (mm)" type="number" value={form.width_mm} onChange={v => set('width_mm', v)} placeholder="1134" />
-              <Field label="Höjd (mm)" type="number" value={form.height_mm} onChange={v => set('height_mm', v)} placeholder="1762" />
-            </div>
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Bredd (mm)" type="number" value={form.width_mm} onChange={v => set('width_mm', v)} placeholder="1134" />
+                <Field label="Höjd (mm)" type="number" value={form.height_mm} onChange={v => set('height_mm', v)} placeholder="1762" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Elektriska data (för slingkontroll)</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Voc (V)" type="number" value={form.voc_v} onChange={v => set('voc_v', v)} placeholder="49.5" />
+                  <Field label="Isc (A)" type="number" value={form.isc_a} onChange={v => set('isc_a', v)} placeholder="10.8" />
+                  <Field label="Vmp (V)" type="number" value={form.vmp_v} onChange={v => set('vmp_v', v)} placeholder="41.8" />
+                  <Field label="Imp (A)" type="number" value={form.imp_a} onChange={v => set('imp_a', v)} placeholder="9.93" />
+                </div>
+              </div>
+            </>
           )}
 
           <Field label="Beskrivning" value={form.description} onChange={v => set('description', v)} placeholder="Valfri beskrivning..." multiline />

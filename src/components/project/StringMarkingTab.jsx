@@ -13,17 +13,20 @@ const TOLERANCE = 0.10;
 
 function calcExpected(panelCount, product) {
   if (!product || !panelCount) return null;
-  const voc = product.voc_v || 40;    // open-circuit voltage per panel
-  const isc = product.isc_a || 10;    // short-circuit current
+  const voc = product.voc_v;
+  const isc = product.isc_a;
   const pmax = product.power_watts || 400;
-  const vmp = product.vmp_v || (voc * 0.8);
-  const imp = product.imp_a || (pmax / vmp);
+  const vmp = product.vmp_v;
+  const imp = product.imp_a;
+  // Only calculate if we have the data from the product
+  const hasElec = voc && isc && vmp && imp;
   return {
-    voltage: +(voc * panelCount).toFixed(1),
-    current: +(isc).toFixed(2),
-    power:   +(pmax * panelCount / 1000).toFixed(2), // kW
-    vmp:     +(vmp * panelCount).toFixed(1),
-    imp:     +(imp).toFixed(2),
+    voc:     voc ? +(voc * panelCount).toFixed(1) : null,
+    isc:     isc ? +(isc).toFixed(2) : null,
+    power:   +(pmax * panelCount / 1000).toFixed(2),
+    vmp:     vmp ? +(vmp * panelCount).toFixed(1) : null,
+    imp:     imp ? +(imp).toFixed(2) : null,
+    hasElec,
   };
 }
 
@@ -67,13 +70,14 @@ function StringCard({ str, onUpdate, onDelete, onSelect, isActive, selectedProdu
   const exp = calcExpected(str.panel_count, selectedProduct);
 
   const hasData = str.points && str.points.length >= 2;
-  const allMeasured = str.meas_v && str.meas_i;
   const anyErr = [
-    statusColor(str.meas_v, exp?.vmp),
-    statusColor(str.meas_i, exp?.imp),
-    statusColor(str.meas_w, exp?.power != null ? exp.power * 1000 : null),
+    str.meas_voc && exp?.voc ? statusColor(str.meas_voc, exp.voc) : null,
+    str.meas_isc && exp?.isc ? statusColor(str.meas_isc, exp.isc) : null,
+    str.meas_vmp && exp?.vmp ? statusColor(str.meas_vmp, exp.vmp) : null,
+    str.meas_imp && exp?.imp ? statusColor(str.meas_imp, exp.imp) : null,
   ].includes('err');
-  const allOk = allMeasured && !anyErr;
+  const hasMeasurements = str.meas_voc || str.meas_isc || str.meas_vmp || str.meas_imp;
+  const allOk = hasMeasurements && !anyErr;
 
   return (
     <div className={`border rounded-xl overflow-hidden transition-all ${isActive ? 'border-primary ring-1 ring-primary' : 'border-border'}`}>
@@ -115,16 +119,28 @@ function StringCard({ str, onUpdate, onDelete, onSelect, isActive, selectedProdu
             />
           </div>
 
+          {/* Product info */}
+          {!selectedProduct && str.panel_count && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+              ⚠️ Ingen solpanel är vald för projektet — gå till fliken Paneler och välj en panel för att få förväntade värden.
+            </div>
+          )}
+
           {/* Expected values */}
           {exp && str.panel_count && (
-            <div className="bg-muted/50 rounded-lg p-2 space-y-1">
-              <p className="text-xs font-medium text-muted-foreground mb-1.5">Förväntade värden ({str.panel_count} paneler)</p>
-              <div className="grid grid-cols-3 gap-2 text-xs">
-                <div><span className="text-muted-foreground">Voc: </span><strong>{exp.voltage} V</strong></div>
-                <div><span className="text-muted-foreground">Isc: </span><strong>{exp.current} A</strong></div>
+            <div className="bg-muted/50 rounded-lg p-3 space-y-1.5">
+              <p className="text-xs font-semibold text-foreground mb-2">
+                Förväntade värden — {str.panel_count} × {selectedProduct?.name || 'panel'} ({selectedProduct?.power_watts || '?'}W)
+              </p>
+              {!exp.hasElec && (
+                <p className="text-xs text-amber-600">⚠️ Produkten saknar elektriska data (Voc, Isc, Vmp, Imp). Lägg till dem under Produkter.</p>
+              )}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                {exp.voc != null && <div><span className="text-muted-foreground">Voc (seriekoppl.): </span><strong>{exp.voc} V</strong></div>}
+                {exp.isc != null && <div><span className="text-muted-foreground">Isc: </span><strong>{exp.isc} A</strong></div>}
+                {exp.vmp != null && <div><span className="text-muted-foreground">Vmp (seriekoppl.): </span><strong>{exp.vmp} V</strong></div>}
+                {exp.imp != null && <div><span className="text-muted-foreground">Imp: </span><strong>{exp.imp} A</strong></div>}
                 <div><span className="text-muted-foreground">Pmax: </span><strong>{(exp.power * 1000).toFixed(0)} W</strong></div>
-                <div><span className="text-muted-foreground">Vmp: </span><strong>{exp.vmp} V</strong></div>
-                <div><span className="text-muted-foreground">Imp: </span><strong>{exp.imp} A</strong></div>
               </div>
             </div>
           )}
@@ -132,27 +148,34 @@ function StringCard({ str, onUpdate, onDelete, onSelect, isActive, selectedProdu
           {/* Measurements */}
           {str.panel_count && (
             <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">Uppmätta värden</p>
+              <p className="text-xs font-medium text-muted-foreground">Uppmätta värden (skriv in vad du mätt)</p>
               <MeasurementRow
-                label="Spänning Vmp"
+                label="Voc (mätt)"
+                unit="V"
+                expected={exp?.voc}
+                measured={str.meas_voc || ''}
+                onChange={v => onUpdate({ meas_voc: v })}
+              />
+              <MeasurementRow
+                label="Isc (mätt)"
+                unit="A"
+                expected={exp?.isc}
+                measured={str.meas_isc || ''}
+                onChange={v => onUpdate({ meas_isc: v })}
+              />
+              <MeasurementRow
+                label="Vmp (mätt)"
                 unit="V"
                 expected={exp?.vmp}
-                measured={str.meas_v || ''}
-                onChange={v => onUpdate({ meas_v: v })}
+                measured={str.meas_vmp || ''}
+                onChange={v => onUpdate({ meas_vmp: v })}
               />
               <MeasurementRow
-                label="Ström Imp"
+                label="Imp (mätt)"
                 unit="A"
                 expected={exp?.imp}
-                measured={str.meas_i || ''}
-                onChange={v => onUpdate({ meas_i: v })}
-              />
-              <MeasurementRow
-                label="Effekt"
-                unit="W"
-                expected={exp != null ? +(exp.power * 1000).toFixed(0) : null}
-                measured={str.meas_w || ''}
-                onChange={v => onUpdate({ meas_w: v })}
+                measured={str.meas_imp || ''}
+                onChange={v => onUpdate({ meas_imp: v })}
               />
             </div>
           )}
@@ -201,7 +224,7 @@ export default function StringMarkingTab({ project, onUpdate, selectedProduct })
       color: STRING_COLORS[idx % STRING_COLORS.length],
       points: [],
       panel_count: null,
-      meas_v: '', meas_i: '', meas_w: '',
+      meas_voc: '', meas_isc: '', meas_vmp: '', meas_imp: '',
     };
     setStrings(prev => [...prev, newStr]);
     setActiveStringId(id);

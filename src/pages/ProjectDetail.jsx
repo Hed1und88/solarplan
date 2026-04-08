@@ -102,9 +102,19 @@ export default function ProjectDetail() {
           <StringMarkingTab
             project={project}
             onUpdate={updateMutation.mutate}
-            selectedProduct={products.find(p =>
-              project.selected_products?.some(sp => sp.product_id === p.id && p.category === 'solpanel')
-            ) || null}
+            selectedProduct={(() => {
+              // Try to find the panel product used in the panel layout
+              try {
+                const d = JSON.parse(project.panel_layout_data || '{}');
+                const panels = Array.isArray(d) ? d : (d.panels || []);
+                const pid = panels[0]?.product_id;
+                if (pid) return products.find(p => p.id === pid) || null;
+              } catch {}
+              // Fallback: first solar panel in selected_products
+              return products.find(p =>
+                project.selected_products?.some(sp => sp.product_id === p.id) && p.category === 'solpanel'
+              ) || null;
+            })()}
           />
         </TabsContent>
         <TabsContent value="battery">

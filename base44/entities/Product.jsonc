@@ -58,6 +58,22 @@
       "type": "number",
       "description": "H\u00f6jd i mm"
     },
+    "voc_v": {
+      "type": "number",
+      "description": "\u00d6ppen kretssp\u00e4nning Voc (V) per panel"
+    },
+    "isc_a": {
+      "type": "number",
+      "description": "Kortslutningsstr\u00f6m Isc (A) per panel"
+    },
+    "vmp_v": {
+      "type": "number",
+      "description": "Sp\u00e4nning vid maxeffekt Vmp (V) per panel"
+    },
+    "imp_a": {
+      "type": "number",
+      "description": "Str\u00f6m vid maxeffekt Imp (A) per panel"
+    },
     "image_url": {
       "type": "string",
       "description": "Produktbild URL"
