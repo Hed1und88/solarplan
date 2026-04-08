@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { base44 } from '@/api/base44Client';
+import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Save, Plus, Trash2, ChevronDown, ChevronUp, CheckCircle2, XCircle } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import StringDrawingCanvas from './StringDrawingCanvas';
 
 const STRING_COLORS = ['#ef4444','#3b82f6','#22c55e','#f59e0b','#8b5cf6','#ec4899','#06b6d4','#84cc16','#f97316','#e879f9'];
@@ -199,7 +201,15 @@ function StringCard({ str, onUpdate, onDelete, onSelect, isActive, selectedProdu
   );
 }
 
-export default function StringMarkingTab({ project, onUpdate, selectedProduct }) {
+export default function StringMarkingTab({ project, onUpdate, selectedProduct: selectedProductProp }) {
+  const { data: solarProducts = [] } = useQuery({
+    queryKey: ['products-solar'],
+    queryFn: () => base44.entities.Product.filter({ category: 'solpanel' }),
+  });
+
+  const [selectedProductId, setSelectedProductId] = useState(() => selectedProductProp?.id || '');
+  const selectedProduct = solarProducts.find(p => p.id === selectedProductId) || selectedProductProp || null;
+
   const [imageUrl, setImageUrl] = useState(project.existing_installation_image_url || '');
   const [strings, setStrings] = useState(() => {
     try {
@@ -262,6 +272,28 @@ export default function StringMarkingTab({ project, onUpdate, selectedProduct })
         </Button>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Panel product selector */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="text-sm font-medium text-muted-foreground shrink-0">Solpanel för beräkning:</span>
+          <Select value={selectedProductId} onValueChange={setSelectedProductId}>
+            <SelectTrigger className="w-64">
+              <SelectValue placeholder="Välj solpanel..." />
+            </SelectTrigger>
+            <SelectContent>
+              {solarProducts.map(p => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name} {p.power_watts ? `– ${p.power_watts}W` : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {selectedProduct && (
+            <span className="text-xs text-muted-foreground">
+              Voc {selectedProduct.voc_v ?? '?'}V · Isc {selectedProduct.isc_a ?? '?'}A · Vmp {selectedProduct.vmp_v ?? '?'}V · Imp {selectedProduct.imp_a ?? '?'}A
+            </span>
+          )}
+        </div>
+
         <StringDrawingCanvas
           imageUrl={imageUrl}
           strings={strings}
