@@ -6,13 +6,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, Sun, Cable, Battery, ShoppingCart, BarChart2, Wrench } from 'lucide-react';
+import { ArrowLeft, Sun, Cable, Battery, ShoppingCart, BarChart2, Wrench, GitBranch } from 'lucide-react';
 import SolarDataPanel from '@/components/project/SolarDataPanel';
 import PanelPlacementTab from '@/components/project/PanelPlacementTab';
 import StringMarkingTab from '@/components/project/StringMarkingTab';
 import BatteryTab from '@/components/project/BatteryTab';
 import ProductSelectionTab from '@/components/project/ProductSelectionTab.jsx';
 import MountingSystemCalculator from '@/components/project/MountingSystemCalculator';
+import SingleLineSchemaTab from '@/components/project/SingleLineSchemaTab';
 
 const statusLabels = { planering: 'Planering', projektering: 'Projektering', offert: 'Offert', installation: 'Installation', klart: 'Klart' };
 const statusColors = { planering: 'bg-blue-100 text-blue-700', projektering: 'bg-amber-100 text-amber-700', offert: 'bg-purple-100 text-purple-700', installation: 'bg-orange-100 text-orange-700', klart: 'bg-green-100 text-green-700' };
@@ -70,7 +71,7 @@ export default function ProjectDetail() {
       </div>
 
       <Tabs defaultValue="panels" className="space-y-4">
-        <TabsList className="grid grid-cols-6 w-full max-w-2xl">
+        <TabsList className="grid grid-cols-7 w-full max-w-3xl">
           <TabsTrigger value="panels" className="gap-1.5 text-xs sm:text-sm">
             <Sun className="w-4 h-4" /> <span className="hidden sm:inline">Paneler</span>
           </TabsTrigger>
@@ -85,6 +86,9 @@ export default function ProjectDetail() {
           </TabsTrigger>
           <TabsTrigger value="solar" className="gap-1.5 text-xs sm:text-sm">
             <BarChart2 className="w-4 h-4" /> <span className="hidden sm:inline">Soldata</span>
+          </TabsTrigger>
+          <TabsTrigger value="singleline" className="gap-1.5 text-xs sm:text-sm">
+            <GitBranch className="w-4 h-4" /> <span className="hidden sm:inline">Enlinje</span>
           </TabsTrigger>
           <TabsTrigger value="mounting" className="gap-1.5 text-xs sm:text-sm">
             <Wrench className="w-4 h-4" /> <span className="hidden sm:inline">Montage</span>
@@ -111,6 +115,9 @@ export default function ProjectDetail() {
         </TabsContent>
         <TabsContent value="solar">
           <SolarDataPanel project={project} />
+        </TabsContent>
+        <TabsContent value="singleline">
+          <SingleLineSchemaTab project={project} onUpdate={updateMutation.mutate} />
         </TabsContent>
         <TabsContent value="mounting">
           <MountingSystemCalculator project={project} />
