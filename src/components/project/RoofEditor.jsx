@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { X, Minus, Plus, RotateCcw, Trash2, ZoomIn, RotateCw } from 'lucide-react';
+import { X, Minus, Plus, RotateCcw, Trash2, ZoomIn, RotateCw, Info } from 'lucide-react';
 
 // ── Solar panel SVG ──────────────────────────────────────────────────────────
 function SolarPanelSVG({ isSelected }) {
@@ -514,14 +514,18 @@ export default function RoofEditor({
 
     if (panelWPct <= 0 || panelHPct <= 0 || panelWPct > (maxX - minX) * 2 || panelHPct > (maxY - minY) * 2) return;
 
-    const SAMPLES = [-0.8, 0, 0.8];
+    // Check all four corners of the panel rect to ensure it's fully inside polygon
     const panelFits = (cx, cy) => {
       const hw = panelWPct / 2;
       const hh = panelHPct / 2;
-      for (const dy of SAMPLES)
-        for (const dx of SAMPLES)
-          if (!pointInPolygon(cx + dx * hw, cy + dy * hh, polygon)) return false;
-      return true;
+      // Check all four corners
+      const corners = [
+        { x: cx - hw, y: cy - hh },
+        { x: cx + hw, y: cy - hh },
+        { x: cx - hw, y: cy + hh },
+        { x: cx + hw, y: cy + hh },
+      ];
+      return corners.every(c => pointInPolygon(c.x, c.y, polygon));
     };
 
     const newPanels = [];
@@ -566,109 +570,30 @@ export default function RoofEditor({
 
   return (
     <div className="fixed inset-0 z-50 bg-gray-950 flex flex-col" style={{ userSelect: 'none' }}>
-      {/* ── Toolbar ── */}
-      <div className="flex items-center gap-2 px-3 py-2 bg-gray-900 border-b border-gray-700 flex-wrap gap-y-2">
-        <span className="text-white font-semibold text-sm">Takplanerare</span>
-
-        {/* Zoom controls */}
-        <div className="flex items-center gap-1 bg-gray-800 rounded-lg overflow-hidden ml-2">
-          <button className="px-2 py-1.5 text-white hover:bg-gray-700"
-            onClick={() => { const n = Math.max(0.1, zoom - 0.15); setZoom(n); zoomRef.current = n; }}>
-            <Minus className="w-3.5 h-3.5" />
-          </button>
-          <span className="text-white text-xs px-1 min-w-[40px] text-center">{Math.round(zoom * 100)}%</span>
-          <button className="px-2 py-1.5 text-white hover:bg-gray-700"
-            onClick={() => { const n = Math.min(10, zoom + 0.15); setZoom(n); zoomRef.current = n; }}>
-            <Plus className="w-3.5 h-3.5" />
-          </button>
-        </div>
-        <button className="text-gray-400 hover:text-white p-1.5 rounded" onClick={fitView} title="Anpassa vy">
-          <RotateCcw className="w-4 h-4" />
+      {/* ── Minimal Toolbar ── */}
+      <div className="flex items-center gap-2 px-4 py-3 bg-gray-900 border-b border-gray-700">
+        {/* Close button */}
+        <button className="text-gray-400 hover:text-white p-1.5 rounded-full bg-gray-800 hover:bg-gray-700" onClick={onClose} title="Stäng">
+          <X className="w-5 h-5" />
         </button>
 
-        {/* Reset polygon */}
-        {polygon.length > 0 && (
-          <button className="text-xs text-red-400 hover:text-red-300 bg-gray-800 px-2 py-1 rounded-lg flex items-center gap-1"
-            onClick={() => {
-              setPolygon([]); polygonRef.current = [];
-              setPolyDone(false); polyDoneRef.current = false;
-              setIsDrawingMode(false); isDrawingModeRef.current = false;
-              setEdgeLengths({}); onPanelsChange([]);
-              onPolygonChange?.([]); onEdgeLengthsChange?.({});
-            }}>
-            <Trash2 className="w-3.5 h-3.5" /> Rensa takyta
-          </button>
-        )}
+        {/* Info button */}
+        <button className="text-gray-400 hover:text-white p-1.5 rounded-full bg-gray-800 hover:bg-gray-700 ml-auto" title="Information">
+          <Info className="w-5 h-5" />
+        </button>
 
-        {/* Panel rotation toggle */}
-        {selectedProduct && (
-          <button
-            onClick={() => setPanelRotation(r => r === 0 ? 90 : 0)}
-            className={`text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 font-medium border transition-all ${panelRotation === 90 ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-800 border-gray-600 text-gray-300 hover:text-white'}`}
-            title="Rotera panelriktning"
-          >
-            <RotateCw className="w-3.5 h-3.5" />
-            {panelRotation === 0 ? 'Stående' : 'Liggande'}
-          </button>
-        )}
+        {/* Save button */}
+        <button className="text-white bg-gray-700 hover:bg-gray-600 rounded-lg px-4 py-1.5 text-sm font-medium">
+          Spara
+        </button>
 
-        {/* Fill panels */}
-        {polyDone && selectedProduct && (
-          <button
-            onClick={fillWithPanels}
-            className="text-xs bg-primary hover:bg-primary/90 text-white px-3 py-1.5 rounded-lg flex items-center gap-1 font-medium">
-            <ZoomIn className="w-3.5 h-3.5" />
-            Fyll med paneler
-            {hasEdgeLengths && computedArea ? ` (${computedArea.toFixed(1)} m²)` : ''}
-          </button>
-        )}
-
-        {/* Close */}
-        <div className="ml-auto">
-          <button className="text-white bg-gray-700 hover:bg-gray-600 rounded-lg px-3 py-1.5 text-sm flex items-center gap-1" onClick={onClose}>
-            <X className="w-4 h-4" /> Stäng
-          </button>
-        </div>
+        {/* Delete button */}
+        <button className="text-white bg-white text-gray-900 hover:bg-gray-100 rounded-lg px-4 py-1.5 text-sm font-medium">
+          Dela
+        </button>
       </div>
 
-      {/* ── Status bar ── */}
-      <div className="bg-gray-800 px-3 py-1.5 text-xs text-gray-300 flex items-center gap-3">
-        {!isDrawingMode && !polyDone && polygon.length === 0 && (
-          <span>🖱️ <strong>Håll 2 sek</strong> på taket för att starta ritning av takyta</span>
-        )}
-        {isDrawingMode && (
-          <>
-            <span className="text-green-400 font-medium animate-pulse">● Ritar takyta</span>
-            <span>Klicka för att lägga till hörn •{polygon.length >= 3 ? ' Klicka på första punkten för att avsluta' : ` ${3 - polygon.length} hörn till`}</span>
-          </>
-        )}
-        {polyDone && (
-          <>
-            <span className="text-blue-400 font-medium">✓ Takyta klar ({polygon.length} hörn)</span>
-            {draggingCornerIdx !== null
-              ? <span className="text-orange-400">● Drar hörn {draggingCornerIdx + 1} — släpp för att placera</span>
-              : cornerHoldIdx !== null
-              ? <span className="text-yellow-400">● Håll kvar för att flytta hörn {cornerHoldIdx + 1}...</span>
-              : !selectedProduct
-              ? <span className="text-yellow-400">— Välj en solpanel för att fylla ytan</span>
-              : <span className="text-gray-400">— Håll ett hörn för att flytta det</span>
-            }
-          </>
-        )}
-        {longPressProgress > 0 && longPressProgress < 100 && (
-          <div className="ml-auto flex items-center gap-2">
-            <span className="text-yellow-400">Håll kvar...</span>
-            <div className="w-20 h-1.5 bg-gray-700 rounded-full overflow-hidden">
-              <div className="h-full bg-yellow-400 transition-all" style={{ width: `${longPressProgress}%` }} />
-            </div>
-          </div>
-        )}
-      </div>
 
-      {/* ── Edge-length inputs ── */}
-      {polyDone && (
-        <EdgeInputs polygon={polygon} edgeLengths={edgeLengths} onEdgeLengthChange={handleEdgeLengthChange} />
-      )}
 
       {/* ── Canvas ── */}
       <div
@@ -797,9 +722,15 @@ export default function RoofEditor({
           })}
         </div>
 
-        <div className="absolute bottom-3 right-3 text-xs text-gray-500 bg-gray-900/80 rounded px-2 py-1 pointer-events-none">
-          Scrolla = zoom • Nyp = zoom (mobil)
-        </div>
+      </div>
+
+      {/* ── Bottom description field ── */}
+      <div className="bg-gray-800 border-t border-gray-700 px-4 py-3">
+        <input
+          type="text"
+          placeholder="Beskriv ändringar"
+          className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary"
+        />
       </div>
     </div>
   );
