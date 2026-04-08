@@ -35,11 +35,19 @@ export default function SolarDataPanel({ project }) {
   const [forecastData, setForecastData] = useState(null);
   const [location, setLocation] = useState(null);
 
-  // Try to estimate peak power from project panel data
-  const panels = (() => { try { return JSON.parse(project.panel_layout_data || '[]'); } catch { return []; } })();
+  // Parse panel layout data — format is { panels: [...], obstacles: [...] } or legacy []
+  const panels = (() => {
+    try {
+      const d = JSON.parse(project.panel_layout_data || '{}');
+      return Array.isArray(d) ? d : (d.panels || []);
+    } catch { return []; }
+  })();
   const panelCount = panels.length;
-  // Use a default of 0.4 kWp per panel if no product power known
-  const estimatedKwp = panelCount > 0 ? (panelCount * 0.4) : 5;
+  // Sum actual power_watts if available, else fall back to 400W per panel
+  const totalWatts = panelCount > 0
+    ? panels.reduce((sum, p) => sum + (p.power_watts || 400), 0)
+    : 0;
+  const estimatedKwp = totalWatts > 0 ? totalWatts / 1000 : 5;
 
   const fetchData = async () => {
     if (!project.address) {
