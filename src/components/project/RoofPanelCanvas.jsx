@@ -88,7 +88,7 @@ export default function RoofPanelCanvas({
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Klicka på <strong>Öppna redigerare</strong> för att placera paneler och markera hinder i helskärm med zoom.
+          Klicka på <strong>Öppna redigerare</strong> → håll 2 sek på taket för att rita takyta → ange sidlängder → fyll med paneler.
         </p>
 
         {/* Preview */}
