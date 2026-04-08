@@ -61,6 +61,8 @@ export default function RoofPanelCanvas({
     obs.observe(el);
   };
 
+  // pxPerMeter in preview: canvas width / roof width
+  // scaleFactor is a manual override so users can adjust preview size
   const pxPerMeter = roofWidthM > 0
     ? (canvasW / roofWidthM) * scaleFactor
     : (canvasW / 10) * scaleFactor;
@@ -69,6 +71,14 @@ export default function RoofPanelCanvas({
     pw: panel.width_mm ? (panel.width_mm / 1000) * pxPerMeter : pxPerMeter * 1.1,
     ph: panel.height_mm ? (panel.height_mm / 1000) * pxPerMeter : pxPerMeter * 1.7,
   });
+
+  // Derive natural image aspect ratio from loaded img element
+  const [imgAspect, setImgAspect] = useState(1.5);
+  const handleImgLoad = () => {
+    if (imgRef.current) {
+      setImgAspect(imgRef.current.naturalWidth / imgRef.current.naturalHeight);
+    }
+  };
 
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
@@ -147,7 +157,7 @@ export default function RoofPanelCanvas({
             src={imageUrl}
             alt="Tak"
             className="w-full h-auto block"
-            onLoad={() => setImageLoaded(true)}
+            onLoad={() => { setImageLoaded(true); handleImgLoad(); }}
             draggable={false}
           />
 
