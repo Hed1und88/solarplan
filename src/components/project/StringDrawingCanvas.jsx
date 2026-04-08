@@ -10,6 +10,7 @@ export default function StringDrawingCanvas({ imageUrl, lines, onLinesChange, on
   const [tool, setTool] = useState('draw');
   const [color, setColor] = useState('#ef4444');
   const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
 
   const colors = ['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899'];
 
@@ -75,18 +76,16 @@ export default function StringDrawingCanvas({ imageUrl, lines, onLinesChange, on
   if (!imageUrl) {
     return (
       <div className="border-2 border-dashed rounded-2xl p-12 text-center bg-muted/30">
-        <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handleFileChange} className="hidden" />
+        <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
+        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handleFileChange} className="hidden" />
         <Upload className="w-12 h-12 text-muted-foreground/40 mx-auto mb-4" />
         <h3 className="font-semibold mb-2">Ladda upp bild på anläggning</h3>
         <p className="text-sm text-muted-foreground mb-4">Ta ett foto på den befintliga solpanelsanläggningen</p>
-        <div className="flex gap-3 justify-center">
+        <div className="flex gap-3 justify-center flex-wrap">
           <Button variant="outline" className="gap-2" onClick={() => fileInputRef.current?.click()}>
-            <Upload className="w-4 h-4" /> Välj bild
+            <Upload className="w-4 h-4" /> Välj från galleri
           </Button>
-          <Button className="gap-2" onClick={() => {
-            fileInputRef.current.setAttribute('capture', 'environment');
-            fileInputRef.current?.click();
-          }}>
+          <Button className="gap-2" onClick={() => cameraInputRef.current?.click()}>
             <Camera className="w-4 h-4" /> Ta foto
           </Button>
         </div>
@@ -120,9 +119,13 @@ export default function StringDrawingCanvas({ imageUrl, lines, onLinesChange, on
             <Eraser className="w-3.5 h-3.5" /> Rensa
           </Button>
           <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()} className="gap-1">
-            <RotateCcw className="w-3.5 h-3.5" /> Byt bild
+            <Upload className="w-3.5 h-3.5" /> Galleri
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => cameraInputRef.current?.click()} className="gap-1">
+            <Camera className="w-3.5 h-3.5" /> Kamera
           </Button>
           <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
+          <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handleFileChange} className="hidden" />
         </div>
       </div>
       <div ref={canvasRef} className="relative rounded-xl overflow-hidden shadow-lg bg-black select-none" style={{ touchAction: 'none' }}>
