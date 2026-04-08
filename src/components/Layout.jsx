@@ -1,5 +1,5 @@
 import { Link, useLocation, Outlet } from 'react-router-dom';
-import { Sun, LayoutDashboard, FolderOpen, Package, Battery, Menu, X } from 'lucide-react';
+import { LayoutDashboard, FolderOpen, Package, Menu } from 'lucide-react';
 import { useState } from 'react';
 
 const navItems = [
@@ -21,14 +21,12 @@ export default function Layout() {
         ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         {/* Logo */}
-        <div className="flex items-center gap-3 px-6 py-5 border-b border-sidebar-border">
-          <div className="w-9 h-9 bg-primary rounded-xl flex items-center justify-center shadow-lg">
-            <Sun className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <p className="text-white font-bold text-sm">SolarPlan</p>
-            <p className="text-sidebar-foreground/50 text-xs">Projektering</p>
-          </div>
+        <div className="flex items-center px-4 py-3 border-b border-sidebar-border">
+          <img
+            src="https://media.base44.com/images/public/69d685f7c2da2257faa73124/82fc4e45e_Screenshot_20260408_224436_com_android_chrome_ChromeTabbedActivity.jpg"
+            alt="NEPAB Logo"
+            className="h-14 w-auto object-contain"
+          />
         </div>
 
         {/* Nav */}
@@ -70,12 +68,11 @@ export default function Layout() {
           <button onClick={() => setMobileOpen(true)} className="p-2 rounded-lg hover:bg-muted">
             <Menu className="w-5 h-5" />
           </button>
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 bg-primary rounded-lg flex items-center justify-center">
-              <Sun className="w-4 h-4 text-white" />
-            </div>
-            <span className="font-bold text-sm">SolarPlan</span>
-          </div>
+          <img
+            src="https://media.base44.com/images/public/69d685f7c2da2257faa73124/82fc4e45e_Screenshot_20260408_224436_com_android_chrome_ChromeTabbedActivity.jpg"
+            alt="NEPAB Logo"
+            className="h-8 w-auto object-contain"
+          />
           <div className="w-9" />
         </header>
 
