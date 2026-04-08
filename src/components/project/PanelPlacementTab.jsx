@@ -11,7 +11,16 @@ import RoofPanelCanvas from './RoofPanelCanvas';
 export default function PanelPlacementTab({ project, onUpdate }) {
   const [imageUrl, setImageUrl] = useState(project.roof_image_url || '');
   const [panels, setPanels] = useState(() => {
-    try { return JSON.parse(project.panel_layout_data || '[]'); } catch { return []; }
+    try {
+      const d = JSON.parse(project.panel_layout_data || '{}');
+      return Array.isArray(d) ? d : (d.panels || []);
+    } catch { return []; }
+  });
+  const [obstacles, setObstacles] = useState(() => {
+    try {
+      const d = JSON.parse(project.panel_layout_data || '{}');
+      return Array.isArray(d) ? [] : (d.obstacles || []);
+    } catch { return []; }
   });
   const [selectedPanel, setSelectedPanel] = useState('');
   const [saving, setSaving] = useState(false);
@@ -81,7 +90,7 @@ export default function PanelPlacementTab({ project, onUpdate }) {
     setSaving(true);
     await onUpdate({
       roof_image_url: imageUrl,
-      panel_layout_data: JSON.stringify(panels),
+      panel_layout_data: JSON.stringify({ panels, obstacles }),
       roof_width_m: parseFloat(roofWidth) || null,
       roof_height_m: parseFloat(roofHeight) || null,
     });
@@ -187,6 +196,8 @@ export default function PanelPlacementTab({ project, onUpdate }) {
             imageUrl={imageUrl}
             panels={panels}
             onPanelsChange={setPanels}
+            obstacles={obstacles}
+            onObstaclesChange={setObstacles}
             onImageUpload={handleImageUpload}
             selectedProduct={selectedProduct}
             roofWidthM={parseFloat(roofWidth) || null}
