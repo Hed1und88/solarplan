@@ -430,7 +430,7 @@ export default function RoofEditor({
       y += panelHPct;
     }
     onPanelsChange(newPanels);
-  }, [polyDone, polygon, edgeLengths, selectedProduct, roofWidthM, onPanelsChange]);
+  }, [polyDone, polygon, edgeLengths, selectedProduct, onPanelsChange]);
 
   // ── Fit view ──────────────────────────────────────────────────────────────
   const fitView = () => {
