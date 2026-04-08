@@ -1,39 +1,35 @@
 import React, { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Upload, Camera, Maximize2, MousePointer, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
+import { Upload, Camera, Maximize2 } from 'lucide-react';
 import RoofEditor from './RoofEditor';
 
-function SolarPanelSVG({ widthPx, heightPx, isSelected }) {
-  const cols = 6;
-  const rows = Math.max(2, Math.round((heightPx / widthPx) * cols));
-  const cellW = widthPx / cols;
-  const cellH = heightPx / rows;
-  const gap = Math.max(0.5, Math.min(1.5, widthPx / 80));
-  const id = `sh-${Math.round(widthPx)}`;
+// Preview panel — pure % sizing so it matches the image
+function PreviewPanel({ panel, roofWidthM, roofHeightM }) {
+  const rw = roofWidthM || 10;
+  const rh = roofHeightM || 8;
+  const wPct = panel.width_mm  ? (panel.width_mm  / 1000 / rw) * 100 : (1.1 / rw) * 100;
+  const hPct = panel.height_mm ? (panel.height_mm / 1000 / rh) * 100 : (1.76 / rh) * 100;
   return (
-    <svg width={widthPx} height={heightPx} style={{ display: 'block', opacity: 0.9 }}>
-      <defs>
-        <linearGradient id={id} x1="0" y1="0" x2="0.5" y2="1">
-          <stop offset="0%" stopColor="white" stopOpacity={0.18} />
-          <stop offset="100%" stopColor="white" stopOpacity={0} />
-        </linearGradient>
-      </defs>
-      <rect x={0} y={0} width={widthPx} height={heightPx} fill="#1a2540" rx={1.5} />
-      {Array.from({ length: rows }).map((_, r) =>
-        Array.from({ length: cols }).map((_, c) => (
-          <rect key={`${r}-${c}`}
-            x={c * cellW + gap} y={r * cellH + gap}
-            width={cellW - gap * 2} height={cellH - gap * 2}
-            fill="#1e3560" stroke="#2a4070" strokeWidth={0.4} rx={0.5}
-          />
-        ))
-      )}
-      <rect x={0} y={0} width={widthPx} height={heightPx} fill={`url(#${id})`} rx={1.5} />
-      <rect x={0} y={0} width={widthPx} height={heightPx} fill="none"
-        stroke={isSelected ? '#60a5fa' : '#3a5070'}
-        strokeWidth={isSelected ? 2.5 : 1} rx={1.5}
-      />
-    </svg>
+    <div style={{
+      position: 'absolute',
+      left: `${panel.x}%`,
+      top: `${panel.y}%`,
+      width: `${wPct}%`,
+      height: `${hPct}%`,
+      transform: 'translate(-50%, -50%)',
+      pointerEvents: 'none',
+      zIndex: 10,
+      background: '#1a2540',
+      border: '1px solid #3a5090',
+      opacity: 0.88,
+    }}>
+      <svg width="100%" height="100%" style={{ display: 'block' }}>
+        <pattern id="previewCells" x="0" y="0" width="16.666%" height="25%" patternUnits="objectBoundingBox">
+          <rect x="5%" y="5%" width="90%" height="90%" fill="#1e3560" stroke="#2a4070" strokeWidth="0.5" rx="1" />
+        </pattern>
+        <rect x="0" y="0" width="100%" height="100%" fill="url(#previewCells)" />
+      </svg>
+    </div>
   );
 }
 
@@ -42,43 +38,10 @@ export default function RoofPanelCanvas({
   selectedProduct, roofWidthM, roofHeightM,
   obstacles = [], onObstaclesChange,
 }) {
-  const canvasRef = useRef(null);
-  const imgRef = useRef(null);
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
   const [imageLoaded, setImageLoaded] = useState(false);
-  const [canvasW, setCanvasW] = useState(800);
-  const [scaleFactor, setScaleFactor] = useState(1.0);
   const [editorOpen, setEditorOpen] = useState(false);
-
-  const handleResize = (entries) => {
-    setCanvasW(entries[0].contentRect.width);
-  };
-
-  const attachObserver = (el) => {
-    if (!el) return;
-    const obs = new ResizeObserver(handleResize);
-    obs.observe(el);
-  };
-
-  // pxPerMeter in preview: canvas width / roof width
-  // scaleFactor is a manual override so users can adjust preview size
-  const pxPerMeter = roofWidthM > 0
-    ? (canvasW / roofWidthM) * scaleFactor
-    : (canvasW / 10) * scaleFactor;
-
-  const getPanelPx = (panel) => ({
-    pw: panel.width_mm ? (panel.width_mm / 1000) * pxPerMeter : pxPerMeter * 1.1,
-    ph: panel.height_mm ? (panel.height_mm / 1000) * pxPerMeter : pxPerMeter * 1.7,
-  });
-
-  // Derive natural image aspect ratio from loaded img element
-  const [imgAspect, setImgAspect] = useState(1.5);
-  const handleImgLoad = () => {
-    if (imgRef.current) {
-      setImgAspect(imgRef.current.naturalWidth / imgRef.current.naturalHeight);
-    }
-  };
 
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
@@ -112,7 +75,6 @@ export default function RoofPanelCanvas({
   return (
     <>
       <div className="space-y-2">
-        {/* Toolbar */}
         <div className="flex items-center gap-2 flex-wrap">
           <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
           <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={handleFileChange} className="hidden" />
@@ -125,78 +87,46 @@ export default function RoofPanelCanvas({
           <Button size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white" onClick={() => setEditorOpen(true)}>
             <Maximize2 className="w-3.5 h-3.5" /> Öppna redigerare
           </Button>
-
-          {/* Panel scale */}
-          <div className="flex items-center gap-1 ml-auto border border-border rounded-lg overflow-hidden">
-            <button className="px-2 py-1 text-xs hover:bg-muted transition-colors"
-              onClick={() => setScaleFactor(s => Math.max(0.2, +(s - 0.1).toFixed(1)))}>
-              <ZoomOut className="w-3.5 h-3.5" />
-            </button>
-            <span className="px-2 py-1 text-xs font-medium bg-muted/50 min-w-[40px] text-center">
-              {(scaleFactor * 100).toFixed(0)}%
-            </span>
-            <button className="px-2 py-1 text-xs hover:bg-muted transition-colors"
-              onClick={() => setScaleFactor(s => Math.min(3.0, +(s + 0.1).toFixed(1)))}>
-              <ZoomIn className="w-3.5 h-3.5" />
-            </button>
-          </div>
         </div>
 
         <p className="text-xs text-muted-foreground">
           Klicka på <strong>Öppna redigerare</strong> för att placera paneler och markera hinder i helskärm med zoom.
         </p>
 
-        {/* Preview canvas */}
+        {/* Preview */}
         <div
-          ref={el => { canvasRef.current = el; attachObserver(el); }}
           className="relative rounded-xl overflow-hidden shadow-lg select-none cursor-pointer"
           onClick={() => setEditorOpen(true)}
         >
           <img
-            ref={imgRef}
             src={imageUrl}
             alt="Tak"
             className="w-full h-auto block"
-            onLoad={() => { setImageLoaded(true); handleImgLoad(); }}
+            onLoad={() => setImageLoaded(true)}
             draggable={false}
           />
 
-          {/* Preview panels */}
-          {imageLoaded && panels.map(panel => {
-            const { pw, ph } = getPanelPx(panel);
-            return (
-              <div key={panel.id} style={{
-                position: 'absolute',
-                left: `${panel.x}%`,
-                top: `${panel.y}%`,
-                width: pw,
-                height: ph,
-                transform: 'translate(-50%, -50%)',
-                pointerEvents: 'none',
-                zIndex: 10,
-              }}>
-                <SolarPanelSVG widthPx={pw} heightPx={ph} isSelected={false} />
-              </div>
-            );
-          })}
+          {imageLoaded && panels.map(panel => (
+            <PreviewPanel
+              key={panel.id}
+              panel={panel}
+              roofWidthM={roofWidthM}
+              roofHeightM={roofHeightM}
+            />
+          ))}
 
-          {/* Preview obstacles */}
           {imageLoaded && obstacles.map(obs => (
             <div key={obs.id} style={{
               position: 'absolute',
-              left: `${obs.x}%`,
-              top: `${obs.y}%`,
-              width: `${obs.w}%`,
-              height: `${obs.h}%`,
+              left: `${obs.x}%`, top: `${obs.y}%`,
+              width: `${obs.w}%`, height: `${obs.h}%`,
               border: `2px solid ${obs.color}`,
               background: `${obs.color}33`,
-              pointerEvents: 'none',
-              zIndex: 11,
+              pointerEvents: 'none', zIndex: 11,
             }} />
           ))}
 
-          {/* Click overlay hint */}
-          <div className="absolute inset-0 bg-black/0 hover:bg-black/10 transition-colors flex items-center justify-center">
+          <div className="absolute inset-0 flex items-center justify-center">
             <div className="bg-black/50 text-white text-sm px-3 py-1.5 rounded-full opacity-0 hover:opacity-100 transition-opacity pointer-events-none">
               Klicka för att redigera
             </div>
@@ -204,7 +134,6 @@ export default function RoofPanelCanvas({
         </div>
       </div>
 
-      {/* Full-screen editor */}
       {editorOpen && (
         <RoofEditor
           imageUrl={imageUrl}
@@ -214,6 +143,7 @@ export default function RoofPanelCanvas({
           onObstaclesChange={onObstaclesChange}
           selectedProduct={selectedProduct}
           roofWidthM={roofWidthM}
+          roofHeightM={roofHeightM}
           onClose={() => setEditorOpen(false)}
         />
       )}

@@ -1,47 +1,40 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Button } from '@/components/ui/button';
 import { X, Minus, Plus, RotateCcw, Trash2, Pencil, Hand, Sun } from 'lucide-react';
 
-function SolarPanelSVG({ widthPx, heightPx, isSelected }) {
-  const cols = 6;
-  const rows = Math.max(2, Math.round((heightPx / widthPx) * cols));
-  const cellW = widthPx / cols;
-  const cellH = heightPx / rows;
-  const gap = Math.max(0.5, Math.min(1.5, widthPx / 80));
-  const id = `sh-${Math.round(widthPx)}-${Math.round(heightPx)}`;
+// Solar panel rendered with % width/height so it scales with the image
+function SolarPanelSVG({ isSelected }) {
   return (
-    <svg width={widthPx} height={heightPx} style={{ display: 'block' }}>
+    <svg width="100%" height="100%" style={{ display: 'block' }}>
       <defs>
-        <linearGradient id={id} x1="0" y1="0" x2="0.5" y2="1">
-          <stop offset="0%" stopColor="white" stopOpacity={0.2} />
+        <linearGradient id="panelGrad" x1="0" y1="0" x2="0.5" y2="1">
+          <stop offset="0%" stopColor="white" stopOpacity={0.22} />
           <stop offset="100%" stopColor="white" stopOpacity={0} />
         </linearGradient>
       </defs>
-      <rect x={0} y={0} width={widthPx} height={heightPx} fill="#1a2540" rx={1} />
-      {Array.from({ length: rows }).map((_, r) =>
-        Array.from({ length: cols }).map((_, c) => (
-          <rect key={`${r}-${c}`}
-            x={c * cellW + gap} y={r * cellH + gap}
-            width={cellW - gap * 2} height={cellH - gap * 2}
-            fill="#1e3560" stroke="#2a4070" strokeWidth={0.4} rx={0.5}
-          />
-        ))
-      )}
-      <rect x={0} y={0} width={widthPx} height={heightPx} fill={`url(#${id})`} rx={1} />
-      <rect x={0} y={0} width={widthPx} height={heightPx} fill="none"
-        stroke={isSelected ? '#60a5fa' : '#3a5070'}
-        strokeWidth={isSelected ? 2.5 : 1} rx={1} />
+      {/* Background */}
+      <rect x="0" y="0" width="100%" height="100%" fill="#1a2540" rx="2" />
+      {/* Inner cells — 6 cols × auto rows via SVG pattern */}
+      <pattern id="cells" x="0" y="0" width="16.666%" height="25%" patternUnits="objectBoundingBox">
+        <rect x="5%" y="5%" width="90%" height="90%" fill="#1e3560" stroke="#2a4070" strokeWidth="0.5" rx="1" />
+      </pattern>
+      <rect x="0" y="0" width="100%" height="100%" fill="url(#cells)" />
+      {/* Gloss */}
+      <rect x="0" y="0" width="100%" height="100%" fill="url(#panelGrad)" rx="2" />
+      {/* Border */}
+      <rect x="0.5" y="0.5" width="99%" height="99%" fill="none"
+        stroke={isSelected ? '#60a5fa' : '#3a5090'}
+        strokeWidth={isSelected ? 2 : 1} rx="2" />
     </svg>
   );
 }
 
-const TOOLS = { pan: 'pan', place: 'place', obstacle: 'obstacle' };
+const TOOLS = { pan: 'pan', obstacle: 'obstacle' };
 const OBSTACLE_COLORS = ['#ef4444', '#f97316', '#eab308', '#8b5cf6'];
 
 export default function RoofEditor({
   imageUrl, panels, onPanelsChange,
   obstacles, onObstaclesChange,
-  selectedProduct, roofWidthM, onClose
+  selectedProduct, roofWidthM, roofHeightM, onClose
 }) {
   const containerRef = useRef(null);
   const imgRef = useRef(null);
@@ -49,42 +42,47 @@ export default function RoofEditor({
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [tool, setTool] = useState(TOOLS.pan);
   const [obstacleColor, setObstacleColor] = useState(OBSTACLE_COLORS[0]);
-  const [imgNatural, setImgNatural] = useState({ w: 1200, h: 800 });
+  const [imgNatural, setImgNatural] = useState({ w: 0, h: 0 });
 
-  // Panning
+  // Refs for mouse interactions (avoid stale closures)
   const isPanning = useRef(false);
-  const panStart = useRef({ x: 0, y: 0 });
-  const panOrigin = useRef({ x: 0, y: 0 });
+  const panStartClient = useRef({ x: 0, y: 0 });
+  const panOriginState = useRef({ x: 0, y: 0 });
 
-  // Obstacle drawing
   const isDrawing = useRef(false);
-  const [drawPreview, setDrawPreview] = useState(null); // { x,y,w,h }
-  const drawStart = useRef(null);
+  const drawStartPct = useRef(null);
+  const [drawPreview, setDrawPreview] = useState(null);
 
-  // Panel dragging
   const draggingId = useRef(null);
-  const dragOffset = useRef({ x: 0, y: 0 });
+  const dragOffsetPct = useRef({ x: 0, y: 0 });
 
-  // px per meter — based on natural image width
-  const pxPerMeter = roofWidthM > 0 ? imgNatural.w / roofWidthM : imgNatural.w / 10;
-  const panelW_img = selectedProduct?.width_mm ? (selectedProduct.width_mm / 1000) * pxPerMeter : pxPerMeter * 1.1;
-  const panelH_img = selectedProduct?.height_mm ? (selectedProduct.height_mm / 1000) * pxPerMeter : pxPerMeter * 1.7;
+  // Store latest pan/zoom/imgNatural in refs so mouse handlers always see current values
+  const panRef = useRef({ x: 0, y: 0 });
+  const zoomRef = useRef(1);
+  const imgNaturalRef = useRef({ w: 0, h: 0 });
+
+  useEffect(() => { panRef.current = pan; }, [pan]);
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+  useEffect(() => { imgNaturalRef.current = imgNatural; }, [imgNatural]);
 
   const handleImgLoad = () => {
     if (imgRef.current) {
       const w = imgRef.current.naturalWidth;
       const h = imgRef.current.naturalHeight;
       setImgNatural({ w, h });
+      imgNaturalRef.current = { w, h };
     }
   };
 
-  // Fit on load
+  // Fit image when natural size is known
   useEffect(() => {
-    if (!containerRef.current || imgNatural.w === 1200) return;
+    if (!containerRef.current || imgNatural.w === 0) return;
     const rect = containerRef.current.getBoundingClientRect();
     const fit = Math.min(rect.width / imgNatural.w, rect.height / imgNatural.h) * 0.95;
     setZoom(fit);
+    zoomRef.current = fit;
     setPan({ x: 0, y: 0 });
+    panRef.current = { x: 0, y: 0 };
   }, [imgNatural]);
 
   // Scroll zoom
@@ -93,111 +91,106 @@ export default function RoofEditor({
     if (!el) return;
     const onWheel = (e) => {
       e.preventDefault();
-      setZoom(z => Math.max(0.1, Math.min(10, z * (e.deltaY < 0 ? 1.1 : 0.9))));
+      const delta = e.deltaY < 0 ? 1.12 : 0.9;
+      const next = Math.max(0.1, Math.min(10, zoomRef.current * delta));
+      setZoom(next);
+      zoomRef.current = next;
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
-  // Convert client coords → image-space percentage
-  const clientToImgPct = useCallback((cx, cy) => {
+  // Helper: client coords → % of image
+  const clientToImgPct = useCallback((clientX, clientY) => {
     const rect = containerRef.current.getBoundingClientRect();
+    const p = panRef.current;
+    const z = zoomRef.current;
+    const nat = imgNaturalRef.current;
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
-    // image top-left in screen space
-    const imgLeft = centerX + pan.x - (imgNatural.w * zoom) / 2;
-    const imgTop = centerY + pan.y - (imgNatural.h * zoom) / 2;
-    const xPct = ((cx - imgLeft) / (imgNatural.w * zoom)) * 100;
-    const yPct = ((cy - imgTop) / (imgNatural.h * zoom)) * 100;
-    return { x: xPct, y: yPct };
-  }, [pan, zoom, imgNatural]);
+    const imgLeft = centerX + p.x - (nat.w * z) / 2;
+    const imgTop  = centerY + p.y - (nat.h * z) / 2;
+    return {
+      x: ((clientX - imgLeft) / (nat.w * z)) * 100,
+      y: ((clientY - imgTop)  / (nat.h * z)) * 100,
+    };
+  }, []);
 
   const handleMouseDown = useCallback((e) => {
     if (e.button !== 0) return;
 
     if (tool === TOOLS.pan) {
+      // Check if we clicked on a panel div (handled separately)
       isPanning.current = true;
-      panStart.current = { x: e.clientX, y: e.clientY };
-      panOrigin.current = { ...pan };
-      return;
-    }
-
-    if (tool === TOOLS.place && selectedProduct) {
-      const pos = clientToImgPct(e.clientX, e.clientY);
-      onPanelsChange(prev => [...prev, {
-        id: Date.now().toString(),
-        product_id: selectedProduct.id,
-        product_name: selectedProduct.name,
-        power_watts: selectedProduct.power_watts,
-        width_mm: selectedProduct.width_mm,
-        height_mm: selectedProduct.height_mm,
-        x: pos.x,
-        y: pos.y,
-      }]);
+      panStartClient.current = { x: e.clientX, y: e.clientY };
+      panOriginState.current = { ...panRef.current };
       return;
     }
 
     if (tool === TOOLS.obstacle) {
       const pos = clientToImgPct(e.clientX, e.clientY);
       isDrawing.current = true;
-      drawStart.current = pos;
+      drawStartPct.current = pos;
       setDrawPreview({ x: pos.x, y: pos.y, w: 0, h: 0 });
     }
-  }, [tool, pan, selectedProduct, clientToImgPct, onPanelsChange]);
+  }, [tool, clientToImgPct]);
 
   const handleMouseMove = useCallback((e) => {
     if (isPanning.current) {
-      setPan({
-        x: panOrigin.current.x + (e.clientX - panStart.current.x),
-        y: panOrigin.current.y + (e.clientY - panStart.current.y),
-      });
+      const next = {
+        x: panOriginState.current.x + (e.clientX - panStartClient.current.x),
+        y: panOriginState.current.y + (e.clientY - panStartClient.current.y),
+      };
+      setPan(next);
+      panRef.current = next;
       return;
     }
 
-    if (isDrawing.current && drawStart.current) {
+    if (isDrawing.current && drawStartPct.current) {
       const pos = clientToImgPct(e.clientX, e.clientY);
       setDrawPreview({
-        x: Math.min(drawStart.current.x, pos.x),
-        y: Math.min(drawStart.current.y, pos.y),
-        w: Math.abs(pos.x - drawStart.current.x),
-        h: Math.abs(pos.y - drawStart.current.y),
+        x: Math.min(drawStartPct.current.x, pos.x),
+        y: Math.min(drawStartPct.current.y, pos.y),
+        w: Math.abs(pos.x - drawStartPct.current.x),
+        h: Math.abs(pos.y - drawStartPct.current.y),
       });
       return;
     }
 
     if (draggingId.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-      const imgLeft = centerX + pan.x - (imgNatural.w * zoom) / 2;
-      const imgTop = centerY + pan.y - (imgNatural.h * zoom) / 2;
-      const xPct = ((e.clientX - dragOffset.current.x - imgLeft) / (imgNatural.w * zoom)) * 100;
-      const yPct = ((e.clientY - dragOffset.current.y - imgTop) / (imgNatural.h * zoom)) * 100;
+      const pos = clientToImgPct(e.clientX, e.clientY);
+      const newX = pos.x - dragOffsetPct.current.x;
+      const newY = pos.y - dragOffsetPct.current.y;
       onPanelsChange(prev => prev.map(p =>
-        p.id === draggingId.current ? { ...p, x: xPct, y: yPct } : p
+        p.id === draggingId.current ? { ...p, x: newX, y: newY } : p
       ));
     }
-  }, [clientToImgPct, pan, zoom, imgNatural, onPanelsChange]);
+  }, [clientToImgPct, onPanelsChange]);
 
-  const handleMouseUp = useCallback(() => {
+  const handleMouseUp = useCallback((e) => {
     isPanning.current = false;
-    draggingId.current = null;
 
-    if (isDrawing.current && drawPreview && drawPreview.w > 0.5 && drawPreview.h > 0.5) {
-      onObstaclesChange(prev => [...prev, {
-        id: Date.now().toString(),
-        x: drawPreview.x,
-        y: drawPreview.y,
-        w: drawPreview.w,
-        h: drawPreview.h,
-        color: obstacleColor,
-        label: 'Hinder',
-      }]);
+    if (draggingId.current) {
+      draggingId.current = null;
+      return;
     }
-    isDrawing.current = false;
-    drawStart.current = null;
-    setDrawPreview(null);
-  }, [drawPreview, obstacleColor, onObstaclesChange]);
+
+    if (isDrawing.current) {
+      isDrawing.current = false;
+      setDrawPreview(prev => {
+        if (prev && prev.w > 0.5 && prev.h > 0.5) {
+          onObstaclesChange(obs => [...obs, {
+            id: Date.now().toString(),
+            x: prev.x, y: prev.y, w: prev.w, h: prev.h,
+            color: obstacleColor,
+            label: 'Hinder',
+          }]);
+        }
+        return null;
+      });
+      drawStartPct.current = null;
+    }
+  }, [obstacleColor, onObstaclesChange]);
 
   useEffect(() => {
     window.addEventListener('mousemove', handleMouseMove);
@@ -208,29 +201,20 @@ export default function RoofEditor({
     };
   }, [handleMouseMove, handleMouseUp]);
 
-  const handlePanelMouseDown = useCallback((e, panel) => {
-    if (tool !== TOOLS.pan && tool !== TOOLS.place) return;
+  // Panel drag start — compute offset in % space
+  const handlePanelMouseDown = (e, panel) => {
+    if (tool !== TOOLS.pan) return;
     e.preventDefault();
     e.stopPropagation();
-
-    const rect = containerRef.current.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
-    const imgLeft = centerX + pan.x - (imgNatural.w * zoom) / 2;
-    const imgTop = centerY + pan.y - (imgNatural.h * zoom) / 2;
-
-    // panel center in screen coords
-    const panelScreenX = imgLeft + (panel.x / 100) * imgNatural.w * zoom;
-    const panelScreenY = imgTop + (panel.y / 100) * imgNatural.h * zoom;
-
-    dragOffset.current = {
-      x: e.clientX - panelScreenX,
-      y: e.clientY - panelScreenY,
+    const pos = clientToImgPct(e.clientX, e.clientY);
+    dragOffsetPct.current = {
+      x: pos.x - panel.x,
+      y: pos.y - panel.y,
     };
     draggingId.current = panel.id;
-  }, [tool, pan, zoom, imgNatural]);
+  };
 
-  // Touch pinch zoom
+  // Touch pinch
   const lastTouchDist = useRef(null);
   const handleTouchStart = (e) => {
     if (e.touches.length === 2) {
@@ -247,19 +231,37 @@ export default function RoofEditor({
         e.touches[0].clientX - e.touches[1].clientX,
         e.touches[0].clientY - e.touches[1].clientY
       );
-      setZoom(z => Math.max(0.1, Math.min(10, z * (dist / lastTouchDist.current))));
+      const next = Math.max(0.1, Math.min(10, zoomRef.current * (dist / lastTouchDist.current)));
+      setZoom(next);
+      zoomRef.current = next;
       lastTouchDist.current = dist;
     }
   };
 
-  const cursor = {
-    [TOOLS.pan]: isPanning.current ? 'grabbing' : 'grab',
-    [TOOLS.place]: 'crosshair',
-    [TOOLS.obstacle]: 'crosshair',
-  }[tool];
+  // Panel size as % of image dimensions
+  // panel.width_mm / 1000 = panel width in meters
+  // roofWidthM = roof width in meters = 100% of image width
+  // So panel width % = (panel.width_mm / 1000) / roofWidthM * 100
+  const getPanelSizePct = (panel) => {
+    const rw = roofWidthM || 10;
+    const rh = roofHeightM || (rw * (imgNatural.h / imgNatural.w || 0.8));
+    const wPct = panel.width_mm  ? (panel.width_mm  / 1000 / rw) * 100 : (1.1 / rw) * 100;
+    const hPct = panel.height_mm ? (panel.height_mm / 1000 / rh) * 100 : (1.76 / rh) * 100;
+    return { wPct, hPct };
+  };
 
-  const imgDisplayW = imgNatural.w * zoom;
-  const imgDisplayH = imgNatural.h * zoom;
+  const imgW = imgNatural.w * zoom;
+  const imgH = imgNatural.h * zoom;
+
+  const cursor = tool === TOOLS.obstacle ? 'crosshair' : (isPanning.current ? 'grabbing' : 'grab');
+
+  const fitView = () => {
+    if (!containerRef.current || imgNatural.w === 0) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const fit = Math.min(rect.width / imgNatural.w, rect.height / imgNatural.h) * 0.95;
+    setZoom(fit); zoomRef.current = fit;
+    setPan({ x: 0, y: 0 }); panRef.current = { x: 0, y: 0 };
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-gray-950 flex flex-col" style={{ userSelect: 'none' }}>
@@ -271,16 +273,14 @@ export default function RoofEditor({
           <ToolBtn active={tool === TOOLS.pan} onClick={() => setTool(TOOLS.pan)} title="Panorera / flytta paneler">
             <Hand className="w-4 h-4" />
           </ToolBtn>
-          <ToolBtn active={tool === TOOLS.place} onClick={() => setTool(TOOLS.place)} title="Placera panel" disabled={!selectedProduct}>
-            <Sun className="w-4 h-4" />
-          </ToolBtn>
-          <ToolBtn active={tool === TOOLS.obstacle} onClick={() => setTool(TOOLS.obstacle)} title="Rita hinder (dra rektangel)">
+          <ToolBtn active={tool === TOOLS.obstacle} onClick={() => setTool(TOOLS.obstacle)} title="Rita hinder – håll och dra">
             <Pencil className="w-4 h-4" />
           </ToolBtn>
         </div>
 
         {tool === TOOLS.obstacle && (
-          <div className="flex gap-1">
+          <div className="flex gap-1 items-center">
+            <span className="text-gray-400 text-xs">Färg:</span>
             {OBSTACLE_COLORS.map(c => (
               <button key={c} onClick={() => setObstacleColor(c)}
                 className="w-5 h-5 rounded-full border-2 transition-all"
@@ -291,28 +291,22 @@ export default function RoofEditor({
         )}
 
         <div className="flex items-center gap-1 bg-gray-800 rounded-lg overflow-hidden">
-          <button className="px-2 py-1.5 text-white hover:bg-gray-700" onClick={() => setZoom(z => Math.max(0.1, z - 0.15))}>
+          <button className="px-2 py-1.5 text-white hover:bg-gray-700" onClick={() => { const n = Math.max(0.1, zoom - 0.15); setZoom(n); zoomRef.current = n; }}>
             <Minus className="w-3.5 h-3.5" />
           </button>
           <span className="text-white text-xs px-2 min-w-[44px] text-center">{Math.round(zoom * 100)}%</span>
-          <button className="px-2 py-1.5 text-white hover:bg-gray-700" onClick={() => setZoom(z => Math.min(10, z + 0.15))}>
+          <button className="px-2 py-1.5 text-white hover:bg-gray-700" onClick={() => { const n = Math.min(10, zoom + 0.15); setZoom(n); zoomRef.current = n; }}>
             <Plus className="w-3.5 h-3.5" />
           </button>
         </div>
-        <button className="text-gray-400 hover:text-white p-1.5 rounded" onClick={() => {
-          if (!containerRef.current) return;
-          const rect = containerRef.current.getBoundingClientRect();
-          const fit = Math.min(rect.width / imgNatural.w, rect.height / imgNatural.h) * 0.95;
-          setZoom(fit); setPan({ x: 0, y: 0 });
-        }} title="Återställ vy">
+        <button className="text-gray-400 hover:text-white p-1.5 rounded" onClick={fitView} title="Återställ vy">
           <RotateCcw className="w-4 h-4" />
         </button>
 
         <div className="ml-auto flex items-center gap-2">
           <span className="text-xs text-gray-400 hidden sm:block">
-            {tool === TOOLS.pan && 'Dra bilden för att panorera • Dra panel för att flytta'}
-            {tool === TOOLS.place && 'Klicka på taket för att placera panel'}
-            {tool === TOOLS.obstacle && 'Håll nere och dra för att markera hinder'}
+            {tool === TOOLS.pan && 'Dra bilden för att panorera  •  Dra panel för att flytta'}
+            {tool === TOOLS.obstacle && 'Håll nere och dra för att rita hinder'}
           </span>
           <button className="text-white bg-gray-700 hover:bg-gray-600 rounded-lg px-3 py-1.5 text-sm flex items-center gap-1" onClick={onClose}>
             <X className="w-4 h-4" /> Stäng
@@ -320,7 +314,7 @@ export default function RoofEditor({
         </div>
       </div>
 
-      {/* Canvas */}
+      {/* Canvas area */}
       <div
         ref={containerRef}
         className="flex-1 overflow-hidden relative"
@@ -329,51 +323,89 @@ export default function RoofEditor({
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
       >
-        {/* Image + overlays */}
-        <div
-          style={{
-            position: 'absolute',
-            left: '50%',
-            top: '50%',
-            width: imgDisplayW,
-            height: imgDisplayH,
-            transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px))`,
-          }}
-        >
+        {/* Centred image container */}
+        <div style={{
+          position: 'absolute',
+          left: '50%',
+          top: '50%',
+          width: imgW,
+          height: imgH,
+          transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px))`,
+        }}>
           <img
             ref={imgRef}
             src={imageUrl}
             alt="Tak"
             draggable={false}
             onLoad={handleImgLoad}
-            style={{ width: imgDisplayW, height: imgDisplayH, display: 'block', pointerEvents: 'none' }}
+            style={{ width: imgW, height: imgH, display: 'block', pointerEvents: 'none' }}
           />
 
-          {/* Obstacles */}
+          {/* ── PANELS ──
+              Position and size both use % of the container (= % of image).
+              width % = panel_width_m / roof_width_m * 100
+              height % = panel_height_m / roof_height_m * 100
+              This means they automatically scale with the image at any zoom.
+          */}
+          {panels.map(panel => {
+            const { wPct, hPct } = getPanelSizePct(panel);
+            const isDragging = draggingId.current === panel.id;
+            return (
+              <div
+                key={panel.id}
+                style={{
+                  position: 'absolute',
+                  left: `${panel.x}%`,
+                  top: `${panel.y}%`,
+                  width: `${wPct}%`,
+                  height: `${hPct}%`,
+                  transform: 'translate(-50%, -50%)',
+                  cursor: isDragging ? 'grabbing' : 'grab',
+                  zIndex: 10,
+                  boxSizing: 'border-box',
+                }}
+                onMouseDown={e => handlePanelMouseDown(e, panel)}
+                onClick={e => e.stopPropagation()}
+              >
+                <SolarPanelSVG isSelected={isDragging} />
+                {/* Delete button */}
+                <button
+                  style={{
+                    position: 'absolute', top: 1, right: 1,
+                    background: 'rgba(0,0,0,0.8)', border: 'none',
+                    borderRadius: 2, cursor: 'pointer', padding: '1px 2px',
+                    lineHeight: 1, zIndex: 20, display: 'flex',
+                  }}
+                  onMouseDown={e => e.stopPropagation()}
+                  onClick={e => { e.stopPropagation(); onPanelsChange(prev => prev.filter(p => p.id !== panel.id)); }}
+                >
+                  <Trash2 style={{ width: 9, height: 9, color: '#ef4444' }} />
+                </button>
+              </div>
+            );
+          })}
+
+          {/* ── OBSTACLES ── */}
           {(obstacles || []).map(obs => (
             <div key={obs.id} style={{
               position: 'absolute',
-              left: `${obs.x}%`,
-              top: `${obs.y}%`,
-              width: `${obs.w}%`,
-              height: `${obs.h}%`,
+              left: `${obs.x}%`, top: `${obs.y}%`,
+              width: `${obs.w}%`, height: `${obs.h}%`,
               border: `2px solid ${obs.color}`,
               background: `${obs.color}33`,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'flex-start',
-              justifyContent: 'space-between',
-            }}
-              onClick={(e) => { e.stopPropagation(); }}
-            >
-              <span style={{ fontSize: 10, color: obs.color, background: 'rgba(0,0,0,0.7)', padding: '1px 4px', borderRadius: 2 }}>
+              zIndex: 15,
+              display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+              cursor: 'default',
+            }}>
+              <span style={{ fontSize: 9, color: obs.color, background: 'rgba(0,0,0,0.75)', padding: '1px 3px', borderRadius: 2 }}>
                 {obs.label}
               </span>
               <button
-                style={{ background: 'rgba(0,0,0,0.7)', border: 'none', cursor: 'pointer', padding: '1px 4px', borderRadius: 2 }}
-                onClick={(e) => { e.stopPropagation(); onObstaclesChange(prev => prev.filter(o => o.id !== obs.id)); }}
+                style={{ background: 'rgba(0,0,0,0.75)', border: 'none', cursor: 'pointer', padding: '1px 3px', borderRadius: 2, display: 'flex' }}
+                onMouseDown={e => e.stopPropagation()}
+                onClick={e => { e.stopPropagation(); onObstaclesChange(prev => prev.filter(o => o.id !== obs.id)); }}
               >
-                <Trash2 style={{ width: 10, height: 10, color: '#ef4444' }} />
+                <Trash2 style={{ width: 9, height: 9, color: '#ef4444' }} />
               </button>
             </div>
           ))}
@@ -382,60 +414,13 @@ export default function RoofEditor({
           {drawPreview && drawPreview.w > 0 && (
             <div style={{
               position: 'absolute',
-              left: `${drawPreview.x}%`,
-              top: `${drawPreview.y}%`,
-              width: `${drawPreview.w}%`,
-              height: `${drawPreview.h}%`,
+              left: `${drawPreview.x}%`, top: `${drawPreview.y}%`,
+              width: `${drawPreview.w}%`, height: `${drawPreview.h}%`,
               border: `2px dashed ${obstacleColor}`,
               background: `${obstacleColor}22`,
-              pointerEvents: 'none',
+              pointerEvents: 'none', zIndex: 20,
             }} />
           )}
-
-          {/* Panels — size is in image-space pixels, no zoom multiplication */}
-          {panels.map(panel => {
-            const pw = panel.width_mm ? (panel.width_mm / 1000) * pxPerMeter * zoom : panelW_img * zoom;
-            const ph = panel.height_mm ? (panel.height_mm / 1000) * pxPerMeter * zoom : panelH_img * zoom;
-            return (
-              <div key={panel.id} style={{
-                position: 'absolute',
-                left: `${panel.x}%`,
-                top: `${panel.y}%`,
-                width: pw,
-                height: ph,
-                transform: 'translate(-50%, -50%)',
-                cursor: 'grab',
-                zIndex: 10,
-              }}
-                onMouseDown={e => handlePanelMouseDown(e, panel)}
-                onClick={e => e.stopPropagation()}
-              >
-                <SolarPanelSVG widthPx={pw} heightPx={ph} isSelected={false} />
-                {/* Trash button on each panel */}
-                <button
-                  style={{
-                    position: 'absolute',
-                    top: 2,
-                    right: 2,
-                    background: 'rgba(0,0,0,0.75)',
-                    border: 'none',
-                    borderRadius: 3,
-                    cursor: 'pointer',
-                    padding: '2px 3px',
-                    lineHeight: 1,
-                    zIndex: 20,
-                  }}
-                  onMouseDown={e => e.stopPropagation()}
-                  onClick={e => {
-                    e.stopPropagation();
-                    onPanelsChange(prev => prev.filter(p => p.id !== panel.id));
-                  }}
-                >
-                  <Trash2 style={{ width: Math.max(8, Math.min(14, pw * 0.15)), height: Math.max(8, Math.min(14, pw * 0.15)), color: '#ef4444' }} />
-                </button>
-              </div>
-            );
-          })}
         </div>
 
         <div className="absolute bottom-4 right-4 text-xs text-gray-500 bg-gray-900/80 rounded px-2 py-1 pointer-events-none">
