@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { X, Minus, Plus, RotateCcw, Trash2, ZoomIn, ZoomOut, Check } from 'lucide-react';
+import { X, Minus, Plus, RotateCcw, Trash2, ZoomIn, RotateCw } from 'lucide-react';
 
 // ── Solar panel SVG ──────────────────────────────────────────────────────────
 function SolarPanelSVG({ isSelected }) {
@@ -61,12 +61,35 @@ function EdgeInputs({ polygon, edgeLengths, onEdgeLengthChange }) {
   );
 }
 
+// ── Long-press hook for corners ──────────────────────────────────────────────
+// Returns handlers + isHeld state
+function useCornerLongPress(onActivate, delay = 600) {
+  const timer = useRef(null);
+  const [holding, setHolding] = useState(false);
+
+  const start = useCallback((e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setHolding(true);
+    timer.current = setTimeout(() => {
+      onActivate();
+      setHolding(false);
+    }, delay);
+  }, [onActivate, delay]);
+
+  const cancel = useCallback(() => {
+    clearTimeout(timer.current);
+    setHolding(false);
+  }, []);
+
+  return { onMouseDown: start, onMouseUp: cancel, onMouseLeave: cancel, holding };
+}
+
 // ── Main component ───────────────────────────────────────────────────────────
 export default function RoofEditor({
   imageUrl, panels, onPanelsChange,
   obstacles, onObstaclesChange,
   selectedProduct, onClose,
-  // Controlled polygon + edge lengths
   polygon: polygonProp = [], onPolygonChange,
   edgeLengths: edgeLengthsProp = {}, onEdgeLengthsChange,
 }) {
@@ -76,30 +99,39 @@ export default function RoofEditor({
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [imgNatural, setImgNatural] = useState({ w: 1, h: 1 });
 
-  // Polygon state — controlled via props
+  // Polygon
   const [polygon, setPolygon] = useState(polygonProp);
   const [polyDone, setPolyDone] = useState(polygonProp.length >= 3);
   const [edgeLengths, setEdgeLengths] = useState(edgeLengthsProp);
 
-  // Long-press detection
+  // Panel rotation (0 = portrait, 90 = landscape)
+  const [panelRotation, setPanelRotation] = useState(0);
+
+  // Long-press for canvas (start drawing)
   const longPressTimer = useRef(null);
   const longPressFired = useRef(false);
   const [isDrawingMode, setIsDrawingMode] = useState(false);
-  const [longPressProgress, setLongPressProgress] = useState(0); // 0-100
+  const [longPressProgress, setLongPressProgress] = useState(0);
   const progressTimer = useRef(null);
 
-  // Pan drag
+  // Panning
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0 });
   const panOrigin = useRef({ x: 0, y: 0 });
 
-  // Drag panel
+  // Panel drag
   const draggingId = useRef(null);
   const dragOffset = useRef({ x: 0, y: 0 });
 
-  // Drag polygon corner
+  // Corner drag — activated via long press on corner
   const [draggingCornerIdx, setDraggingCornerIdx] = useState(null);
   const draggingCornerRef = useRef(null);
+
+  // Corner long-press progress per index
+  const [cornerHoldIdx, setCornerHoldIdx] = useState(null);
+  const [cornerHoldPct, setCornerHoldPct] = useState(0);
+  const cornerHoldTimer = useRef(null);
+  const cornerHoldProgress = useRef(null);
 
   // Always-current refs
   const panRef = useRef({ x: 0, y: 0 });
@@ -159,7 +191,7 @@ export default function RoofEditor({
     };
   }, []);
 
-  // ── Long-press handlers ───────────────────────────────────────────────────
+  // ── Canvas long-press (start drawing) ────────────────────────────────────
   const startLongPress = useCallback((cx, cy) => {
     longPressFired.current = false;
     setLongPressProgress(0);
@@ -189,14 +221,41 @@ export default function RoofEditor({
     setLongPressProgress(0);
   }, []);
 
-  // ── Click on canvas → add polygon point ──────────────────────────────────
+  // ── Corner long-press ─────────────────────────────────────────────────────
+  const startCornerHold = useCallback((idx, e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setCornerHoldIdx(idx);
+    setCornerHoldPct(0);
+    const startTime = Date.now();
+    const HOLD_MS = 600;
+    cornerHoldProgress.current = setInterval(() => {
+      const pct = Math.min(100, ((Date.now() - startTime) / HOLD_MS) * 100);
+      setCornerHoldPct(pct);
+    }, 20);
+    cornerHoldTimer.current = setTimeout(() => {
+      clearInterval(cornerHoldProgress.current);
+      setCornerHoldIdx(null);
+      setCornerHoldPct(0);
+      setDraggingCornerIdx(idx);
+      draggingCornerRef.current = idx;
+    }, HOLD_MS);
+  }, []);
+
+  const cancelCornerHold = useCallback(() => {
+    clearTimeout(cornerHoldTimer.current);
+    clearInterval(cornerHoldProgress.current);
+    setCornerHoldIdx(null);
+    setCornerHoldPct(0);
+  }, []);
+
+  // ── Add polygon point on click ────────────────────────────────────────────
   const handleCanvasClick = useCallback((cx, cy) => {
     if (!isDrawingModeRef.current || polyDoneRef.current) return;
     const poly = polygonRef.current;
     if (poly.length === 0) return;
     const pos = clientToImgPct(cx, cy);
 
-    // Check if clicking near the first point to close polygon
     if (poly.length >= 3) {
       const first = poly[0];
       const dist = Math.hypot(pos.x - first.x, pos.y - first.y);
@@ -218,14 +277,9 @@ export default function RoofEditor({
   const handleMouseDown = useCallback((e) => {
     if (e.button !== 0) return;
     if (draggingId.current) return;
-    // Don't start panning if a corner drag just started
     if (draggingCornerRef.current !== null) return;
     if (!isDrawingModeRef.current) {
-      // Start long-press if NOT already in drawing mode
-      if (!polyDoneRef.current) {
-        startLongPress(e.clientX, e.clientY);
-      }
-      // Also allow panning
+      if (!polyDoneRef.current) startLongPress(e.clientX, e.clientY);
       isPanning.current = true;
       panStart.current = { x: e.clientX, y: e.clientY };
       panOrigin.current = { ...panRef.current };
@@ -233,7 +287,6 @@ export default function RoofEditor({
   }, [startLongPress]);
 
   const handleMouseMove = useCallback((e) => {
-    // Move polygon corner
     if (draggingCornerRef.current !== null) {
       const pos = clientToImgPct(e.clientX, e.clientY);
       const idx = draggingCornerRef.current;
@@ -248,7 +301,6 @@ export default function RoofEditor({
     if (isPanning.current && !isDrawingModeRef.current) {
       const dx = e.clientX - panStart.current.x;
       const dy = e.clientY - panStart.current.y;
-      // Cancel long press if dragging
       if (Math.hypot(dx, dy) > 8) cancelLongPress();
       const next = { x: panOrigin.current.x + dx, y: panOrigin.current.y + dy };
       setPan(next); panRef.current = next;
@@ -265,11 +317,11 @@ export default function RoofEditor({
 
   const handleMouseUp = useCallback((e) => {
     cancelLongPress();
+    cancelCornerHold();
     const wasPanning = isPanning.current;
     isPanning.current = false;
     draggingId.current = null;
 
-    // Release corner drag on mouse up
     if (draggingCornerRef.current !== null) {
       setDraggingCornerIdx(null);
       draggingCornerRef.current = null;
@@ -277,14 +329,11 @@ export default function RoofEditor({
     }
 
     if (isDrawingModeRef.current) {
-      // In drawing mode, every click adds a point
       const dx = e.clientX - panStart.current.x;
       const dy = e.clientY - panStart.current.y;
-      if (Math.hypot(dx, dy) < 8) {
-        handleCanvasClick(e.clientX, e.clientY);
-      }
+      if (Math.hypot(dx, dy) < 8) handleCanvasClick(e.clientX, e.clientY);
     }
-  }, [cancelLongPress, handleCanvasClick]);
+  }, [cancelLongPress, cancelCornerHold, handleCanvasClick]);
 
   useEffect(() => {
     window.addEventListener('mousemove', handleMouseMove);
@@ -331,17 +380,34 @@ export default function RoofEditor({
       const t = e.touches[0];
       const dx = t.clientX - lastTouch.current.x;
       const dy = t.clientY - lastTouch.current.y;
-      if (Math.hypot(dx, dy) > 8) cancelLongPress();
+      if (Math.hypot(dx, dy) > 8) { cancelLongPress(); cancelCornerHold(); }
+      if (draggingCornerRef.current !== null) {
+        const pos = clientToImgPct(t.clientX, t.clientY);
+        const idx = draggingCornerRef.current;
+        setPolygon(prev => {
+          const next = prev.map((pt, i) => i === idx ? pos : pt);
+          polygonRef.current = next;
+          onPolygonChange?.(next);
+          return next;
+        });
+        lastTouch.current = { x: t.clientX, y: t.clientY };
+        return;
+      }
       if (!isDrawingModeRef.current) {
         const next = { x: panRef.current.x + dx, y: panRef.current.y + dy };
         setPan(next); panRef.current = next;
         lastTouch.current = { x: t.clientX, y: t.clientY };
       }
     }
-  }, [cancelLongPress]);
+  }, [cancelLongPress, cancelCornerHold, clientToImgPct, onPolygonChange]);
 
   const handleTouchEnd = useCallback((e) => {
     cancelLongPress();
+    cancelCornerHold();
+    if (draggingCornerRef.current !== null) {
+      setDraggingCornerIdx(null);
+      draggingCornerRef.current = null;
+    }
     if (e.changedTouches.length === 1 && isDrawingModeRef.current) {
       const t = e.changedTouches[0];
       const start = lastTouch.current || { x: t.clientX, y: t.clientY };
@@ -350,9 +416,9 @@ export default function RoofEditor({
       }
     }
     lastTouchDist.current = null;
-  }, [cancelLongPress, handleCanvasClick]);
+  }, [cancelLongPress, cancelCornerHold, handleCanvasClick]);
 
-  // ── Panel dragging ────────────────────────────────────────────────────────
+  // ── Panel drag ────────────────────────────────────────────────────────────
   const handlePanelMouseDown = (e, panel) => {
     if (isDrawingMode) return;
     e.preventDefault(); e.stopPropagation();
@@ -368,39 +434,30 @@ export default function RoofEditor({
     onEdgeLengthsChange?.(next);
   };
 
-  // ── Compute polygon area from edge lengths ────────────────────────────────
-  // Uses the pixel-polygon aspect ratio to distribute lengths properly
+  // ── Computed area ─────────────────────────────────────────────────────────
   const computedArea = (() => {
     const filledLengths = polygon.map((_, i) => parseFloat(edgeLengths[i]));
     if (filledLengths.some(isNaN) || filledLengths.length < 3) return null;
-    // Shoelace on the pixel polygon to get pixel-area, then scale
-    // Scale factor: total perimeter in meters / total perimeter in % units
-    const pixPoly = polygon;
-    let pixPerim = 0;
-    let mPerim = 0;
-    for (let i = 0; i < pixPoly.length; i++) {
-      const j = (i + 1) % pixPoly.length;
-      const dpx = Math.hypot(pixPoly[j].x - pixPoly[i].x, pixPoly[j].y - pixPoly[i].y);
-      pixPerim += dpx;
+    let pixPerim = 0, mPerim = 0;
+    for (let i = 0; i < polygon.length; i++) {
+      const j = (i + 1) % polygon.length;
+      pixPerim += Math.hypot(polygon[j].x - polygon[i].x, polygon[j].y - polygon[i].y);
       mPerim += filledLengths[i];
     }
     if (pixPerim === 0) return null;
-    const mPerPct = mPerim / pixPerim; // meters per % unit
-    // Shoelace area in % units
+    const mPerPct = mPerim / pixPerim;
     let area = 0;
-    for (let i = 0; i < pixPoly.length; i++) {
-      const j = (i + 1) % pixPoly.length;
-      area += pixPoly[i].x * pixPoly[j].y - pixPoly[j].x * pixPoly[i].y;
+    for (let i = 0; i < polygon.length; i++) {
+      const j = (i + 1) % polygon.length;
+      area += polygon[i].x * polygon[j].y - polygon[j].x * polygon[i].y;
     }
-    area = Math.abs(area) / 2;
-    return area * mPerPct * mPerPct; // convert % units² → m²
+    return Math.abs(area) / 2 * mPerPct * mPerPct;
   })();
 
   // ── Fill polygon with panels ──────────────────────────────────────────────
   const fillWithPanels = useCallback(() => {
     if (!polyDone || polygon.length < 3 || !selectedProduct) return;
 
-    // Determine scale: meters per % unit (using perimeter ratio)
     const filledLengths = polygon.map((_, i) => parseFloat(edgeLengths[i]));
     let mPerPct = null;
     if (!filledLengths.some(isNaN) && filledLengths.length >= 3) {
@@ -412,35 +469,34 @@ export default function RoofEditor({
       }
       if (pixPerim > 0) mPerPct = mPerim / pixPerim;
     }
-    // Fallback: assume polygon spans ~10m across its bounding box
     if (!mPerPct) {
       const xs = polygon.map(p => p.x);
       const bboxW = Math.max(...xs) - Math.min(...xs);
       mPerPct = bboxW > 0 ? 10 / bboxW : 0.1;
     }
 
-    const panelWPct = (selectedProduct.width_mm / 1000) / mPerPct;
-    const panelHPct = (selectedProduct.height_mm / 1000) / mPerPct;
+    // Apply rotation: swap w/h if 90°
+    const isRotated = panelRotation === 90;
+    const physW = isRotated ? selectedProduct.height_mm : selectedProduct.width_mm;
+    const physH = isRotated ? selectedProduct.width_mm : selectedProduct.height_mm;
 
-    // Bounding box of polygon
+    const panelWPct = (physW / 1000) / mPerPct;
+    const panelHPct = (physH / 1000) / mPerPct;
+
     const xs = polygon.map(p => p.x);
     const ys = polygon.map(p => p.y);
     const minX = Math.min(...xs); const maxX = Math.max(...xs);
     const minY = Math.min(...ys); const maxY = Math.max(...ys);
 
-    // Safety: panel must be smaller than bounding box
     if (panelWPct <= 0 || panelHPct <= 0 || panelWPct > (maxX - minX) * 2 || panelHPct > (maxY - minY) * 2) return;
 
-    // Check a 3x3 grid of sample points inside panel (80% of half-size inset)
     const SAMPLES = [-0.8, 0, 0.8];
     const panelFits = (cx, cy) => {
       const hw = panelWPct / 2;
       const hh = panelHPct / 2;
-      for (const dy of SAMPLES) {
-        for (const dx of SAMPLES) {
+      for (const dy of SAMPLES)
+        for (const dx of SAMPLES)
           if (!pointInPolygon(cx + dx * hw, cy + dy * hh, polygon)) return false;
-        }
-      }
       return true;
     };
 
@@ -459,6 +515,7 @@ export default function RoofEditor({
             height_mm: selectedProduct.height_mm,
             w_pct: panelWPct,
             h_pct: panelHPct,
+            rotation: panelRotation,
             x, y,
           });
         }
@@ -467,7 +524,7 @@ export default function RoofEditor({
       y += panelHPct;
     }
     onPanelsChange(newPanels);
-  }, [polyDone, polygon, edgeLengths, selectedProduct, onPanelsChange]);
+  }, [polyDone, polygon, edgeLengths, selectedProduct, panelRotation, onPanelsChange]);
 
   // ── Fit view ──────────────────────────────────────────────────────────────
   const fitView = () => {
@@ -478,17 +535,9 @@ export default function RoofEditor({
     setPan({ x: 0, y: 0 }); panRef.current = { x: 0, y: 0 };
   };
 
-  // ── Polygon SVG overlay ───────────────────────────────────────────────────
   const polyPoints = polygon.map(p => `${p.x},${p.y}`).join(' ');
   const imgW = imgNatural.w * zoom;
   const imgH = imgNatural.h * zoom;
-
-  // ── Panel size ────────────────────────────────────────────────────────────
-  const getPanelSizePct = (panel) => ({
-    wPct: panel.w_pct || 8,
-    hPct: panel.h_pct || 13,
-  });
-
   const hasEdgeLengths = polygon.length >= 3 && !polygon.map((_, i) => parseFloat(edgeLengths[i])).some(isNaN);
 
   return (
@@ -516,8 +565,26 @@ export default function RoofEditor({
         {/* Reset polygon */}
         {polygon.length > 0 && (
           <button className="text-xs text-red-400 hover:text-red-300 bg-gray-800 px-2 py-1 rounded-lg flex items-center gap-1"
-            onClick={() => { setPolygon([]); polygonRef.current = []; setPolyDone(false); polyDoneRef.current = false; setIsDrawingMode(false); isDrawingModeRef.current = false; setEdgeLengths({}); onPanelsChange([]); onPolygonChange?.([]); onEdgeLengthsChange?.({}); }}>
+            onClick={() => {
+              setPolygon([]); polygonRef.current = [];
+              setPolyDone(false); polyDoneRef.current = false;
+              setIsDrawingMode(false); isDrawingModeRef.current = false;
+              setEdgeLengths({}); onPanelsChange([]);
+              onPolygonChange?.([]); onEdgeLengthsChange?.({});
+            }}>
             <Trash2 className="w-3.5 h-3.5" /> Rensa takyta
+          </button>
+        )}
+
+        {/* Panel rotation toggle */}
+        {selectedProduct && (
+          <button
+            onClick={() => setPanelRotation(r => r === 0 ? 90 : 0)}
+            className={`text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 font-medium border transition-all ${panelRotation === 90 ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-800 border-gray-600 text-gray-300 hover:text-white'}`}
+            title="Rotera panelriktning"
+          >
+            <RotateCw className="w-3.5 h-3.5" />
+            {panelRotation === 0 ? 'Stående' : 'Liggande'}
           </button>
         )}
 
@@ -556,13 +623,14 @@ export default function RoofEditor({
             <span className="text-blue-400 font-medium">✓ Takyta klar ({polygon.length} hörn)</span>
             {draggingCornerIdx !== null
               ? <span className="text-orange-400">● Drar hörn {draggingCornerIdx + 1} — släpp för att placera</span>
+              : cornerHoldIdx !== null
+              ? <span className="text-yellow-400">● Håll kvar för att flytta hörn {cornerHoldIdx + 1}...</span>
               : !selectedProduct
               ? <span className="text-yellow-400">— Välj en solpanel för att fylla ytan</span>
-              : <span className="text-gray-400">— Dra i hörnen för att justera takyta</span>
+              : <span className="text-gray-400">— Håll ett hörn för att flytta det</span>
             }
           </>
         )}
-        {/* Long-press progress */}
         {longPressProgress > 0 && longPressProgress < 100 && (
           <div className="ml-auto flex items-center gap-2">
             <span className="text-yellow-400">Håll kvar...</span>
@@ -573,7 +641,7 @@ export default function RoofEditor({
         )}
       </div>
 
-      {/* ── Edge-length inputs (shown when polygon is done) ── */}
+      {/* ── Edge-length inputs ── */}
       {polyDone && (
         <EdgeInputs polygon={polygon} edgeLengths={edgeLengths} onEdgeLengthChange={handleEdgeLengthChange} />
       )}
@@ -582,7 +650,7 @@ export default function RoofEditor({
       <div
         ref={containerRef}
         className="flex-1 overflow-hidden relative"
-        style={{ cursor: isDrawingMode ? 'crosshair' : 'grab' }}
+        style={{ cursor: isDrawingMode ? 'crosshair' : (draggingCornerIdx !== null ? 'grabbing' : 'grab') }}
         onMouseDown={handleMouseDown}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
@@ -598,22 +666,20 @@ export default function RoofEditor({
             onLoad={handleImgLoad}
             style={{ width: imgW, height: imgH, display: 'block', pointerEvents: 'none' }} />
 
-          {/* Polygon overlay (SVG in % coordinates) */}
+          {/* Polygon SVG overlay */}
           <svg style={{
             position: 'absolute', left: 0, top: 0, width: '100%', height: '100%', overflow: 'visible',
             pointerEvents: polyDone ? 'auto' : 'none',
           }} viewBox="0 0 100 100" preserveAspectRatio="none">
-            {/* Filled polygon */}
             {polyDone && polygon.length >= 3 && (
               <polygon points={polyPoints} fill="rgba(59,130,246,0.15)" stroke="#3b82f6" strokeWidth="0.3" />
             )}
-            {/* Lines (in progress) */}
             {!polyDone && polygon.length >= 2 && polygon.map((pt, i) => {
               if (i === 0) return null;
               const prev = polygon[i - 1];
               return <line key={i} x1={prev.x} y1={prev.y} x2={pt.x} y2={pt.y} stroke="#facc15" strokeWidth="0.4" />;
             })}
-            {/* Edge length labels */}
+            {/* Edge labels */}
             {polyDone && polygon.map((pt, i) => {
               const next = polygon[(i + 1) % polygon.length];
               const mx = (pt.x + next.x) / 2;
@@ -628,25 +694,44 @@ export default function RoofEditor({
                 </text>
               );
             })}
-            {/* Corner points — draggable when polyDone */}
+            {/* Corner points with long-press hold indicator */}
             {polygon.map((pt, i) => {
               const isDragging = draggingCornerIdx === i;
+              const isHolding = cornerHoldIdx === i;
+              const radius = isDragging ? 2.5 : 1.8;
+              const color = isDragging ? '#f97316' : isHolding ? '#facc15' : (i === 0 ? '#22c55e' : '#facc15');
+              // Arc for hold progress
+              const HOLD_R = 3.5;
+              const pct = isHolding ? cornerHoldPct / 100 : 0;
+              const angle = pct * 2 * Math.PI - Math.PI / 2;
+              const arcX = pt.x + HOLD_R * Math.cos(angle);
+              const arcY = pt.y + HOLD_R * Math.sin(angle);
+              const largeArc = pct > 0.5 ? 1 : 0;
+
               return (
-                <g key={i} style={{ cursor: polyDone ? (isDragging ? 'grabbing' : 'grab') : 'default' }}
-                  onMouseDown={polyDone ? (e) => {
+                <g key={i}
+                  style={{ cursor: isDragging ? 'grabbing' : (polyDone ? 'pointer' : 'default') }}
+                  onMouseDown={polyDone && !isDragging ? (e) => startCornerHold(i, e) : undefined}
+                  onMouseUp={cancelCornerHold}
+                  onMouseLeave={cancelCornerHold}
+                  onTouchStart={polyDone && !isDragging ? (e) => {
                     e.stopPropagation();
-                    e.preventDefault();
-                    setDraggingCornerIdx(i);
-                    draggingCornerRef.current = i;
+                    startCornerHold(i, e);
                   } : undefined}
+                  onTouchEnd={cancelCornerHold}
                 >
-                  {/* Large invisible hit area */}
-                  <circle cx={pt.x} cy={pt.y} r="3" fill="transparent" />
-                  {/* Visible point */}
-                  <circle cx={pt.x} cy={pt.y} r={isDragging ? 2 : 1.5}
-                    fill={isDragging ? '#f97316' : (i === 0 ? '#22c55e' : '#facc15')}
-                    stroke="white" strokeWidth="0.4" />
-                  <text x={pt.x + 1.8} y={pt.y - 1.2} fill="white" fontSize="2"
+                  {/* Hit area */}
+                  <circle cx={pt.x} cy={pt.y} r="4" fill="transparent" />
+                  {/* Hold progress arc */}
+                  {isHolding && pct > 0 && pct < 1 && (
+                    <path
+                      d={`M ${pt.x} ${pt.y - HOLD_R} A ${HOLD_R} ${HOLD_R} 0 ${largeArc} 1 ${arcX} ${arcY}`}
+                      fill="none" stroke="#facc15" strokeWidth="0.8" opacity="0.9"
+                    />
+                  )}
+                  {/* Visible dot */}
+                  <circle cx={pt.x} cy={pt.y} r={radius} fill={color} stroke="white" strokeWidth="0.4" />
+                  <text x={pt.x + 2} y={pt.y - 1.5} fill="white" fontSize="2"
                     style={{ filter: 'drop-shadow(0 0 2px black)', pointerEvents: 'none' }}>{i + 1}</text>
                 </g>
               );
@@ -655,14 +740,16 @@ export default function RoofEditor({
 
           {/* Panels */}
           {panels.map(panel => {
-            const { wPct, hPct } = getPanelSizePct(panel);
+            const wPct = panel.w_pct || 8;
+            const hPct = panel.h_pct || 13;
+            const rot = panel.rotation || 0;
             const isDrag = draggingId.current === panel.id;
             return (
               <div key={panel.id} style={{
                 position: 'absolute',
                 left: `${panel.x}%`, top: `${panel.y}%`,
                 width: `${wPct}%`, height: `${hPct}%`,
-                transform: 'translate(-50%, -50%)',
+                transform: `translate(-50%, -50%) rotate(${rot}deg)`,
                 cursor: isDrag ? 'grabbing' : 'grab',
                 zIndex: 10,
               }}
