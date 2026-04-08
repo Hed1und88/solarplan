@@ -65,7 +65,10 @@ function EdgeInputs({ polygon, edgeLengths, onEdgeLengthChange }) {
 export default function RoofEditor({
   imageUrl, panels, onPanelsChange,
   obstacles, onObstaclesChange,
-  selectedProduct, roofWidthM, roofHeightM, onClose
+  selectedProduct, onClose,
+  // Controlled polygon + edge lengths
+  polygon: polygonProp = [], onPolygonChange,
+  edgeLengths: edgeLengthsProp = {}, onEdgeLengthsChange,
 }) {
   const containerRef = useRef(null);
   const imgRef = useRef(null);
@@ -73,10 +76,10 @@ export default function RoofEditor({
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [imgNatural, setImgNatural] = useState({ w: 1, h: 1 });
 
-  // Polygon state
-  const [polygon, setPolygon] = useState([]); // [{x,y}] in % of image
-  const [polyDone, setPolyDone] = useState(false);
-  const [edgeLengths, setEdgeLengths] = useState({}); // index → meters
+  // Polygon state — controlled via props
+  const [polygon, setPolygon] = useState(polygonProp);
+  const [polyDone, setPolyDone] = useState(polygonProp.length >= 3);
+  const [edgeLengths, setEdgeLengths] = useState(edgeLengthsProp);
 
   // Long-press detection
   const longPressTimer = useRef(null);
@@ -197,13 +200,14 @@ export default function RoofEditor({
         polyDoneRef.current = true;
         setIsDrawingMode(false);
         isDrawingModeRef.current = false;
+        onPolygonChange?.(poly);
         return;
       }
     }
     const next = [...poly, pos];
     setPolygon(next);
     polygonRef.current = next;
-  }, [clientToImgPct]);
+  }, [clientToImgPct, onPolygonChange]);
 
   // ── Mouse events ─────────────────────────────────────────────────────────
   const handleMouseDown = useCallback((e) => {
@@ -333,7 +337,9 @@ export default function RoofEditor({
 
   // ── Edge length input ─────────────────────────────────────────────────────
   const handleEdgeLengthChange = (idx, val) => {
-    setEdgeLengths(prev => ({ ...prev, [idx]: val }));
+    const next = { ...edgeLengths, [idx]: val };
+    setEdgeLengths(next);
+    onEdgeLengthsChange?.(next);
   };
 
   // ── Compute polygon area from edge lengths ────────────────────────────────
@@ -473,7 +479,7 @@ export default function RoofEditor({
         {/* Reset polygon */}
         {polygon.length > 0 && (
           <button className="text-xs text-red-400 hover:text-red-300 bg-gray-800 px-2 py-1 rounded-lg flex items-center gap-1"
-            onClick={() => { setPolygon([]); polygonRef.current = []; setPolyDone(false); polyDoneRef.current = false; setIsDrawingMode(false); isDrawingModeRef.current = false; setEdgeLengths({}); onPanelsChange([]); }}>
+            onClick={() => { setPolygon([]); polygonRef.current = []; setPolyDone(false); polyDoneRef.current = false; setIsDrawingMode(false); isDrawingModeRef.current = false; setEdgeLengths({}); onPanelsChange([]); onPolygonChange?.([]); onEdgeLengthsChange?.({}); }}>
             <Trash2 className="w-3.5 h-3.5" /> Rensa takyta
           </button>
         )}

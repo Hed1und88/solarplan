@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -35,15 +35,17 @@ export default function SolarDataPanel({ project }) {
   const [forecastData, setForecastData] = useState(null);
   const [location, setLocation] = useState(null);
 
-  // Parse panel layout data — format is { panels: [...], obstacles: [...] } or legacy []
-  const panels = (() => {
+  // Parse panel layout data
+  const { panels, panelBrand } = (() => {
     try {
       const d = JSON.parse(project.panel_layout_data || '{}');
-      return Array.isArray(d) ? d : (d.panels || []);
-    } catch { return []; }
+      const panelList = Array.isArray(d) ? d : (d.panels || []);
+      const brand = panelList[0]?.product_name || null;
+      return { panels: panelList, panelBrand: brand };
+    } catch { return { panels: [], panelBrand: null }; }
   })();
+
   const panelCount = panels.length;
-  // Sum actual power_watts if available, else fall back to 400W per panel
   const totalWatts = panelCount > 0
     ? panels.reduce((sum, p) => sum + (p.power_watts || 400), 0)
     : 0;
@@ -81,10 +83,16 @@ export default function SolarDataPanel({ project }) {
     }
   };
 
+  // Auto-fetch when tab opens if panels + address exist
+  useEffect(() => {
+    if (project.address && panelCount > 0) {
+      fetchData();
+    }
+  }, []);
+
   // Parse PVGIS monthly data
   const pvgisMonthly = pvgisData?.outputs?.monthly?.fixed?.map(m => m.E_m) || null;
   const pvgisYearly = pvgisData?.outputs?.totals?.fixed?.E_y || null;
-  const pvgisIrr = pvgisData?.outputs?.totals?.fixed?.H_i_m || null;
 
   // Parse forecast.solar monthly data (watt-hours -> kWh)
   const forecastMonthly = forecastData?.result
@@ -100,7 +108,7 @@ export default function SolarDataPanel({ project }) {
     <div className="space-y-4">
       {/* Header card */}
       <Card className="border-0 shadow-sm">
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row items-center justify-between gap-3 flex-wrap">
           <div>
             <CardTitle className="text-lg flex items-center gap-2">
               <Sun className="w-5 h-5 text-primary" /> Solenergianalys
@@ -108,13 +116,20 @@ export default function SolarDataPanel({ project }) {
             {project.address && (
               <p className="text-sm text-muted-foreground mt-1">{project.address}</p>
             )}
+            {panelCount > 0 && (
+              <div className="flex gap-2 mt-2 flex-wrap">
+                <Badge variant="outline">{panelCount} paneler</Badge>
+                <Badge className="bg-primary/10 text-primary border-primary/20">{estimatedKwp.toFixed(2)} kWp</Badge>
+                {panelBrand && <Badge variant="outline">{panelBrand}</Badge>}
+              </div>
+            )}
           </div>
           <Button onClick={fetchData} disabled={loading} className="gap-2" size="sm">
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
             {loading ? 'Hämtar...' : pvgisData || forecastData ? 'Uppdatera' : 'Hämta soldata'}
           </Button>
         </CardHeader>
-        {(error) && (
+        {error && (
           <CardContent>
             <div className="flex items-start gap-2 p-3 bg-destructive/10 text-destructive rounded-xl text-sm">
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -125,7 +140,8 @@ export default function SolarDataPanel({ project }) {
         {location && (
           <CardContent>
             <p className="text-xs text-muted-foreground">
-              Koordinater: {location.lat.toFixed(4)}°N, {location.lon.toFixed(4)}°E — Systemstorlek: {estimatedKwp} kWp ({panelCount > 0 ? `${panelCount} paneler` : 'uppskattad'})
+              Koordinater: {location.lat.toFixed(4)}°N, {location.lon.toFixed(4)}°E — {estimatedKwp} kWp
+              {panelBrand ? ` · ${panelBrand}` : ''}
             </p>
           </CardContent>
         )}
@@ -228,7 +244,11 @@ export default function SolarDataPanel({ project }) {
           <CardContent className="py-12 text-center text-muted-foreground">
             <Sun className="w-12 h-12 mx-auto mb-3 opacity-30" />
             <p className="font-medium mb-1">Ingen soldata hämtad ännu</p>
-            <p className="text-sm">Klicka på "Hämta soldata" för att se beräknad årsproduktion baserat på projektets adress.</p>
+            <p className="text-sm">
+              {panelCount === 0
+                ? 'Placera solpaneler i fliken "Paneler" för att beräkna energiproduktion automatiskt.'
+                : 'Klicka på "Hämta soldata" för att se beräknad årsproduktion.'}
+            </p>
           </CardContent>
         </Card>
       )}
