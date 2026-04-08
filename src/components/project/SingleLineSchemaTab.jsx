@@ -158,10 +158,14 @@ function wireColor(fromType, toType) {
 // ─── Single component node ────────────────────────────────────────────────────
 const NODE_W = 90;
 const NODE_H = 70;
+const LONG_PRESS_MS = 400;
 
 function SchemaNode({ comp, selected, onSelect, onDrag, onDelete, onLabelChange }) {
   const [editing, setEditing] = useState(false);
   const [label, setLabel] = useState(comp.label || '');
+  const [holding, setHolding] = useState(false);
+  const holdTimer = useRef(null);
+  const didDrag = useRef(false);
 
   const handleDoubleClick = (e) => {
     e.stopPropagation();
@@ -175,20 +179,60 @@ function SchemaNode({ comp, selected, onSelect, onDrag, onDelete, onLabelChange 
   const handleMouseDown = (e) => {
     if (editing) return;
     e.stopPropagation();
-    onSelect(comp.id);
-    onDrag(e, comp.id);
+    didDrag.current = false;
+    setHolding(true);
+    holdTimer.current = setTimeout(() => {
+      didDrag.current = true;
+      setHolding(false);
+      onSelect(comp.id);
+      onDrag(e, comp.id);
+    }, LONG_PRESS_MS);
+  };
+
+  const handleMouseUp = (e) => {
+    clearTimeout(holdTimer.current);
+    if (!didDrag.current) {
+      setHolding(false);
+      onSelect(comp.id);
+    }
+  };
+
+  const handleTouchStart = (e) => {
+    if (editing) return;
+    e.stopPropagation();
+    didDrag.current = false;
+    setHolding(true);
+    holdTimer.current = setTimeout(() => {
+      didDrag.current = true;
+      setHolding(false);
+      onSelect(comp.id);
+      onDrag(e.touches[0], comp.id);
+    }, LONG_PRESS_MS);
+  };
+
+  const handleTouchEnd = () => {
+    clearTimeout(holdTimer.current);
+    if (!didDrag.current) {
+      setHolding(false);
+      onSelect(comp.id);
+    }
   };
 
   return (
-    <g transform={`translate(${comp.x},${comp.y})`} style={{ cursor: 'move' }}
+    <g transform={`translate(${comp.x},${comp.y})`}
+      style={{ cursor: holding ? 'wait' : (didDrag.current ? 'grabbing' : 'pointer') }}
       onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
       onDoubleClick={handleDoubleClick}>
       {/* Shadow */}
       <rect x={2} y={2} width={NODE_W} height={NODE_H + 30} rx={8} fill="rgba(0,0,0,0.35)" />
       {/* Background */}
       <rect x={0} y={0} width={NODE_W} height={NODE_H + 30} rx={8}
         fill={selected ? '#1e3a5f' : '#0f172a'}
-        stroke={selected ? '#3b82f6' : '#334155'} strokeWidth={selected ? 2 : 1} />
+        stroke={holding ? '#f97316' : selected ? '#3b82f6' : '#334155'}
+        strokeWidth={holding || selected ? 2 : 1} />
       {/* Symbol */}
       <foreignObject x={5} y={5} width={NODE_W - 10} height={NODE_H - 5}>
         <div xmlns="http://www.w3.org/1999/xhtml" style={{ width: '100%', height: '100%' }}>
@@ -294,32 +338,46 @@ export default function SingleLineSchemaTab({ project, onUpdate }) {
   const startDrag = useCallback((e, id) => {
     const svgRect = svgRef.current.getBoundingClientRect();
     const comp = schema.components.find(c => c.id === id);
-    const mouseX = (e.clientX - svgRect.left) / zoom - pan.x / zoom;
-    const mouseY = (e.clientY - svgRect.top) / zoom - pan.y / zoom;
+    const clientX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
+    const clientY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
+    const mouseX = (clientX - svgRect.left) / zoom - pan.x / zoom;
+    const mouseY = (clientY - svgRect.top) / zoom - pan.y / zoom;
     dragOffset.current = { x: mouseX - comp.x, y: mouseY - comp.y };
     draggingId.current = id;
   }, [schema, zoom, pan]);
 
   useEffect(() => {
+    const moveCoords = (e) => {
+      if (e.touches) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      return { x: e.clientX, y: e.clientY };
+    };
     const onMove = (e) => {
+      const { x: cx, y: cy } = moveCoords(e);
       if (draggingId.current && svgRef.current) {
         const svgRect = svgRef.current.getBoundingClientRect();
-        const mouseX = (e.clientX - svgRect.left) / zoom - pan.x / zoom;
-        const mouseY = (e.clientY - svgRect.top) / zoom - pan.y / zoom;
+        const mouseX = (cx - svgRect.left) / zoom - pan.x / zoom;
+        const mouseY = (cy - svgRect.top) / zoom - pan.y / zoom;
         const nx = Math.max(0, mouseX - dragOffset.current.x);
         const ny = Math.max(0, mouseY - dragOffset.current.y);
         setSchema(s => ({ ...s, components: s.components.map(c => c.id === draggingId.current ? { ...c, x: nx, y: ny } : c) }));
       }
       if (isPanning.current) {
-        const dx = e.clientX - panStart.current.x;
-        const dy = e.clientY - panStart.current.y;
+        const dx = cx - panStart.current.x;
+        const dy = cy - panStart.current.y;
         setPan({ x: panOrigin.current.x + dx, y: panOrigin.current.y + dy });
       }
     };
     const onUp = () => { draggingId.current = null; isPanning.current = false; };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
-    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+    window.addEventListener('touchmove', onMove, { passive: true });
+    window.addEventListener('touchend', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onUp);
+    };
   }, [zoom, pan]);
 
   // ── Pan canvas ────────────────────────────────────────────────────────────
@@ -425,7 +483,7 @@ export default function SingleLineSchemaTab({ project, onUpdate }) {
         <span className="flex items-center gap-1.5"><span className="w-6 h-0.5 bg-yellow-400 inline-block" /> DC (likström)</span>
         <span className="flex items-center gap-1.5"><span className="w-6 h-0.5 bg-blue-400 inline-block" /> AC (växelström)</span>
         <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#1e3a5f] border border-blue-500 inline-block" /> Markerad komponent</span>
-        <span className="text-muted-foreground/70">Dubbelklicka på etikett för att redigera • Dra för att flytta • Scroll = zoom</span>
+        <span className="text-muted-foreground/70">Håll ikonen (~0.4s) för att flytta • Dubbelklicka på etikett för att redigera • Scroll = zoom</span>
       </div>
 
       {/* Canvas */}
