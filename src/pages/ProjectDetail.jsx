@@ -21,6 +21,11 @@ export default function ProjectDetail() {
   const { id } = useParams();
   const queryClient = useQueryClient();
 
+  const { data: products = [] } = useQuery({
+    queryKey: ['products-all'],
+    queryFn: () => base44.entities.Product.list(),
+  });
+
   const { data: project, isLoading } = useQuery({
     queryKey: ['project', id],
     queryFn: () => base44.entities.Project.list().then(ps => ps.find(p => p.id === id)),
@@ -90,7 +95,13 @@ export default function ProjectDetail() {
           <PanelPlacementTab project={project} onUpdate={updateMutation.mutate} />
         </TabsContent>
         <TabsContent value="strings">
-          <StringMarkingTab project={project} onUpdate={updateMutation.mutate} />
+          <StringMarkingTab
+            project={project}
+            onUpdate={updateMutation.mutate}
+            selectedProduct={products.find(p =>
+              project.selected_products?.some(sp => sp.product_id === p.id && p.category === 'solpanel')
+            ) || null}
+          />
         </TabsContent>
         <TabsContent value="battery">
           <BatteryTab project={project} onUpdate={updateMutation.mutate} />
