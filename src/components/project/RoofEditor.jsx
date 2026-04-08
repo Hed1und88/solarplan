@@ -438,50 +438,69 @@ export default function RoofEditor({
   const computedArea = (() => {
     const filledLengths = polygon.map((_, i) => parseFloat(edgeLengths[i]));
     if (filledLengths.some(isNaN) || filledLengths.length < 3) return null;
+    const nat = imgNatRef.current;
+    const aspectX = nat.w / 100;
+    const aspectY = nat.h / 100;
+    // Work in pixel space for correct distance measurement
+    const polyPx = polygon.map(p => ({ x: p.x * aspectX, y: p.y * aspectY }));
     let pixPerim = 0, mPerim = 0;
-    for (let i = 0; i < polygon.length; i++) {
-      const j = (i + 1) % polygon.length;
-      pixPerim += Math.hypot(polygon[j].x - polygon[i].x, polygon[j].y - polygon[i].y);
+    for (let i = 0; i < polyPx.length; i++) {
+      const j = (i + 1) % polyPx.length;
+      pixPerim += Math.hypot(polyPx[j].x - polyPx[i].x, polyPx[j].y - polyPx[i].y);
       mPerim += filledLengths[i];
     }
     if (pixPerim === 0) return null;
-    const mPerPct = mPerim / pixPerim;
+    const mPerPx = mPerim / pixPerim;
+    // Shoelace in pixel space, convert to m²
     let area = 0;
-    for (let i = 0; i < polygon.length; i++) {
-      const j = (i + 1) % polygon.length;
-      area += polygon[i].x * polygon[j].y - polygon[j].x * polygon[i].y;
+    for (let i = 0; i < polyPx.length; i++) {
+      const j = (i + 1) % polyPx.length;
+      area += polyPx[i].x * polyPx[j].y - polyPx[j].x * polyPx[i].y;
     }
-    return Math.abs(area) / 2 * mPerPct * mPerPct;
+    return Math.abs(area) / 2 * mPerPx * mPerPx;
   })();
 
   // ── Fill polygon with panels ──────────────────────────────────────────────
   const fillWithPanels = useCallback(() => {
     if (!polyDone || polygon.length < 3 || !selectedProduct) return;
 
+    const nat = imgNatRef.current;
+    const aspectX = nat.w / 100; // pixels per % in X
+    const aspectY = nat.h / 100; // pixels per % in Y
+
+    // Convert polygon from % coords to pixel coords for accurate distance measurement
+    const polyPx = polygon.map(p => ({ x: p.x * aspectX, y: p.y * aspectY }));
+
     const filledLengths = polygon.map((_, i) => parseFloat(edgeLengths[i]));
-    let mPerPct = null;
+    let mPerPx = null; // meters per pixel
     if (!filledLengths.some(isNaN) && filledLengths.length >= 3) {
       let pixPerim = 0, mPerim = 0;
-      for (let i = 0; i < polygon.length; i++) {
-        const j = (i + 1) % polygon.length;
-        pixPerim += Math.hypot(polygon[j].x - polygon[i].x, polygon[j].y - polygon[i].y);
+      for (let i = 0; i < polyPx.length; i++) {
+        const j = (i + 1) % polyPx.length;
+        pixPerim += Math.hypot(polyPx[j].x - polyPx[i].x, polyPx[j].y - polyPx[i].y);
         mPerim += filledLengths[i];
       }
-      if (pixPerim > 0) mPerPct = mPerim / pixPerim;
+      if (pixPerim > 0) mPerPx = mPerim / pixPerim;
     }
-    if (!mPerPct) {
-      const xs = polygon.map(p => p.x);
-      const bboxW = Math.max(...xs) - Math.min(...xs);
-      mPerPct = bboxW > 0 ? 10 / bboxW : 0.1;
+    if (!mPerPx) {
+      // Fallback: assume bbox width = 10m
+      const xs = polyPx.map(p => p.x);
+      const bboxWpx = Math.max(...xs) - Math.min(...xs);
+      mPerPx = bboxWpx > 0 ? 10 / bboxWpx : 0.01;
     }
 
     // Apply rotation: swap w/h if 90°
     const isRotated = panelRotation === 90;
-    const physW = isRotated ? selectedProduct.height_mm : selectedProduct.width_mm;
-    const physH = isRotated ? selectedProduct.width_mm : selectedProduct.height_mm;
+    const physW_m = (isRotated ? selectedProduct.height_mm : selectedProduct.width_mm) / 1000;
+    const physH_m = (isRotated ? selectedProduct.width_mm : selectedProduct.height_mm) / 1000;
 
-    const panelWPct = (physW / 1000) / mPerPct;
-    const panelHPct = (physH / 1000) / mPerPct;
+    // Panel size in pixels
+    const panelWpx = physW_m / mPerPx;
+    const panelHpx = physH_m / mPerPx;
+
+    // Convert back to % coords for rendering
+    const panelWPct = panelWpx / aspectX;
+    const panelHPct = panelHpx / aspectY;
 
     const xs = polygon.map(p => p.x);
     const ys = polygon.map(p => p.y);
