@@ -225,6 +225,7 @@ export default function RoofEditor({
   const startCornerHold = useCallback((idx, e) => {
     e.stopPropagation();
     e.preventDefault();
+    isPanning.current = false; // lock canvas pan while holding a corner
     setCornerHoldIdx(idx);
     setCornerHoldPct(0);
     const startTime = Date.now();
@@ -280,9 +281,12 @@ export default function RoofEditor({
     if (draggingCornerRef.current !== null) return;
     if (!isDrawingModeRef.current) {
       if (!polyDoneRef.current) startLongPress(e.clientX, e.clientY);
-      isPanning.current = true;
-      panStart.current = { x: e.clientX, y: e.clientY };
-      panOrigin.current = { ...panRef.current };
+      // Only allow panning when not dragging a corner or panel
+      if (draggingCornerRef.current === null && !draggingId.current) {
+        isPanning.current = true;
+        panStart.current = { x: e.clientX, y: e.clientY };
+        panOrigin.current = { ...panRef.current };
+      }
     }
   }, [startLongPress]);
 
@@ -298,7 +302,7 @@ export default function RoofEditor({
       });
       return;
     }
-    if (isPanning.current && !isDrawingModeRef.current) {
+    if (isPanning.current && !isDrawingModeRef.current && draggingCornerRef.current === null && !draggingId.current) {
       const dx = e.clientX - panStart.current.x;
       const dy = e.clientY - panStart.current.y;
       if (Math.hypot(dx, dy) > 8) cancelLongPress();
@@ -393,7 +397,7 @@ export default function RoofEditor({
         lastTouch.current = { x: t.clientX, y: t.clientY };
         return;
       }
-      if (!isDrawingModeRef.current) {
+      if (!isDrawingModeRef.current && draggingCornerRef.current === null && !draggingId.current) {
         const next = { x: panRef.current.x + dx, y: panRef.current.y + dy };
         setPan(next); panRef.current = next;
         lastTouch.current = { x: t.clientX, y: t.clientY };
@@ -422,6 +426,7 @@ export default function RoofEditor({
   const handlePanelMouseDown = (e, panel) => {
     if (isDrawingMode) return;
     e.preventDefault(); e.stopPropagation();
+    isPanning.current = false; // prevent canvas pan while dragging panel
     const pos = clientToImgPct(e.clientX, e.clientY);
     dragOffset.current = { x: pos.x - panel.x, y: pos.y - panel.y };
     draggingId.current = panel.id;
