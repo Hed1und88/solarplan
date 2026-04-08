@@ -5,8 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Trash2, Save, Sun, Ruler, Zap } from 'lucide-react';
-import ImageCanvas from './ImageCanvas';
+import { Trash2, Save, Ruler, Zap } from 'lucide-react';
+import RoofPanelCanvas from './RoofPanelCanvas';
 
 export default function PanelPlacementTab({ project, onUpdate }) {
   const [imageUrl, setImageUrl] = useState(project.roof_image_url || '');
@@ -33,53 +33,48 @@ export default function PanelPlacementTab({ project, onUpdate }) {
   };
 
   const selectedProduct = products.find(p => p.id === selectedPanel);
-  const roofArea = roofWidth && roofHeight ? parseFloat(roofWidth) * parseFloat(roofHeight) : null;
+
+  // Calculate using actual panel dimensions
   const panelArea = selectedProduct?.width_mm && selectedProduct?.height_mm
     ? (selectedProduct.width_mm / 1000) * (selectedProduct.height_mm / 1000)
     : 1.8;
-  const maxPanels = roofArea ? Math.floor((roofArea * 0.8) / panelArea) : null;
-
-  const addPanel = () => {
-    const product = products.find(p => p.id === selectedPanel);
-    if (!product) return;
-    setPanels(prev => [...prev, {
-      id: Date.now().toString(),
-      product_id: product.id,
-      product_name: product.name,
-      power_watts: product.power_watts,
-      x: 5 + Math.random() * 60,
-      y: 5 + Math.random() * 60,
-      scale: 1,
-    }]);
-  };
+  const roofArea = roofWidth && roofHeight ? parseFloat(roofWidth) * parseFloat(roofHeight) : null;
+  const maxPanels = roofArea ? Math.floor((roofArea * 0.85) / panelArea) : null;
 
   const addMaxPanels = () => {
-    const product = products.find(p => p.id === selectedPanel);
-    if (!product || !maxPanels) return;
+    if (!selectedProduct || !maxPanels || !dimensionsConfirmed) return;
     const toAdd = maxPanels - panels.length;
     if (toAdd <= 0) return;
-    const newPanels = Array.from({ length: toAdd }, (_, i) => {
-      // Grid-like placement
-      const cols = Math.ceil(Math.sqrt(maxPanels * (parseFloat(roofWidth) / parseFloat(roofHeight))));
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      const spacingX = 80 / cols;
-      const spacingY = 80 / Math.ceil(maxPanels / cols);
-      return {
-        id: (Date.now() + i).toString(),
-        product_id: product.id,
-        product_name: product.name,
-        power_watts: product.power_watts,
-        x: 5 + col * spacingX,
-        y: 5 + row * spacingY,
-        scale: 1,
-      };
-    });
-    setPanels(prev => [...prev, ...newPanels]);
-  };
 
-  const removePanel = (panelId) => {
-    setPanels(prev => prev.filter(p => p.id !== panelId));
+    const rw = parseFloat(roofWidth);
+    const rh = parseFloat(roofHeight);
+    const pw = (selectedProduct.width_mm || 1100) / 1000;
+    const ph = (selectedProduct.height_mm || 1760) / 1000;
+
+    const cols = Math.floor(rw / pw);
+    const rows = Math.floor(rh / ph);
+
+    const newPanels = [];
+    let count = 0;
+    for (let r = 0; r < rows && count < toAdd; r++) {
+      for (let c = 0; c < cols && count < toAdd; c++) {
+        // Center each panel in its cell, as % of canvas
+        const xPct = ((c * pw + pw / 2) / rw) * 100;
+        const yPct = ((r * ph + ph / 2) / rh) * 100;
+        newPanels.push({
+          id: (Date.now() + count).toString(),
+          product_id: selectedProduct.id,
+          product_name: selectedProduct.name,
+          power_watts: selectedProduct.power_watts,
+          width_mm: selectedProduct.width_mm,
+          height_mm: selectedProduct.height_mm,
+          x: xPct,
+          y: yPct,
+        });
+        count++;
+      }
+    }
+    setPanels(prev => [...prev, ...newPanels]);
   };
 
   const handleSave = async () => {
@@ -135,16 +130,20 @@ export default function PanelPlacementTab({ project, onUpdate }) {
           {roofArea && (
             <div className="flex flex-wrap gap-2">
               <Badge variant="outline">Takyta: {roofArea.toFixed(1)} m²</Badge>
-              <Badge variant="outline">Effektiv yta (80%): {(roofArea * 0.8).toFixed(1)} m²</Badge>
-              {maxPanels && selectedProduct && <Badge variant="outline">Max ~{maxPanels} paneler ({selectedProduct.name})</Badge>}
+              <Badge variant="outline">Effektiv yta (85%): {(roofArea * 0.85).toFixed(1)} m²</Badge>
+              {maxPanels != null && selectedProduct && (
+                <Badge variant="outline">
+                  Max ~{maxPanels} paneler ({selectedProduct.width_mm}×{selectedProduct.height_mm} mm)
+                </Badge>
+              )}
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Panel placement */}
+      {/* Panel selection & placement */}
       <Card className="border-0 shadow-sm">
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row items-center justify-between flex-wrap gap-2">
           <CardTitle className="text-lg">Panelplacering på tak</CardTitle>
           <Button onClick={handleSave} disabled={saving} className="gap-2" size="sm">
             <Save className="w-4 h-4" /> {saving ? 'Sparar...' : 'Spara'}
@@ -162,17 +161,18 @@ export default function PanelPlacementTab({ project, onUpdate }) {
               <div className="flex-1 min-w-[200px]">
                 <p className="text-sm font-medium mb-1.5">Välj solpanel</p>
                 <Select value={selectedPanel} onValueChange={setSelectedPanel}>
-                  <SelectTrigger><SelectValue placeholder="Välj panel..." /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Välj panel..." />
+                  </SelectTrigger>
                   <SelectContent>
                     {products.map(p => (
-                      <SelectItem key={p.id} value={p.id}>{p.name} ({p.power_watts}W)</SelectItem>
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name} – {p.power_watts}W ({p.width_mm}×{p.height_mm} mm)
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <Button onClick={addPanel} disabled={!selectedPanel} variant="outline" className="gap-2">
-                <Plus className="w-4 h-4" /> Lägg till en panel
-              </Button>
               <Button
                 onClick={addMaxPanels}
                 disabled={!selectedPanel || !maxPanels}
@@ -183,26 +183,14 @@ export default function PanelPlacementTab({ project, onUpdate }) {
             </div>
           )}
 
-          <ImageCanvas
+          <RoofPanelCanvas
             imageUrl={imageUrl}
-            items={dimensionsConfirmed ? panels : []}
-            onItemsChange={setPanels}
+            panels={panels}
+            onPanelsChange={setPanels}
             onImageUpload={handleImageUpload}
-            label="Ladda upp bild på taket"
-            itemRenderer={(item) => (
-              <div className="group relative">
-                <div className="bg-blue-500/70 border-2 border-blue-300 rounded-sm px-2.5 py-1.5 text-white text-xs font-medium shadow-lg backdrop-blur-sm min-w-[52px] text-center">
-                  <Sun className="w-3 h-3 inline mr-1" />
-                  {item.power_watts ? `${item.power_watts}W` : item.product_name?.split(' ')[0]}
-                </div>
-                <button
-                  className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow"
-                  onClick={(e) => { e.stopPropagation(); removePanel(item.id); }}
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
-              </div>
-            )}
+            selectedProduct={selectedProduct}
+            roofWidthM={parseFloat(roofWidth) || null}
+            roofHeightM={parseFloat(roofHeight) || null}
           />
 
           {panels.length > 0 && (
