@@ -246,6 +246,18 @@ export default function PanelPlacementTab({ project, onUpdate }) {
         </Card>
       )}
 
+      {/* Save button after roof area + edge lengths (before panels) */}
+      {hasRoofArea && hasEdgeLengths && !hasPanels && (
+        <Card className="border-0 shadow-sm border-green-200 bg-green-50">
+          <CardContent className="py-4 flex items-center justify-between gap-4 flex-wrap">
+            <p className="text-sm text-green-800 font-medium">✓ Takyta och mått är klara — spara innan du fortsätter</p>
+            <Button onClick={handleSave} disabled={saving} className="gap-2 bg-green-600 hover:bg-green-700 text-white shrink-0" size="sm">
+              <Save className="w-4 h-4" /> {saving ? 'Sparar...' : 'Spara takyta & mått'}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Summary + Save */}
       {hasPanels && (
         <Card className="border-0 shadow-sm">
@@ -292,7 +304,7 @@ export default function PanelPlacementTab({ project, onUpdate }) {
           edgeLengths={edgeLengths}
           onEdgeLengthsChange={setEdgeLengths}
           selectedProduct={selectedProduct}
-          onClose={() => setEditorOpen(false)}
+          onClose={async () => { setEditorOpen(false); await handleSave(); }}
         />
       )}
     </div>
