@@ -237,7 +237,15 @@ export default function StringMarkingTab({ project, onUpdate, selectedProduct: s
   };
 
   const updateString = (id, data) => {
-    setStrings(prev => prev.map(s => s.id === id ? { ...s, ...data } : s));
+    setStrings(prev => {
+      const next = prev.map(s => s.id === id ? { ...s, ...data } : s);
+      // Auto-save on every change
+      onUpdate({
+        existing_installation_image_url: imageUrl,
+        string_layout_data: JSON.stringify(next),
+      });
+      return next;
+    });
   };
 
   const deleteString = (id) => {

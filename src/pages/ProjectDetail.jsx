@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowLeft, Sun, Cable, Battery, ShoppingCart, BarChart2, Wrench, GitBranch } from 'lucide-react';
 import SolarDataPanel from '@/components/project/SolarDataPanel';
 import PanelPlacementTab from '@/components/project/PanelPlacementTab';
+import ProjectPDFExport from '@/components/project/ProjectPDFExport';
 import StringMarkingTab from '@/components/project/StringMarkingTab';
 import BatteryTab from '@/components/project/BatteryTab';
 import ProductSelectionTab from '@/components/project/ProductSelectionTab.jsx';
@@ -67,6 +68,17 @@ export default function ProjectDetail() {
             <Badge className={statusColors[project.status]}>{statusLabels[project.status]}</Badge>
           </div>
           {project.customer_name && <p className="text-muted-foreground mt-1">{project.customer_name} {project.address ? `• ${project.address}` : ''}</p>}
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {project.status === 'projektering' && (
+            <Button
+              onClick={() => updateMutation.mutate({ status: 'offert' })}
+              className="gap-2 bg-purple-600 hover:bg-purple-700 text-white"
+            >
+              Skicka som offert
+            </Button>
+          )}
+          <ProjectPDFExport project={project} products={products} />
         </div>
       </div>
 
