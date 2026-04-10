@@ -112,9 +112,18 @@ export default function MountingSystemCalculator({ project }) {
     ? Math.min(modelData.hookSpacingMM, totalLoad ? Math.round(1200 / (1 + totalLoad * 0.3)) : modelData.hookSpacingMM)
     : null;
 
-  const panelCount = selectedProduct && roofArea
+  // Prefer panel count from saved layout, fallback to area estimate
+  const savedPanelCount = (() => {
+    try {
+      const d = JSON.parse(project?.panel_layout_data || '{}');
+      const list = Array.isArray(d) ? d : (d.panels || []);
+      return list.length > 0 ? list.length : null;
+    } catch { return null; }
+  })();
+
+  const panelCount = savedPanelCount || (selectedProduct && roofArea
     ? Math.floor((roofArea * 0.85) / ((selectedProduct.width_mm / 1000) * (selectedProduct.height_mm / 1000)))
-    : null;
+    : null);
 
   return (
     <div className="space-y-4">

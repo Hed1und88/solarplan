@@ -74,7 +74,7 @@ export default function PanelPlacementTab({ project, onUpdate }) {
   const maxRow = panels.length ? Math.max(...panels.map(p => p.row)) + 1 : 0;
   const maxCol = panels.length ? Math.max(...panels.map(p => p.col)) + 1 : 0;
 
-  const calcPanels = () => {
+  const calcPanels = async () => {
     if (!selectedProduct || !roofWidth || !roofHeight) return;
     const w = parseFloat(roofWidth), h = parseFloat(roofHeight);
     if (isNaN(w) || isNaN(h) || w <= 0 || h <= 0) return;
@@ -101,9 +101,19 @@ export default function PanelPlacementTab({ project, onUpdate }) {
     }
     setPanels(newPanels);
     setShowAddRoof(false);
+    // Auto-save
+    const activePanelsNew = newPanels.filter(p => !panelOverlapsObstacle(p.row, p.col, (selectedProduct.width_mm || 1000) / 1000, (selectedProduct.height_mm || 1700) / 1000, obstacles));
+    await onUpdate({ panel_layout_data: JSON.stringify({ panels: activePanelsNew, roofWidth: w, roofHeight: h, obstacles }) });
   };
 
-  const removePanel = (id) => setPanels(prev => prev.filter(p => p.id !== id));
+  const removePanel = (id) => {
+    setPanels(prev => {
+      const next = prev.filter(p => p.id !== id);
+      const active = next.filter(p => !panelOverlapsObstacle(p.row, p.col, panelW_m, panelH_m, obstacles));
+      onUpdate({ panel_layout_data: JSON.stringify({ panels: active, roofWidth, roofHeight, obstacles }) });
+      return next;
+    });
+  };
 
   const addObstacle = () => {
     if (!newObs.x || !newObs.y || !newObs.width || !newObs.height) return;
@@ -112,7 +122,14 @@ export default function PanelPlacementTab({ project, onUpdate }) {
     setShowAddObstacle(false);
   };
 
-  const removeObstacle = (id) => setObstacles(prev => prev.filter(o => o.id !== id));
+  const removeObstacle = (id) => {
+    setObstacles(prev => {
+      const next = prev.filter(o => o.id !== id);
+      const active = panels.filter(p => !panelOverlapsObstacle(p.row, p.col, panelW_m, panelH_m, next));
+      onUpdate({ panel_layout_data: JSON.stringify({ panels: active, roofWidth, roofHeight, obstacles: next }) });
+      return next;
+    });
+  };
 
   const handleSave = async () => {
     setSaving(true);

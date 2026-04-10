@@ -197,10 +197,10 @@ export default function SolarDataPanel({ project }) {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="flex items-end gap-1.5 h-40">
+            <div className="flex items-end gap-1" style={{ height: 'clamp(100px, 25vw, 180px)' }}>
               {MONTHS_SV.map((month, i) => (
-                <div key={month} className="flex-1 flex flex-col items-center gap-0.5">
-                  <div className="w-full flex items-end gap-0.5 h-32">
+                <div key={month} className="flex-1 flex flex-col items-center gap-0.5 h-full">
+                  <div className="w-full flex items-end gap-0.5" style={{ height: 'calc(100% - 18px)' }}>
                     {pvgisMonthly?.[i] != null && (
                       <div
                         className="flex-1 bg-amber-400 rounded-t-sm min-h-[2px] transition-all"
@@ -217,9 +217,9 @@ export default function SolarDataPanel({ project }) {
                     )}
                   </div>
                   <span className="text-[10px] text-muted-foreground">{month}</span>
-                </div>
-              ))}
-            </div>
+                  </div>
+                  ))}
+                  </div>
           </CardContent>
         </Card>
       )}
