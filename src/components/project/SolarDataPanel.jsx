@@ -7,15 +7,6 @@ import { base44 } from '@/api/base44Client';
 
 const MONTHS_SV = ['Jan', 'Feb', 'Mar', 'Apr', 'Maj', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dec'];
 
-
-
-async function fetchForecastSolar(lat, lon, peakPower) {
-  const url = `https://api.forecast.solar/estimate/${lat.toFixed(4)}/${lon.toFixed(4)}/45/0/${peakPower}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('forecast.solar svarade inte');
-  return await res.json();
-}
-
 export default function SolarDataPanel({ project }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -68,18 +59,15 @@ export default function SolarDataPanel({ project }) {
     }
   };
 
-  // Auto-fetch when tab opens if panels + address exist
   useEffect(() => {
     if (project.address && panelCount > 0) {
       fetchData();
     }
   }, []);
 
-  // Parse PVGIS monthly data
   const pvgisMonthly = pvgisData?.outputs?.monthly?.fixed?.map(m => m.E_m) || null;
   const pvgisYearly = pvgisData?.outputs?.totals?.fixed?.E_y || null;
 
-  // Parse forecast.solar monthly data (watt-hours -> kWh)
   const forecastMonthly = forecastData?.result
     ? Object.values(forecastData.result).map(v => Math.round(v / 1000))
     : null;
@@ -139,7 +127,7 @@ export default function SolarDataPanel({ project }) {
             <Card className="border-0 shadow-sm">
               <CardContent className="pt-5">
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">
+                  <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center shrink-0">
                     <Zap className="w-5 h-5 text-amber-600" />
                   </div>
                   <div>
@@ -155,7 +143,7 @@ export default function SolarDataPanel({ project }) {
             <Card className="border-0 shadow-sm">
               <CardContent className="pt-5">
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+                  <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center shrink-0">
                     <CloudSun className="w-5 h-5 text-blue-600" />
                   </div>
                   <div>
@@ -171,7 +159,7 @@ export default function SolarDataPanel({ project }) {
             <Card className="border-0 shadow-sm">
               <CardContent className="pt-5">
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
+                  <div className="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center shrink-0">
                     <TrendingUp className="w-5 h-5 text-green-600" />
                   </div>
                   <div>
@@ -191,35 +179,37 @@ export default function SolarDataPanel({ project }) {
         <Card className="border-0 shadow-sm">
           <CardHeader>
             <CardTitle className="text-base">Månadsproduktion (kWh)</CardTitle>
-            <div className="flex gap-4 text-xs text-muted-foreground">
+            <div className="flex gap-4 text-xs text-muted-foreground flex-wrap">
               {pvgisMonthly && <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-amber-400 inline-block" /> PVGIS</span>}
               {forecastMonthly && <span className="flex items-center gap-1"><span className="w-3 h-3 rounded-sm bg-blue-400 inline-block" /> Forecast.solar</span>}
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="flex items-end gap-1" style={{ height: 'clamp(100px, 25vw, 180px)' }}>
-              {MONTHS_SV.map((month, i) => (
-                <div key={month} className="flex-1 flex flex-col items-center gap-0.5 h-full">
-                  <div className="w-full flex items-end gap-0.5" style={{ height: 'calc(100% - 18px)' }}>
-                    {pvgisMonthly?.[i] != null && (
-                      <div
-                        className="flex-1 bg-amber-400 rounded-t-sm min-h-[2px] transition-all"
-                        style={{ height: `${(pvgisMonthly[i] / maxVal) * 100}%` }}
-                        title={`PVGIS: ${pvgisMonthly[i]} kWh`}
-                      />
-                    )}
-                    {forecastMonthly?.[i] != null && (
-                      <div
-                        className="flex-1 bg-blue-400 rounded-t-sm min-h-[2px] transition-all"
-                        style={{ height: `${(forecastMonthly[i] / maxVal) * 100}%` }}
-                        title={`Forecast: ${forecastMonthly[i]} kWh`}
-                      />
-                    )}
+          <CardContent className="overflow-hidden">
+            <div className="w-full" style={{ height: 160 }}>
+              <div className="flex items-end w-full h-full gap-px" style={{ paddingBottom: 20 }}>
+                {MONTHS_SV.map((month, i) => (
+                  <div key={month} className="flex-1 flex flex-col items-center h-full">
+                    <div className="flex items-end gap-px w-full" style={{ flex: 1 }}>
+                      {pvgisMonthly?.[i] != null && (
+                        <div
+                          className="flex-1 bg-amber-400 rounded-t-sm min-h-[2px] transition-all"
+                          style={{ height: `${(pvgisMonthly[i] / maxVal) * 100}%` }}
+                          title={`PVGIS: ${pvgisMonthly[i]} kWh`}
+                        />
+                      )}
+                      {forecastMonthly?.[i] != null && (
+                        <div
+                          className="flex-1 bg-blue-400 rounded-t-sm min-h-[2px] transition-all"
+                          style={{ height: `${(forecastMonthly[i] / maxVal) * 100}%` }}
+                          title={`Forecast: ${forecastMonthly[i]} kWh`}
+                        />
+                      )}
+                    </div>
+                    <span className="text-[9px] text-muted-foreground mt-1 text-center leading-none">{month}</span>
                   </div>
-                  <span className="text-[10px] text-muted-foreground">{month}</span>
-                  </div>
-                  ))}
-                  </div>
+                ))}
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}
