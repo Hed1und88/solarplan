@@ -108,21 +108,19 @@ export default function ProjectDetail() {
         </TabsList>
 
         <TabsContent value="panels">
-          <PanelPlacementTab project={project} onUpdate={updateMutation.mutate} />
+          <PanelPlacementTab project={project} onUpdate={updateMutation.mutateAsync} />
         </TabsContent>
         <TabsContent value="strings">
           <StringMarkingTab
             project={project}
-            onUpdate={updateMutation.mutate}
+            onUpdate={updateMutation.mutateAsync}
             selectedProduct={(() => {
-              // Try to find the panel product used in the panel layout
               try {
                 const d = JSON.parse(project.panel_layout_data || '{}');
                 const panels = Array.isArray(d) ? d : (d.panels || []);
                 const pid = panels[0]?.product_id;
                 if (pid) return products.find(p => p.id === pid) || null;
               } catch {}
-              // Fallback: first solar panel in selected_products
               return products.find(p =>
                 project.selected_products?.some(sp => sp.product_id === p.id) && p.category === 'solpanel'
               ) || null;
@@ -130,16 +128,16 @@ export default function ProjectDetail() {
           />
         </TabsContent>
         <TabsContent value="battery">
-          <BatteryTab project={project} onUpdate={updateMutation.mutate} />
+          <BatteryTab project={project} onUpdate={updateMutation.mutateAsync} />
         </TabsContent>
         <TabsContent value="products">
-          <ProductSelectionTab project={project} onUpdate={updateMutation.mutate} />
+          <ProductSelectionTab project={project} onUpdate={updateMutation.mutateAsync} />
         </TabsContent>
         <TabsContent value="solar">
-          <SolarDataPanel project={project} />
+          <SolarDataPanel project={project} onUpdate={updateMutation.mutateAsync} />
         </TabsContent>
         <TabsContent value="singleline">
-          <SingleLineSchemaTab project={project} onUpdate={updateMutation.mutate} />
+          <SingleLineSchemaTab project={project} onUpdate={updateMutation.mutateAsync} />
         </TabsContent>
         <TabsContent value="mounting">
           <MountingSystemCalculator project={project} onUpdate={updateMutation.mutateAsync} />

@@ -61,12 +61,18 @@ function CustomTooltip({ active, payload, label, unit = 'kWh' }) {
   );
 }
 
-export default function SolarDataPanel({ project }) {
+export default function SolarDataPanel({ project, onUpdate }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [pvgisData, setPvgisData] = useState(null);
-  const [forecastData, setForecastData] = useState(null);
-  const [location, setLocation] = useState(null);
+  const [pvgisData, setPvgisData] = useState(() => {
+    try { const d = JSON.parse(project.solar_data || 'null'); return d?.pvgis || null; } catch { return null; }
+  });
+  const [forecastData, setForecastData] = useState(() => {
+    try { const d = JSON.parse(project.solar_data || 'null'); return d?.forecast || null; } catch { return null; }
+  });
+  const [location, setLocation] = useState(() => {
+    try { const d = JSON.parse(project.solar_data || 'null'); return d?.location || null; } catch { return null; }
+  });
 
   // Consumption upload
   const [consumptionMonthly, setConsumptionMonthly] = useState(null); // array of 12
@@ -98,10 +104,16 @@ export default function SolarDataPanel({ project }) {
     try {
       const res = await base44.functions.invoke('solarData', { address: project.address, peakPower: estimatedKwp });
       const data = res.data;
-      setLocation({ lat: data.lat, lon: data.lon });
+      const loc = { lat: data.lat, lon: data.lon };
+      setLocation(loc);
       if (data.pvgis) setPvgisData(data.pvgis);
       if (data.forecast) setForecastData(data.forecast);
-      if (!data.pvgis && !data.forecast) setError('Kunde inte hämta soldata: ' + (data.pvgisError || data.forecastError || 'okänt fel'));
+      if (!data.pvgis && !data.forecast) {
+        setError('Kunde inte hämta soldata: ' + (data.pvgisError || data.forecastError || 'okänt fel'));
+      } else if (onUpdate) {
+        // Save fetched data to project
+        onUpdate({ solar_data: JSON.stringify({ pvgis: data.pvgis, forecast: data.forecast, location: loc, peakPower: estimatedKwp }) });
+      }
     } catch (e) { setError(e.message || 'Något gick fel'); }
     finally { setLoading(false); }
   };

@@ -45,11 +45,14 @@ export default function BatteryTab({ project, onUpdate }) {
 
   const handleSave = async () => {
     setSaving(true);
-    await onUpdate({
-      battery_image_url: imageUrl,
-      battery_layout_data: JSON.stringify(batteries),
-    });
-    setSaving(false);
+    try {
+      await onUpdate({
+        battery_image_url: imageUrl,
+        battery_layout_data: JSON.stringify(batteries),
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (

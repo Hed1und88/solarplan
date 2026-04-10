@@ -62,6 +62,10 @@
       "type": "string",
       "description": "JSON-data f\u00f6r montagesystem och lastber\u00e4kning"
     },
+    "solar_data": {
+      "type": "string",
+      "description": "JSON-data f\u00f6r h\u00e4mtad solenergianalys (PVGIS/Forecast)"
+    },
     "selected_products": {
       "type": "array",
       "description": "Valda produkter med antal",
