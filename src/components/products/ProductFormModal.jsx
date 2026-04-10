@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { base44 } from '@/api/base44Client';
-import { X, Upload, Loader2 } from 'lucide-react';
+import { X, Upload, Loader2, Sparkles } from 'lucide-react';
 
 const categories = [
   { value: 'solpanel', label: 'Solpanel' },
@@ -33,6 +33,52 @@ export default function ProductFormModal({ product, onSave, onClose }) {
   });
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [fetching, setFetching] = useState(false);
+  const [fetchMsg, setFetchMsg] = useState(null);
+
+  const handleAutoFetch = async () => {
+    const query = [form.brand, form.model, form.name].filter(Boolean).join(' ');
+    if (!query) return;
+    setFetching(true);
+    setFetchMsg(null);
+    const result = await base44.integrations.Core.InvokeLLM({
+      prompt: `Find the complete technical datasheet specifications for the solar product: "${query}".
+Return ONLY a JSON object with these fields (use null if unknown):
+name, brand, model, power_watts, width_mm, height_mm, voc_v, isc_a, vmp_v, imp_a, capacity_kwh, description`,
+      add_context_from_internet: true,
+      response_json_schema: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          brand: { type: 'string' },
+          model: { type: 'string' },
+          power_watts: { type: 'number' },
+          width_mm: { type: 'number' },
+          height_mm: { type: 'number' },
+          voc_v: { type: 'number' },
+          isc_a: { type: 'number' },
+          vmp_v: { type: 'number' },
+          imp_a: { type: 'number' },
+          capacity_kwh: { type: 'number' },
+          description: { type: 'string' },
+        }
+      }
+    });
+    const fields = ['name','brand','model','power_watts','width_mm','height_mm','voc_v','isc_a','vmp_v','imp_a','capacity_kwh','description'];
+    let filled = 0;
+    setForm(f => {
+      const next = { ...f };
+      fields.forEach(k => {
+        if (result[k] != null && result[k] !== '') {
+          next[k] = result[k];
+          filled++;
+        }
+      });
+      return next;
+    });
+    setFetchMsg(filled > 0 ? `✓ Fyllde i ${filled} fält automatiskt` : '⚠ Hittade ingen data — fyll i manuellt');
+    setFetching(false);
+  };
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -99,6 +145,19 @@ export default function ProductFormModal({ product, onSave, onClose }) {
           <div className="grid grid-cols-2 gap-3">
             <Field label="Varumärke" value={form.brand} onChange={v => set('brand', v)} placeholder="T.ex. JA Solar" />
             <Field label="Modell" value={form.model} onChange={v => set('model', v)} placeholder="T.ex. JAM54S30" />
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleAutoFetch}
+              disabled={fetching || (!form.brand && !form.model && !form.name)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-accent text-white text-xs font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
+            >
+              {fetching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+              {fetching ? 'Hämtar data...' : 'Hämta data automatiskt'}
+            </button>
+            {fetchMsg && <span className={`text-xs ${fetchMsg.startsWith('✓') ? 'text-green-600' : 'text-amber-600'}`}>{fetchMsg}</span>}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
