@@ -391,15 +391,15 @@ export default function SingleLineSchemaTab({ project, onUpdate }) {
   };
 
   // ── Wheel zoom ────────────────────────────────────────────────────────────
-  const handleWheel = (e) => {
-    e.preventDefault();
-    setZoom(z => Math.max(0.3, Math.min(2.5, z * (e.deltaY < 0 ? 1.1 : 0.9))));
-  };
   useEffect(() => {
     const el = svgRef.current;
     if (!el) return;
-    el.addEventListener('wheel', handleWheel, { passive: false });
-    return () => el.removeEventListener('wheel', handleWheel);
+    const onWheel = (e) => {
+      e.preventDefault();
+      setZoom(z => Math.max(0.3, Math.min(2.5, z * (e.deltaY < 0 ? 1.1 : 0.9))));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
   // ── Wire routing (simple horizontal-vertical) ─────────────────────────────

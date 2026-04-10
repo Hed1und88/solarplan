@@ -5,65 +5,29 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Trash2, Save, Camera, Upload, Pencil } from 'lucide-react';
-import RoofEditor from './RoofEditor';
-import { useRef } from 'react';
-
-// Step indicator
-function Step({ n, label, done, active }) {
-  return (
-    <div className={`flex items-center gap-2 text-sm ${active ? 'text-foreground font-semibold' : done ? 'text-green-600' : 'text-muted-foreground'}`}>
-      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0
-        ${done ? 'bg-green-500 text-white' : active ? 'bg-primary text-white' : 'bg-muted text-muted-foreground'}`}>
-        {done ? '✓' : n}
-      </div>
-      {label}
-    </div>
-  );
-}
+import { Trash2, Save, Plus, X, Zap, LayoutGrid } from 'lucide-react';
 
 function parseLayoutData(raw) {
   try {
     const d = JSON.parse(raw || '{}');
-    if (Array.isArray(d)) return { panels: d, obstacles: [], polygon: [], edgeLengths: {} };
+    if (Array.isArray(d)) return { panels: d, roofWidth: '', roofHeight: '' };
     return {
       panels: d.panels || [],
-      obstacles: d.obstacles || [],
-      polygon: d.polygon || [],
-      edgeLengths: d.edgeLengths || {},
+      roofWidth: d.roofWidth || '',
+      roofHeight: d.roofHeight || '',
     };
-  } catch { return { panels: [], obstacles: [], polygon: [], edgeLengths: {} }; }
-}
-
-// Preview of panels over image
-function PreviewPanel({ panel }) {
-  return (
-    <div style={{
-      position: 'absolute',
-      left: `${panel.x}%`, top: `${panel.y}%`,
-      width: `${panel.w_pct || 8}%`, height: `${panel.h_pct || 13}%`,
-      transform: 'translate(-50%, -50%)',
-      pointerEvents: 'none',
-      background: '#1a2540',
-      border: '1px solid #3a5090',
-      opacity: 0.85,
-    }} />
-  );
+  } catch { return { panels: [], roofWidth: '', roofHeight: '' }; }
 }
 
 export default function PanelPlacementTab({ project, onUpdate }) {
   const saved = parseLayoutData(project.panel_layout_data);
-  const [imageUrl, setImageUrl] = useState(project.roof_image_url || '');
-  const [panels, setPanels] = useState(saved.panels);
-  const [obstacles, setObstacles] = useState(saved.obstacles);
-  const [polygon, setPolygon] = useState(saved.polygon);
-  const [edgeLengths, setEdgeLengths] = useState(saved.edgeLengths);
-  const [selectedPanelId, setSelectedPanelId] = useState('');
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
 
-  const fileRef = useRef(null);
-  const camRef = useRef(null);
+  const [roofWidth, setRoofWidth] = useState(saved.roofWidth);
+  const [roofHeight, setRoofHeight] = useState(saved.roofHeight);
+  const [selectedPanelId, setSelectedPanelId] = useState('');
+  const [panels, setPanels] = useState(saved.panels);
+  const [saving, setSaving] = useState(false);
+  const [showAddRoof, setShowAddRoof] = useState(panels.length === 0);
 
   const { data: products = [] } = useQuery({
     queryKey: ['products-panels'],
@@ -72,240 +36,285 @@ export default function PanelPlacementTab({ project, onUpdate }) {
 
   const selectedProduct = products.find(p => p.id === selectedPanelId) || null;
 
-  // Derived state for steps
-  const hasImage = !!imageUrl;
-  const hasRoofArea = polygon.length >= 3;
-  const hasEdgeLengths = hasRoofArea && polygon.every((_, i) => parseFloat(edgeLengths[i]) > 0);
-  const hasPanels = panels.length > 0;
+  // Calculate how many panels fit
+  const calcPanels = () => {
+    if (!selectedProduct || !roofWidth || !roofHeight) return;
+    const w = parseFloat(roofWidth);
+    const h = parseFloat(roofHeight);
+    if (isNaN(w) || isNaN(h) || w <= 0 || h <= 0) return;
 
-  // Step to show as active
-  const activeStep = !hasImage ? 1 : !hasRoofArea ? 2 : !hasEdgeLengths ? 3 : !selectedPanelId ? 4 : !hasPanels ? 5 : 6;
+    const panelW_m = (selectedProduct.width_mm || 1000) / 1000;
+    const panelH_m = (selectedProduct.height_mm || 1700) / 1000;
 
-  const handleFile = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    e.target.value = '';
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file });
-      setImageUrl(file_url);
-      // Reset dependent state
-      setPanels([]); setPolygon([]); setEdgeLengths({});
-    };
-    reader.readAsDataURL(file);
+    const cols = Math.floor(w / panelW_m);
+    const rows = Math.floor(h / panelH_m);
+
+    if (cols <= 0 || rows <= 0) return;
+
+    const newPanels = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        newPanels.push({
+          id: `panel-${r}-${c}-${Date.now()}`,
+          row: r,
+          col: c,
+          product_id: selectedProduct.id,
+          product_name: selectedProduct.name,
+          power_watts: selectedProduct.power_watts || 400,
+          width_mm: selectedProduct.width_mm,
+          height_mm: selectedProduct.height_mm,
+        });
+      }
+    }
+    setPanels(newPanels);
+    setShowAddRoof(false);
+  };
+
+  const removePanel = (id) => {
+    setPanels(prev => prev.filter(p => p.id !== id));
   };
 
   const handleSave = async () => {
     setSaving(true);
     await onUpdate({
-      roof_image_url: imageUrl,
-      panel_layout_data: JSON.stringify({ panels, obstacles, polygon, edgeLengths }),
+      panel_layout_data: JSON.stringify({ panels, roofWidth, roofHeight }),
     });
     setSaving(false);
   };
 
   const totalPower = panels.reduce((s, p) => s + (p.power_watts || 400), 0);
+  const sp = selectedProduct || (panels[0] ? products.find(p => p.id === panels[0].product_id) : null);
+
+  // Figure out grid dims from panels
+  const maxRow = panels.length ? Math.max(...panels.map(p => p.row)) + 1 : 0;
+  const maxCol = panels.length ? Math.max(...panels.map(p => p.col)) + 1 : 0;
+
+  // Build a set of remaining panel ids per (row,col) for grid rendering
+  const panelMap = {};
+  panels.forEach(p => { panelMap[`${p.row}-${p.col}`] = p; });
 
   return (
     <div className="space-y-4">
-      {/* Step overview */}
-      <Card className="border-0 shadow-sm">
-        <CardContent className="pt-5 pb-4">
-          <div className="flex flex-wrap gap-x-6 gap-y-2">
-            <Step n={1} label="Ladda upp foto" done={hasImage} active={activeStep === 1} />
-            <Step n={2} label="Rita takyta" done={hasRoofArea} active={activeStep === 2} />
-            <Step n={3} label="Ange mått" done={hasEdgeLengths} active={activeStep === 3} />
-            <Step n={4} label="Välj solpanel" done={!!selectedPanelId} active={activeStep === 4} />
-            <Step n={5} label="Placera paneler" done={hasPanels} active={activeStep === 5} />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Step 1: Upload photo */}
-      <Card className="border-0 shadow-sm">
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${hasImage ? 'bg-green-500 text-white' : 'bg-primary text-white'}`}>
-              {hasImage ? '✓' : '1'}
-            </span>
-            Ladda upp foto på taket
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} className="hidden" />
-          <input ref={camRef} type="file" accept="image/*" capture="environment" onChange={handleFile} className="hidden" />
-
-          {!hasImage ? (
-            <div className="border-2 border-dashed rounded-xl p-10 text-center bg-muted/20">
-              <Upload className="w-10 h-10 text-muted-foreground/40 mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground mb-4">Ta ett foto eller välj från galleriet</p>
-              <div className="flex gap-3 justify-center flex-wrap">
-                <Button variant="outline" className="gap-2" onClick={() => fileRef.current?.click()}>
-                  <Upload className="w-4 h-4" /> Välj från galleri
-                </Button>
-                <Button className="gap-2" onClick={() => camRef.current?.click()}>
-                  <Camera className="w-4 h-4" /> Ta foto
-                </Button>
-              </div>
+      {/* Header summary */}
+      {panels.length > 0 && (
+        <Card className="border-0 shadow-sm">
+          <CardContent className="py-4 flex flex-wrap items-center gap-3">
+            <LayoutGrid className="w-5 h-5 text-primary" />
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="outline">{panels.length} paneler</Badge>
+              {totalPower > 0 && (
+                <Badge className="bg-primary/10 text-primary border-primary/20">
+                  <Zap className="w-3 h-3 mr-1" />{(totalPower / 1000).toFixed(2)} kWp
+                </Badge>
+              )}
+              {sp && <Badge variant="outline">{sp.name}</Badge>}
+              {roofWidth && roofHeight && (
+                <Badge variant="outline">{roofWidth} × {roofHeight} m</Badge>
+              )}
             </div>
-          ) : (
-            <div className="space-y-2">
-              <div
-                className="relative rounded-xl overflow-hidden shadow cursor-pointer"
-                onClick={() => setEditorOpen(true)}
-              >
-                <img src={imageUrl} alt="Tak" className="w-full h-auto block max-h-64 object-cover" />
-                {panels.map(p => <PreviewPanel key={p.id} panel={p} />)}
-                {/* Polygon preview */}
-                {polygon.length >= 3 && (
-                  <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ pointerEvents: 'none' }}>
-                    <polygon
-                      points={polygon.map(p => `${p.x},${p.y}`).join(' ')}
-                      fill="rgba(59,130,246,0.15)" stroke="#3b82f6" strokeWidth="0.5"
-                    />
-                  </svg>
-                )}
-                <div className="absolute inset-0 bg-black/0 hover:bg-black/20 transition flex items-center justify-center">
-                  <span className="bg-black/60 text-white text-sm px-3 py-1.5 rounded-full opacity-0 hover:opacity-100 transition">
-                    Klicka för att redigera
-                  </span>
-                </div>
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                <Button variant="outline" size="sm" className="gap-1" onClick={() => fileRef.current?.click()}>
-                  <Upload className="w-3.5 h-3.5" /> Byt bild
-                </Button>
-                <Button variant="outline" size="sm" className="gap-1" onClick={() => camRef.current?.click()}>
-                  <Camera className="w-3.5 h-3.5" /> Ta nytt foto
-                </Button>
-                <Button size="sm" className="gap-1 bg-blue-600 hover:bg-blue-700 text-white ml-auto" onClick={() => setEditorOpen(true)}>
-                  <Pencil className="w-3.5 h-3.5" /> Öppna takplanerare
-                </Button>
-              </div>
+            <div className="ml-auto flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => setShowAddRoof(true)} className="gap-1">
+                <Plus className="w-3.5 h-3.5" /> Ny takyta
+              </Button>
+              <Button size="sm" onClick={handleSave} disabled={saving} className="gap-1">
+                <Save className="w-3.5 h-3.5" /> {saving ? 'Sparar...' : 'Spara'}
+              </Button>
             </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Steps 2–5: open editor */}
-      {hasImage && !hasPanels && (
-        <Card className="border-0 shadow-sm bg-blue-50 border-blue-200">
-          <CardContent className="py-4 flex items-center justify-between gap-4 flex-wrap">
-            <div>
-              <p className="font-medium text-blue-900 text-sm">
-                {!hasRoofArea
-                  ? '🖊️ Steg 2: Rita takytans kontur i planeraren'
-                  : !hasEdgeLengths
-                  ? '📏 Steg 3: Ange sidlängderna (meter) i planeraren'
-                  : !selectedPanelId
-                  ? '☀️ Steg 4: Välj solpanel nedan'
-                  : '⚡ Steg 5: Fyll takyta med paneler i planeraren'}
-              </p>
-              <p className="text-xs text-blue-700 mt-0.5">
-                {!hasRoofArea
-                  ? 'Håll 2 sek på bilden → klicka runt taket → klicka på startpunkten för att stänga.'
-                  : !hasEdgeLengths
-                  ? 'Ange längden på varje sida i metrerna som visas under bilden.'
-                  : !selectedPanelId
-                  ? 'Välj panel i listan nedan, sedan öppna planeraren och klicka "Fyll med paneler".'
-                  : 'Klicka "Öppna takplanerare" → "Fyll med paneler" — panelerna placeras automatiskt inuti taklinjen.'}
-              </p>
-            </div>
-            <Button className="gap-2 bg-blue-600 hover:bg-blue-700 text-white shrink-0" onClick={() => setEditorOpen(true)}>
-              <Pencil className="w-4 h-4" /> Öppna takplanerare
-            </Button>
           </CardContent>
         </Card>
       )}
 
-      {/* Step 4: Select panel (shown after roof area) */}
-      {hasRoofArea && (
+      {/* Add roof form */}
+      {showAddRoof && (
         <Card className="border-0 shadow-sm">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
-              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${selectedPanelId ? 'bg-green-500 text-white' : 'bg-primary text-white'}`}>
-                {selectedPanelId ? '✓' : '4'}
-              </span>
-              Välj solpanel
+              <span className="w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center text-xs font-bold">1</span>
+              Lägg till takyta
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Panel selector */}
+            <div>
+              <label className="text-sm font-medium text-muted-foreground block mb-1.5">Välj solpanel</label>
+              <Select value={selectedPanelId} onValueChange={setSelectedPanelId}>
+                <SelectTrigger className="max-w-md">
+                  <SelectValue placeholder="Välj panel..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {products.map(p => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name} – {p.power_watts}W ({p.width_mm}×{p.height_mm} mm)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedProduct && (
+                <p className="text-xs text-muted-foreground mt-1.5">
+                  Panelstorlek: {selectedProduct.width_mm} mm bred × {selectedProduct.height_mm} mm hög
+                  ({((selectedProduct.width_mm || 0) / 1000).toFixed(2)} × {((selectedProduct.height_mm || 0) / 1000).toFixed(2)} m)
+                </p>
+              )}
+            </div>
+
+            {/* Roof dimensions */}
+            <div>
+              <label className="text-sm font-medium text-muted-foreground block mb-1.5">Takytan mått (meter)</label>
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground w-14">Bredd:</span>
+                  <input
+                    type="number" min="0.5" step="0.1"
+                    value={roofWidth}
+                    onChange={e => setRoofWidth(e.target.value)}
+                    placeholder="t.ex. 6"
+                    className="w-24 border border-border rounded-lg px-2.5 py-1.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <span className="text-sm text-muted-foreground">m</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground w-14">Höjd:</span>
+                  <input
+                    type="number" min="0.5" step="0.1"
+                    value={roofHeight}
+                    onChange={e => setRoofHeight(e.target.value)}
+                    placeholder="t.ex. 4"
+                    className="w-24 border border-border rounded-lg px-2.5 py-1.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <span className="text-sm text-muted-foreground">m</span>
+                </div>
+              </div>
+
+              {/* Preview calc */}
+              {selectedProduct && roofWidth && roofHeight && (() => {
+                const w = parseFloat(roofWidth), h = parseFloat(roofHeight);
+                const pw = (selectedProduct.width_mm || 1000) / 1000;
+                const ph = (selectedProduct.height_mm || 1700) / 1000;
+                const cols = Math.floor(w / pw), rows = Math.floor(h / ph);
+                const total = cols * rows;
+                if (total <= 0) return <p className="text-xs text-red-500 mt-1.5">Takytan är för liten för den valda panelen.</p>;
+                return (
+                  <p className="text-xs text-green-700 mt-1.5 font-medium">
+                    ✓ Plats för {cols} × {rows} = <strong>{total} paneler</strong> ({((total * (selectedProduct.power_watts || 400)) / 1000).toFixed(2)} kWp)
+                  </p>
+                );
+              })()}
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <Button
+                onClick={calcPanels}
+                disabled={!selectedProduct || !roofWidth || !roofHeight}
+                className="gap-2"
+              >
+                <LayoutGrid className="w-4 h-4" /> Fyll takyta med paneler
+              </Button>
+              {panels.length > 0 && (
+                <Button variant="ghost" onClick={() => setShowAddRoof(false)}>Avbryt</Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Panel grid visualization */}
+      {panels.length > 0 && (
+        <Card className="border-0 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <span className="w-6 h-6 rounded-full bg-green-500 text-white flex items-center justify-center text-xs font-bold">✓</span>
+              Paneler — klicka × för att ta bort
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <Select value={selectedPanelId} onValueChange={setSelectedPanelId}>
-              <SelectTrigger className="max-w-md">
-                <SelectValue placeholder="Välj panel..." />
-              </SelectTrigger>
-              <SelectContent>
-                {products.map(p => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name} – {p.power_watts}W ({p.width_mm}×{p.height_mm} mm)
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="overflow-x-auto">
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: `repeat(${maxCol}, minmax(48px, 1fr))`,
+                  gap: 4,
+                  maxWidth: '100%',
+                }}
+              >
+                {Array.from({ length: maxRow }, (_, r) =>
+                  Array.from({ length: maxCol }, (_, c) => {
+                    const panel = panelMap[`${r}-${c}`];
+                    return (
+                      <div key={`${r}-${c}`} style={{ aspectRatio: `${sp?.width_mm || 100}/${sp?.height_mm || 170}` }}>
+                        {panel ? (
+                          <div
+                            style={{
+                              width: '100%', height: '100%',
+                              background: 'linear-gradient(135deg, #1a2540 0%, #1e3560 100%)',
+                              border: '1px solid #3a5090',
+                              borderRadius: 3,
+                              position: 'relative',
+                              cursor: 'pointer',
+                            }}
+                            title={`Rad ${r + 1}, Kol ${c + 1} — klicka för att ta bort`}
+                            onClick={() => removePanel(panel.id)}
+                          >
+                            {/* Panel cell lines */}
+                            <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0 }}>
+                              <line x1="33%" y1="0" x2="33%" y2="100%" stroke="#2a4070" strokeWidth="0.5" />
+                              <line x1="66%" y1="0" x2="66%" y2="100%" stroke="#2a4070" strokeWidth="0.5" />
+                              <line x1="0" y1="25%" x2="100%" y2="25%" stroke="#2a4070" strokeWidth="0.5" />
+                              <line x1="0" y1="50%" x2="100%" y2="50%" stroke="#2a4070" strokeWidth="0.5" />
+                              <line x1="0" y1="75%" x2="100%" y2="75%" stroke="#2a4070" strokeWidth="0.5" />
+                            </svg>
+                            <div style={{
+                              position: 'absolute', top: 1, right: 1,
+                              background: 'rgba(239,68,68,0.85)',
+                              borderRadius: '50%', width: 14, height: 14,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontSize: 9, color: 'white', fontWeight: 'bold',
+                            }}>×</div>
+                          </div>
+                        ) : (
+                          <div style={{
+                            width: '100%', height: '100%',
+                            background: 'hsl(var(--muted))',
+                            borderRadius: 3,
+                            border: '1px dashed hsl(var(--border))',
+                            opacity: 0.4,
+                          }} title="Borttagen panel" />
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground mt-3">
+              Klicka på en panel för att ta bort den. Grå rutor = borttagna paneler.
+            </p>
+            <div className="flex gap-2 mt-4">
+              <Button onClick={handleSave} disabled={saving} className="gap-2">
+                <Save className="w-4 h-4" /> {saving ? 'Sparar...' : 'Spara layout'}
+              </Button>
+              <Button
+                variant="ghost"
+                className="text-destructive hover:text-destructive gap-1"
+                onClick={() => { setPanels([]); setShowAddRoof(true); }}
+              >
+                <Trash2 className="w-3.5 h-3.5" /> Rensa alla
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Save button after roof area + edge lengths (before panels) */}
-      {hasRoofArea && hasEdgeLengths && !hasPanels && (
-        <Card className="border-0 shadow-sm border-green-200 bg-green-50">
-          <CardContent className="py-4 flex items-center justify-between gap-4 flex-wrap">
-            <p className="text-sm text-green-800 font-medium">✓ Takyta och mått är klara — spara innan du fortsätter</p>
-            <Button onClick={handleSave} disabled={saving} className="gap-2 bg-green-600 hover:bg-green-700 text-white shrink-0" size="sm">
-              <Save className="w-4 h-4" /> {saving ? 'Sparar...' : 'Spara takyta & mått'}
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Summary + Save */}
-      {hasPanels && (
+      {/* Empty state */}
+      {panels.length === 0 && !showAddRoof && (
         <Card className="border-0 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between flex-wrap gap-2">
-            <CardTitle className="text-base">Sammanfattning</CardTitle>
-            <Button onClick={handleSave} disabled={saving} className="gap-2" size="sm">
-              <Save className="w-4 h-4" /> {saving ? 'Sparar...' : 'Spara layout'}
-            </Button>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-2 items-center">
-            <Badge variant="outline">{panels.length} paneler</Badge>
-            {totalPower > 0 && (
-              <Badge className="bg-primary/10 text-primary border-primary/20">
-                {(totalPower / 1000).toFixed(2)} kWp
-              </Badge>
-            )}
-            {selectedProduct && (
-              <Badge variant="outline">{selectedProduct.brand || selectedProduct.name}</Badge>
-            )}
-            <Button size="sm" variant="outline" className="gap-1 ml-auto" onClick={() => setEditorOpen(true)}>
-              <Pencil className="w-3.5 h-3.5" /> Redigera
-            </Button>
-            <Button
-              size="sm" variant="ghost"
-              className="text-destructive hover:text-destructive gap-1"
-              onClick={() => { setPanels([]); setPolygon([]); setEdgeLengths({}); }}
-            >
-              <Trash2 className="w-3.5 h-3.5" /> Rensa
+          <CardContent className="py-12 text-center">
+            <LayoutGrid className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
+            <p className="text-muted-foreground text-sm mb-4">Inga paneler placerade ännu</p>
+            <Button onClick={() => setShowAddRoof(true)} className="gap-2">
+              <Plus className="w-4 h-4" /> Lägg till takyta
             </Button>
           </CardContent>
         </Card>
-      )}
-
-      {/* RoofEditor modal */}
-      {editorOpen && (
-        <RoofEditor
-          imageUrl={imageUrl}
-          panels={panels}
-          onPanelsChange={setPanels}
-          obstacles={obstacles}
-          onObstaclesChange={setObstacles}
-          polygon={polygon}
-          onPolygonChange={setPolygon}
-          edgeLengths={edgeLengths}
-          onEdgeLengthsChange={setEdgeLengths}
-          selectedProduct={selectedProduct}
-          onClose={async () => { setEditorOpen(false); await handleSave(); }}
-        />
       )}
     </div>
   );
