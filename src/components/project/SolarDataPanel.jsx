@@ -3,23 +3,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Sun, Zap, TrendingUp, CloudSun, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
+import { base44 } from '@/api/base44Client';
 
 const MONTHS_SV = ['Jan', 'Feb', 'Mar', 'Apr', 'Maj', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dec'];
 
-async function geocodeAddress(address) {
-  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1`;
-  const res = await fetch(url, { headers: { 'Accept-Language': 'sv' } });
-  const data = await res.json();
-  if (!data.length) throw new Error('Adressen hittades inte');
-  return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon), display: data[0].display_name };
-}
 
-async function fetchPVGIS(lat, lon, peakPower) {
-  const url = `https://re.jrc.ec.europa.eu/api/v5_2/PVcalc?lat=${lat}&lon=${lon}&peakpower=${peakPower}&loss=14&outputformat=json&browser=0`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('PVGIS svarade inte');
-  return await res.json();
-}
 
 async function fetchForecastSolar(lat, lon, peakPower) {
   const url = `https://api.forecast.solar/estimate/${lat.toFixed(4)}/${lon.toFixed(4)}/45/0/${peakPower}`;
@@ -62,22 +50,19 @@ export default function SolarDataPanel({ project }) {
     setForecastData(null);
 
     try {
-      const coords = await geocodeAddress(project.address);
-      setLocation(coords);
-
-      const [pvgis, forecast] = await Promise.allSettled([
-        fetchPVGIS(coords.lat, coords.lon, estimatedKwp),
-        fetchForecastSolar(coords.lat, coords.lon, estimatedKwp),
-      ]);
-
-      if (pvgis.status === 'fulfilled') setPvgisData(pvgis.value);
-      if (forecast.status === 'fulfilled') setForecastData(forecast.value);
-
-      if (pvgis.status === 'rejected' && forecast.status === 'rejected') {
-        setError('Kunde inte hämta soldata. Kontrollera nätverket eller prova igen.');
+      const res = await base44.functions.invoke('solarData', {
+        address: project.address,
+        peakPower: estimatedKwp,
+      });
+      const data = res.data;
+      setLocation({ lat: data.lat, lon: data.lon });
+      if (data.pvgis) setPvgisData(data.pvgis);
+      if (data.forecast) setForecastData(data.forecast);
+      if (!data.pvgis && !data.forecast) {
+        setError('Kunde inte hämta soldata: ' + (data.pvgisError || data.forecastError || 'okänt fel'));
       }
     } catch (e) {
-      setError(e.message);
+      setError(e.message || 'Något gick fel');
     } finally {
       setLoading(false);
     }
