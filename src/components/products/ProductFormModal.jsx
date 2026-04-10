@@ -93,15 +93,18 @@ name, brand, model, power_watts, width_mm, height_mm, voc_v, isc_a, vmp_v, imp_a
 
   const handleSave = async () => {
     setSaving(true);
+    const numOrNull = v => (v !== '' && v != null && !isNaN(Number(v))) ? Number(v) : undefined;
     const data = { ...form, price: Number(form.price) || 0 };
-    if (form.power_watts) data.power_watts = Number(form.power_watts);
-    if (form.capacity_kwh) data.capacity_kwh = Number(form.capacity_kwh);
-    if (form.width_mm) data.width_mm = Number(form.width_mm);
-    if (form.height_mm) data.height_mm = Number(form.height_mm);
-    if (form.voc_v) data.voc_v = Number(form.voc_v);
-    if (form.isc_a) data.isc_a = Number(form.isc_a);
-    if (form.vmp_v) data.vmp_v = Number(form.vmp_v);
-    if (form.imp_a) data.imp_a = Number(form.imp_a);
+    data.power_watts = numOrNull(form.power_watts);
+    data.capacity_kwh = numOrNull(form.capacity_kwh);
+    data.width_mm = numOrNull(form.width_mm);
+    data.height_mm = numOrNull(form.height_mm);
+    data.voc_v = numOrNull(form.voc_v);
+    data.isc_a = numOrNull(form.isc_a);
+    data.vmp_v = numOrNull(form.vmp_v);
+    data.imp_a = numOrNull(form.imp_a);
+    // Remove undefined keys to avoid sending invalid data
+    Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
 
     if (product?.id) {
       await base44.entities.Product.update(product.id, data);
