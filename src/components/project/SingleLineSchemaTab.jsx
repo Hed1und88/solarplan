@@ -151,8 +151,8 @@ function SymbolSVG({ type, w = 80, h = 60 }) {
 // ─── Wire color ───────────────────────────────────────────────────────────────
 function wireColor(fromType, toType) {
   const acTypes = ['inverter', 'ac_fuse', 'ac_disconnect', 'spd_ac', 'energy_meter', 'grid', 'consumer'];
-  if (acTypes.includes(toType)) return '#60a5fa'; // blue = AC
-  return '#facc15'; // yellow = DC
+  if (acTypes.includes(toType)) return '#60a5fa';
+  return '#facc15';
 }
 
 // ─── Single component node ────────────────────────────────────────────────────
@@ -167,14 +167,8 @@ function SchemaNode({ comp, selected, onSelect, onDrag, onDelete, onLabelChange 
   const holdTimer = useRef(null);
   const didDrag = useRef(false);
 
-  const handleDoubleClick = (e) => {
-    e.stopPropagation();
-    setEditing(true);
-  };
-  const handleBlur = () => {
-    setEditing(false);
-    onLabelChange(comp.id, label);
-  };
+  const handleDoubleClick = (e) => { e.stopPropagation(); setEditing(true); };
+  const handleBlur = () => { setEditing(false); onLabelChange(comp.id, label); };
 
   const handleMouseDown = (e) => {
     if (editing) return;
@@ -189,12 +183,9 @@ function SchemaNode({ comp, selected, onSelect, onDrag, onDelete, onLabelChange 
     }, LONG_PRESS_MS);
   };
 
-  const handleMouseUp = (e) => {
+  const handleMouseUp = () => {
     clearTimeout(holdTimer.current);
-    if (!didDrag.current) {
-      setHolding(false);
-      onSelect(comp.id);
-    }
+    if (!didDrag.current) { setHolding(false); onSelect(comp.id); }
   };
 
   const handleTouchStart = (e) => {
@@ -212,10 +203,7 @@ function SchemaNode({ comp, selected, onSelect, onDrag, onDelete, onLabelChange 
 
   const handleTouchEnd = () => {
     clearTimeout(holdTimer.current);
-    if (!didDrag.current) {
-      setHolding(false);
-      onSelect(comp.id);
-    }
+    if (!didDrag.current) { setHolding(false); onSelect(comp.id); }
   };
 
   return (
@@ -225,31 +213,24 @@ function SchemaNode({ comp, selected, onSelect, onDrag, onDelete, onLabelChange 
       onMouseUp={handleMouseUp}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
-      onDoubleClick={handleDoubleClick}>
-      {/* Shadow */}
+      onDoubleClick={handleDoubleClick}
+    >
       <rect x={2} y={2} width={NODE_W} height={NODE_H + 30} rx={8} fill="rgba(0,0,0,0.35)" />
-      {/* Background */}
       <rect x={0} y={0} width={NODE_W} height={NODE_H + 30} rx={8}
         fill={selected ? '#1e3a5f' : '#0f172a'}
         stroke={holding ? '#f97316' : selected ? '#3b82f6' : '#334155'}
         strokeWidth={holding || selected ? 2 : 1} />
-      {/* Symbol */}
       <foreignObject x={5} y={5} width={NODE_W - 10} height={NODE_H - 5}>
         <div xmlns="http://www.w3.org/1999/xhtml" style={{ width: '100%', height: '100%' }}>
           <SymbolSVG type={comp.type} w={NODE_W - 10} h={NODE_H - 5} />
         </div>
       </foreignObject>
-      {/* Label */}
       <foreignObject x={2} y={NODE_H + 2} width={NODE_W - 4} height={26}>
         <div xmlns="http://www.w3.org/1999/xhtml" style={{ width: '100%' }}>
           {editing ? (
-            <textarea
-              autoFocus
+            <textarea autoFocus
               style={{ width: '100%', background: '#1e3a5f', color: 'white', fontSize: 8, border: 'none', outline: 'none', resize: 'none', textAlign: 'center', height: 24 }}
-              value={label}
-              onChange={e => setLabel(e.target.value)}
-              onBlur={handleBlur}
-            />
+              value={label} onChange={e => setLabel(e.target.value)} onBlur={handleBlur} />
           ) : (
             <div style={{ textAlign: 'center', fontSize: 8, color: '#94a3b8', lineHeight: 1.2, whiteSpace: 'pre-wrap', cursor: 'text' }}>
               {label}
@@ -257,7 +238,6 @@ function SchemaNode({ comp, selected, onSelect, onDrag, onDelete, onLabelChange 
           )}
         </div>
       </foreignObject>
-      {/* Delete btn */}
       {selected && (
         <g transform={`translate(${NODE_W - 14}, -8)`} style={{ cursor: 'pointer' }}
           onMouseDown={e => { e.stopPropagation(); onDelete(comp.id); }}>
@@ -265,9 +245,7 @@ function SchemaNode({ comp, selected, onSelect, onDrag, onDelete, onLabelChange 
           <text x={0} y={4} textAnchor="middle" fontSize="10" fill="white">×</text>
         </g>
       )}
-      {/* Connection port right */}
       <circle cx={NODE_W} cy={NODE_H / 2} r={4} fill="#475569" stroke="#64748b" strokeWidth={1} />
-      {/* Connection port left */}
       <circle cx={0} cy={NODE_H / 2} r={4} fill="#475569" stroke="#64748b" strokeWidth={1} />
     </g>
   );
@@ -275,10 +253,6 @@ function SchemaNode({ comp, selected, onSelect, onDrag, onDelete, onLabelChange 
 
 // ─── Main schema editor ───────────────────────────────────────────────────────
 export default function SingleLineSchemaTab({ project, onUpdate }) {
-  const parseSchema = () => {
-    try { return JSON.parse(project.panel_layout_data ? '{}' : '{}'); } catch { return null; }
-  };
-
   const loadSchema = () => {
     try {
       const d = JSON.parse(project.string_layout_data || '{}');
@@ -299,6 +273,8 @@ export default function SingleLineSchemaTab({ project, onUpdate }) {
   const panOrigin = useRef({ x: 0, y: 0 });
   const draggingId = useRef(null);
   const dragOffset = useRef({ x: 0, y: 0 });
+  const lastTouchDist = useRef(null);
+  const lastTouchPos = useRef(null);
 
   // ── Save ──────────────────────────────────────────────────────────────────
   const handleSave = async () => {
@@ -309,27 +285,20 @@ export default function SingleLineSchemaTab({ project, onUpdate }) {
     setSaving(false);
   };
 
-  // ── Add component ─────────────────────────────────────────────────────────
+  // ── Add/delete component ──────────────────────────────────────────────────
   const addComponent = () => {
     if (!addType) return;
     const def = COMPONENTS.find(c => c.type === addType);
     const id = `${addType}-${Date.now()}`;
-    const x = 100 + Math.random() * 200;
-    const y = 100 + Math.random() * 150;
-    setSchema(s => ({ ...s, components: [...s.components, { id, type: addType, label: def?.label || addType, x, y }] }));
+    setSchema(s => ({ ...s, components: [...s.components, { id, type: addType, label: def?.label || addType, x: 100 + Math.random() * 200, y: 100 + Math.random() * 150 }] }));
     setAddType('');
   };
 
-  // ── Delete component ──────────────────────────────────────────────────────
   const deleteComponent = (id) => {
-    setSchema(s => ({
-      components: s.components.filter(c => c.id !== id),
-      wires: s.wires.filter(w => w.from !== id && w.to !== id),
-    }));
+    setSchema(s => ({ components: s.components.filter(c => c.id !== id), wires: s.wires.filter(w => w.from !== id && w.to !== id) }));
     setSelected(null);
   };
 
-  // ── Update label ──────────────────────────────────────────────────────────
   const updateLabel = (id, label) => {
     setSchema(s => ({ ...s, components: s.components.map(c => c.id === id ? { ...c, label } : c) }));
   };
@@ -380,7 +349,7 @@ export default function SingleLineSchemaTab({ project, onUpdate }) {
     };
   }, [zoom, pan]);
 
-  // ── Pan canvas ────────────────────────────────────────────────────────────
+  // ── Mouse pan ─────────────────────────────────────────────────────────────
   const handleSvgMouseDown = (e) => {
     if (e.target === svgRef.current || e.target.tagName === 'svg') {
       setSelected(null);
@@ -388,6 +357,42 @@ export default function SingleLineSchemaTab({ project, onUpdate }) {
       panStart.current = { x: e.clientX, y: e.clientY };
       panOrigin.current = { ...pan };
     }
+  };
+
+  // ── Touch pan + pinch zoom ────────────────────────────────────────────────
+  const handleSvgTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      lastTouchDist.current = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      lastTouchPos.current = null;
+    } else if (e.touches.length === 1) {
+      lastTouchPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      lastTouchDist.current = null;
+    }
+  };
+
+  const handleSvgTouchMove = (e) => {
+    e.preventDefault();
+    if (e.touches.length === 2 && lastTouchDist.current !== null) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      setZoom(z => Math.max(0.3, Math.min(2.5, z * (dist / lastTouchDist.current))));
+      lastTouchDist.current = dist;
+    } else if (e.touches.length === 1 && lastTouchPos.current && !draggingId.current) {
+      const dx = e.touches[0].clientX - lastTouchPos.current.x;
+      const dy = e.touches[0].clientY - lastTouchPos.current.y;
+      setPan(p => ({ x: p.x + dx, y: p.y + dy }));
+      lastTouchPos.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }
+  };
+
+  const handleSvgTouchEnd = () => {
+    lastTouchDist.current = null;
+    lastTouchPos.current = null;
   };
 
   // ── Wheel zoom ────────────────────────────────────────────────────────────
@@ -402,13 +407,11 @@ export default function SingleLineSchemaTab({ project, onUpdate }) {
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
-  // ── Wire routing (simple horizontal-vertical) ─────────────────────────────
+  // ── Wire routing ──────────────────────────────────────────────────────────
   const computeWirePath = (from, to) => {
     if (!from || !to) return '';
-    const fx = from.x + NODE_W;
-    const fy = from.y + NODE_H / 2;
-    const tx = to.x;
-    const ty = to.y + NODE_H / 2;
+    const fx = from.x + NODE_W, fy = from.y + NODE_H / 2;
+    const tx = to.x, ty = to.y + NODE_H / 2;
     const mx = (fx + tx) / 2;
     return `M ${fx} ${fy} L ${mx} ${fy} L ${mx} ${ty} L ${tx} ${ty}`;
   };
@@ -449,14 +452,15 @@ export default function SingleLineSchemaTab({ project, onUpdate }) {
           </div>
 
           <div className="flex items-center gap-1 bg-muted rounded-lg px-1">
-            <Button size="icon" variant="ghost" className="h-7 w-7"
-              onClick={() => setZoom(z => Math.min(2.5, z + 0.15))}><ZoomIn className="w-3.5 h-3.5" /></Button>
+            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setZoom(z => Math.min(2.5, z + 0.15))}>
+              <ZoomIn className="w-3.5 h-3.5" />
+            </Button>
             <span className="text-xs w-10 text-center">{Math.round(zoom * 100)}%</span>
-            <Button size="icon" variant="ghost" className="h-7 w-7"
-              onClick={() => setZoom(z => Math.max(0.3, z - 0.15))}><ZoomOut className="w-3.5 h-3.5" /></Button>
+            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setZoom(z => Math.max(0.3, z - 0.15))}>
+              <ZoomOut className="w-3.5 h-3.5" />
+            </Button>
           </div>
-          <Button size="sm" variant="ghost" className="h-8 gap-1"
-            onClick={() => { setZoom(1); setPan({ x: 40, y: 40 }); }}>
+          <Button size="sm" variant="ghost" className="h-8 gap-1" onClick={() => { setZoom(1); setPan({ x: 40, y: 40 }); }}>
             <RotateCcw className="w-3.5 h-3.5" /> Återställ vy
           </Button>
 
@@ -483,7 +487,7 @@ export default function SingleLineSchemaTab({ project, onUpdate }) {
         <span className="flex items-center gap-1.5"><span className="w-6 h-0.5 bg-yellow-400 inline-block" /> DC (likström)</span>
         <span className="flex items-center gap-1.5"><span className="w-6 h-0.5 bg-blue-400 inline-block" /> AC (växelström)</span>
         <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded-sm bg-[#1e3a5f] border border-blue-500 inline-block" /> Markerad komponent</span>
-        <span className="text-muted-foreground/70">Håll ikonen (~0.4s) för att flytta • Dubbelklicka på etikett för att redigera • Scroll = zoom</span>
+        <span className="text-muted-foreground/70">Håll ikonen (~0.4s) för att flytta • Nyp för att zooma (touch) • Scroll = zoom</span>
       </div>
 
       {/* Canvas */}
@@ -491,10 +495,12 @@ export default function SingleLineSchemaTab({ project, onUpdate }) {
         <svg
           ref={svgRef}
           width="100%" height="100%"
-          style={{ display: 'block', cursor: 'grab', userSelect: 'none' }}
+          style={{ display: 'block', cursor: 'grab', userSelect: 'none', touchAction: 'none' }}
           onMouseDown={handleSvgMouseDown}
+          onTouchStart={handleSvgTouchStart}
+          onTouchMove={handleSvgTouchMove}
+          onTouchEnd={handleSvgTouchEnd}
         >
-          {/* Grid bg */}
           <defs>
             <pattern id="grid" width={20 * zoom} height={20 * zoom} patternUnits="userSpaceOnUse"
               patternTransform={`translate(${pan.x % (20 * zoom)},${pan.y % (20 * zoom)})`}>
@@ -510,12 +516,10 @@ export default function SingleLineSchemaTab({ project, onUpdate }) {
           <rect width="100%" height="100%" fill="url(#grid)" />
 
           <g transform={`translate(${pan.x},${pan.y}) scale(${zoom})`}>
-            {/* DC/AC label areas */}
             <text x={10} y={20} fill="#facc15" fontSize={10} opacity={0.4}>DC-sida</text>
             <line x1={0} x2={600} y1={30} y2={30} stroke="#facc15" strokeWidth={0.5} opacity={0.2} strokeDasharray="4 4" />
             <text x={610} y={20} fill="#60a5fa" fontSize={10} opacity={0.4}>AC-sida</text>
 
-            {/* Wires */}
             {schema.wires.map(wire => {
               const from = compMap[wire.from];
               const to = compMap[wire.to];
@@ -530,7 +534,6 @@ export default function SingleLineSchemaTab({ project, onUpdate }) {
               );
             })}
 
-            {/* Components */}
             {schema.components.map(comp => (
               <SchemaNode
                 key={comp.id}
@@ -567,7 +570,6 @@ export default function SingleLineSchemaTab({ project, onUpdate }) {
               </div>
             );
           })}
-          {/* Add wire */}
           <AddWireRow components={schema.components} onAdd={wire => setSchema(s => ({ ...s, wires: [...s.wires, wire] }))} />
         </CardContent>
       </Card>
