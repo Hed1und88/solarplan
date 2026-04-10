@@ -58,6 +58,10 @@
       "type": "string",
       "description": "JSON-data f\u00f6r batteriplacering"
     },
+    "mounting_data": {
+      "type": "string",
+      "description": "JSON-data f\u00f6r montagesystem och lastber\u00e4kning"
+    },
     "selected_products": {
       "type": "array",
       "description": "Valda produkter med antal",

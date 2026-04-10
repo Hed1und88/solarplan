@@ -260,11 +260,14 @@ export default function StringMarkingTab({ project, onUpdate, selectedProduct: s
 
   const handleSave = async () => {
     setSaving(true);
-    await onUpdate({
-      existing_installation_image_url: imageUrl,
-      string_layout_data: JSON.stringify(strings),
-    });
-    setSaving(false);
+    try {
+      await onUpdate({
+        existing_installation_image_url: imageUrl,
+        string_layout_data: JSON.stringify(strings),
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (

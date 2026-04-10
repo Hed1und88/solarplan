@@ -142,7 +142,7 @@ export default function ProjectDetail() {
           <SingleLineSchemaTab project={project} onUpdate={updateMutation.mutate} />
         </TabsContent>
         <TabsContent value="mounting">
-          <MountingSystemCalculator project={project} />
+          <MountingSystemCalculator project={project} onUpdate={updateMutation.mutateAsync} />
         </TabsContent>
       </Tabs>
     </div>

@@ -70,7 +70,7 @@ const WIND_ZONES = [
   { label: 'Vindzon 4 – Kust/öppen terräng', value: 1.2 },
 ];
 
-export default function MountingSystemCalculator({ project }) {
+export default function MountingSystemCalculator({ project, onUpdate }) {
   const [selectedBrand, setSelectedBrand] = useState('');
   const [selectedModel, setSelectedModel] = useState(null);
   const [snowZone, setSnowZone] = useState('');
@@ -264,7 +264,34 @@ export default function MountingSystemCalculator({ project }) {
               )}
             </div>
 
-            <Button onClick={() => setShowResult(true)} disabled={!snowZone || !windZone} className="gap-2 w-full sm:w-auto">
+            <Button
+              onClick={() => {
+                setShowResult(true);
+                if (onUpdate) {
+                  onUpdate({ mounting_data: JSON.stringify({
+                    brandLabel: SYSTEMS[selectedBrand]?.label,
+                    modelName: selectedModel?.name,
+                    roofAngle: parseFloat(roofAngle) || 30,
+                    snowZoneLabel: SNOW_ZONES.find(z => String(z.value) === snowZone)?.label,
+                    windZoneLabel: WIND_ZONES.find(z => String(z.value) === windZone)?.label,
+                    muFactor: muFactor.toFixed(2),
+                    cpe,
+                    designSnow: designSnow?.toFixed(2),
+                    designWind: designWind?.toFixed(2),
+                    totalLoad: totalLoad?.toFixed(2),
+                    hookSpacing: (() => {
+                      const m = selectedModel;
+                      const tl = designSnow != null && designWind != null ? designSnow + designWind : null;
+                      return m ? Math.min(m.hookSpacingMM, tl ? Math.round(1200 / (1 + tl * 0.3)) : m.hookSpacingMM) : null;
+                    })(),
+                    snowOk: modelData && designSnow != null ? designSnow <= modelData.maxSnow : null,
+                    windOk: modelData && designWind != null ? designWind <= modelData.maxWind : null,
+                  })});
+                }
+              }}
+              disabled={!snowZone || !windZone}
+              className="gap-2 w-full sm:w-auto"
+            >
               Beräkna laster
             </Button>
           </CardContent>
