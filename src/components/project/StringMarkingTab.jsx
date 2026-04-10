@@ -3,66 +3,63 @@ import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Save, Plus, Trash2, ChevronDown, ChevronUp, CheckCircle2, XCircle } from 'lucide-react';
+import { Save, Plus, Trash2, ChevronDown, ChevronUp, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import StringDrawingCanvas from './StringDrawingCanvas';
 
 const STRING_COLORS = ['#ef4444','#3b82f6','#22c55e','#f59e0b','#8b5cf6','#ec4899','#06b6d4','#84cc16','#f97316','#e879f9'];
 const STRING_NAMES = Array.from({ length: 10 }, (_, i) => `Slinga ${i + 1}`);
 
-// Tolerance for measured vs expected (±10%)
-const TOLERANCE = 0.10;
+// Tolerance thresholds
+const TOLERANCE_OK = 0.05;   // ±5% = green
+const TOLERANCE_WARN = 0.15; // ±15% = yellow, beyond = red
 
-function calcExpected(panelCount, product) {
-  if (!product || !panelCount) return null;
-  const voc = product.voc_v;
-  const isc = product.isc_a;
-  const pmax = product.power_watts || 400;
-  const vmp = product.vmp_v;
-  const imp = product.imp_a;
-  // Only calculate if we have the data from the product
-  const hasElec = voc && isc && vmp && imp;
-  return {
-    voc:     voc ? +(voc * panelCount).toFixed(1) : null,
-    isc:     isc ? +(isc).toFixed(2) : null,
-    power:   +(pmax * panelCount / 1000).toFixed(2),
-    vmp:     vmp ? +(vmp * panelCount).toFixed(1) : null,
-    imp:     imp ? +(imp).toFixed(2) : null,
-    hasElec,
-  };
-}
-
-function statusColor(measured, expected) {
+function vocStatus(measured, expected) {
   if (!measured || !expected) return null;
   const m = parseFloat(measured);
-  if (isNaN(m)) return null;
+  if (isNaN(m) || expected === 0) return null;
   const diff = Math.abs(m - expected) / expected;
-  return diff <= TOLERANCE ? 'ok' : 'err';
+  if (diff <= TOLERANCE_OK) return 'ok';
+  if (diff <= TOLERANCE_WARN) return 'warn';
+  return 'err';
+}
+
+function StatusIcon({ status }) {
+  if (status === 'ok') return <CheckCircle2 className="w-5 h-5 text-green-500 shrink-0" />;
+  if (status === 'warn') return <AlertCircle className="w-5 h-5 text-yellow-500 shrink-0" />;
+  if (status === 'err') return <XCircle className="w-5 h-5 text-red-500 shrink-0" />;
+  return null;
+}
+
+function StatusLabel({ status, measured, expected, unit }) {
+  if (!status) return null;
+  const m = parseFloat(measured);
+  const diff = ((m - expected) / expected * 100).toFixed(1);
+  const sign = diff > 0 ? '+' : '';
+  if (status === 'ok') return <span className="text-xs text-green-600 font-medium">✓ Godkänt ({sign}{diff}%)</span>;
+  if (status === 'warn') return <span className="text-xs text-yellow-600 font-medium">⚠ Gränsfall ({sign}{diff}%, förväntat {expected} {unit})</span>;
+  return <span className="text-xs text-red-500 font-medium">✗ Avvikelse ({sign}{diff}%, förväntat {expected} {unit})</span>;
 }
 
 function MeasurementRow({ label, unit, expected, measured, onChange }) {
-  const status = statusColor(measured, expected);
+  const status = vocStatus(measured, expected);
   return (
-    <div className="flex items-center gap-2 flex-wrap">
-      <span className="text-xs text-muted-foreground w-24 shrink-0">{label}</span>
-      <span className="text-xs font-mono text-foreground w-20">
-        {expected != null ? `${expected} ${unit}` : '—'}
-      </span>
-      <input
-        type="number" step="0.1"
-        value={measured}
-        onChange={e => onChange(e.target.value)}
-        placeholder={`Uppmätt ${unit}`}
-        className="w-28 border border-border rounded-lg px-2 py-1 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-primary"
-      />
-      {status === 'ok' && <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />}
-      {status === 'err' && <XCircle className="w-4 h-4 text-red-500 shrink-0" />}
-      {status === 'ok' && <span className="text-xs text-green-600">OK</span>}
-      {status === 'err' && (
-        <span className="text-xs text-red-500">
-          Avvikelse {expected != null ? `(förv. ${expected} ${unit})` : ''}
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-muted-foreground w-20 shrink-0">{label}</span>
+        <span className="text-xs font-mono bg-muted rounded px-2 py-0.5">
+          {expected != null ? `Förväntat: ${expected} ${unit}` : '—'}
         </span>
-      )}
+        <input
+          type="number" step="0.1"
+          value={measured}
+          onChange={e => onChange(e.target.value)}
+          placeholder={`Uppmätt ${unit}`}
+          className="w-28 border border-border rounded-lg px-2 py-1 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+        />
+        <StatusIcon status={status} />
+      </div>
+      {status && <StatusLabel status={status} measured={measured} expected={expected} unit={unit} />}
     </div>
   );
 }
@@ -72,14 +69,11 @@ function StringCard({ str, onUpdate, onDelete, onSelect, isActive, selectedProdu
   const exp = calcExpected(str.panel_count, selectedProduct);
 
   const hasData = str.points && str.points.length >= 2;
-  const anyErr = [
-    str.meas_voc && exp?.voc ? statusColor(str.meas_voc, exp.voc) : null,
-    str.meas_isc && exp?.isc ? statusColor(str.meas_isc, exp.isc) : null,
-    str.meas_vmp && exp?.vmp ? statusColor(str.meas_vmp, exp.vmp) : null,
-    str.meas_imp && exp?.imp ? statusColor(str.meas_imp, exp.imp) : null,
-  ].includes('err');
-  const hasMeasurements = str.meas_voc || str.meas_isc || str.meas_vmp || str.meas_imp;
-  const allOk = hasMeasurements && !anyErr;
+  const vocSt = str.meas_voc && exp?.voc ? vocStatus(str.meas_voc, exp.voc) : null;
+  const hasMeasurements = !!str.meas_voc;
+  const allOk = vocSt === 'ok';
+  const isWarn = vocSt === 'warn';
+  const anyErr = vocSt === 'err';
 
   return (
     <div className={`border rounded-xl overflow-hidden transition-all ${isActive ? 'border-primary ring-1 ring-primary' : 'border-border'}`}>
@@ -91,6 +85,7 @@ function StringCard({ str, onUpdate, onDelete, onSelect, isActive, selectedProdu
         <span className="font-medium text-sm flex-1">{str.name}</span>
         {hasData && <span className="text-xs text-muted-foreground">{str.points.length} punkter</span>}
         {allOk && <CheckCircle2 className="w-4 h-4 text-green-500" />}
+        {isWarn && <AlertCircle className="w-4 h-4 text-yellow-500" />}
         {anyErr && <XCircle className="w-4 h-4 text-red-500" />}
         {open ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
       </div>
@@ -147,37 +142,16 @@ function StringCard({ str, onUpdate, onDelete, onSelect, isActive, selectedProdu
             </div>
           )}
 
-          {/* Measurements */}
+          {/* Measurements — only Voc */}
           {str.panel_count && (
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground">Uppmätta värden (skriv in vad du mätt)</p>
+            <div className="space-y-3">
+              <p className="text-xs font-semibold text-foreground">Skriv in uppmätt spänning</p>
               <MeasurementRow
                 label="Voc (mätt)"
                 unit="V"
                 expected={exp?.voc}
                 measured={str.meas_voc || ''}
                 onChange={v => onUpdate({ meas_voc: v })}
-              />
-              <MeasurementRow
-                label="Isc (mätt)"
-                unit="A"
-                expected={exp?.isc}
-                measured={str.meas_isc || ''}
-                onChange={v => onUpdate({ meas_isc: v })}
-              />
-              <MeasurementRow
-                label="Vmp (mätt)"
-                unit="V"
-                expected={exp?.vmp}
-                measured={str.meas_vmp || ''}
-                onChange={v => onUpdate({ meas_vmp: v })}
-              />
-              <MeasurementRow
-                label="Imp (mätt)"
-                unit="A"
-                expected={exp?.imp}
-                measured={str.meas_imp || ''}
-                onChange={v => onUpdate({ meas_imp: v })}
               />
             </div>
           )}
