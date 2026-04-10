@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -195,7 +195,15 @@ export default function StringMarkingTab({ project, onUpdate, selectedProduct: s
     queryFn: () => base44.entities.Product.filter({ category: 'solpanel' }),
   });
 
-  const [selectedProductId, setSelectedProductId] = useState(() => selectedProductProp?.id || '');
+  const [selectedProductId, setSelectedProductId] = useState(selectedProductProp?.id || '');
+
+  // Sync when parent resolves the product from panel layout
+  useEffect(() => {
+    if (selectedProductProp?.id && !selectedProductId) {
+      setSelectedProductId(selectedProductProp.id);
+    }
+  }, [selectedProductProp?.id]);
+
   const selectedProduct = solarProducts.find(p => p.id === selectedProductId) || selectedProductProp || null;
 
   const [imageUrl, setImageUrl] = useState(project.existing_installation_image_url || '');
