@@ -64,6 +64,20 @@ function MeasurementRow({ label, unit, expected, measured, onChange }) {
   );
 }
 
+function calcExpected(panelCount, product) {
+  if (!product || !panelCount) return null;
+  const voc = product.voc_v, isc = product.isc_a, vmp = product.vmp_v, imp = product.imp_a;
+  const hasElec = !!(voc && isc && vmp && imp);
+  return {
+    voc: voc ? +(voc * panelCount).toFixed(1) : null,
+    isc: isc ? +(isc).toFixed(2) : null,
+    power: +((product.power_watts || 400) * panelCount / 1000).toFixed(2),
+    vmp: vmp ? +(vmp * panelCount).toFixed(1) : null,
+    imp: imp ? +(imp).toFixed(2) : null,
+    hasElec,
+  };
+}
+
 function StringCard({ str, onUpdate, onDelete, onSelect, isActive, selectedProduct }) {
   const [open, setOpen] = useState(false);
   const exp = calcExpected(str.panel_count, selectedProduct);
