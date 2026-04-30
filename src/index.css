@@ -81,8 +81,16 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  input, textarea, [contenteditable] {
+    -webkit-user-select: text;
+    user-select: text;
   }
   body {
     @apply bg-background text-foreground font-inter;
+    overscroll-behavior-y: none;
+    -webkit-overflow-scrolling: touch;
   }
 }

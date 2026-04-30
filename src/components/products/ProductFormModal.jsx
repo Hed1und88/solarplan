@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { X, Upload, Loader2, Sparkles } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const categories = [
   { value: 'solpanel', label: 'Solpanel' },
@@ -167,16 +168,17 @@ name, brand, model, power_watts, width_mm, height_mm, voc_v, isc_a, vmp_v, imp_a
             <Field label="Pris (SEK) *" type="number" value={form.price} onChange={v => set('price', v)} placeholder="0" />
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Enhet</label>
-              <select
-                value={form.unit}
-                onChange={e => set('unit', e.target.value)}
-                className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
-              >
-                <option value="st">st</option>
-                <option value="m">m</option>
-                <option value="set">set</option>
-                <option value="paket">paket</option>
-              </select>
+              <Select value={form.unit} onValueChange={v => set('unit', v)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="st">st</SelectItem>
+                  <SelectItem value="m">m</SelectItem>
+                  <SelectItem value="set">set</SelectItem>
+                  <SelectItem value="paket">paket</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 

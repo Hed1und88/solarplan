@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Wind, Snowflake, AlertTriangle, CheckCircle2, Ruler } from 'lucide-react';
 import MountingDrawing from './MountingDrawing';
 
@@ -185,18 +186,18 @@ export default function MountingSystemCalculator({ project, onUpdate }) {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <select
-              value={selectedPanelId}
-              onChange={e => setSelectedPanelId(e.target.value)}
-              className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
-            >
-              <option value="">Välj panel...</option>
-              {products.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.name} – {p.power_watts}W  ({p.width_mm}×{p.height_mm} mm)
-                </option>
-              ))}
-            </select>
+            <Select value={selectedPanelId} onValueChange={setSelectedPanelId}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Välj panel..." />
+              </SelectTrigger>
+              <SelectContent>
+                {products.map(p => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name} – {p.power_watts}W ({p.width_mm}×{p.height_mm} mm)
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             {selectedProduct && (
               <div className="mt-2 flex gap-2 flex-wrap text-xs">
                 <Badge variant="outline">{selectedProduct.width_mm} × {selectedProduct.height_mm} mm</Badge>
@@ -221,29 +222,29 @@ export default function MountingSystemCalculator({ project, onUpdate }) {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="text-xs font-medium text-muted-foreground block mb-1.5">Snözon (Sverige)</label>
-                <select
-                  value={snowZone}
-                  onChange={e => { setSnowZone(e.target.value); setShowResult(false); }}
-                  className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
-                >
-                  <option value="">Välj snözon...</option>
-                  {SNOW_ZONES.map(z => (
-                    <option key={z.value} value={z.value}>{z.label} ({z.value} kN/m²)</option>
-                  ))}
-                </select>
+                <Select value={snowZone} onValueChange={v => { setSnowZone(v); setShowResult(false); }}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Välj snözon..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SNOW_ZONES.map(z => (
+                      <SelectItem key={z.value} value={String(z.value)}>{z.label} ({z.value} kN/m²)</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground block mb-1.5">Vindzon</label>
-                <select
-                  value={windZone}
-                  onChange={e => { setWindZone(e.target.value); setShowResult(false); }}
-                  className="w-full border border-border rounded-xl px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
-                >
-                  <option value="">Välj vindzon...</option>
-                  {WIND_ZONES.map(z => (
-                    <option key={z.value} value={z.value}>{z.label} ({z.value} kN/m²)</option>
-                  ))}
-                </select>
+                <Select value={windZone} onValueChange={v => { setWindZone(v); setShowResult(false); }}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Välj vindzon..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {WIND_ZONES.map(z => (
+                      <SelectItem key={z.value} value={String(z.value)}>{z.label} ({z.value} kN/m²)</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label className="text-xs font-medium text-muted-foreground block mb-1.5">Takvinkel (grader)</label>
