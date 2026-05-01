@@ -11,6 +11,7 @@ import Projects from '@/pages/Projects';
 import ProjectDetail from '@/pages/ProjectDetail';
 import Products from '@/pages/Products';
 import Settings from '@/pages/Settings';
+import Kalkylator from '@/pages/Kalkylator';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -47,6 +48,7 @@ const AuthenticatedApp = () => {
         <Route path="/projects/:id" element={<ProjectDetail />} />
         <Route path="/products" element={<Products />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/kalkylator" element={<Kalkylator />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>
