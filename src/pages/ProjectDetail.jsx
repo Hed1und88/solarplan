@@ -14,6 +14,7 @@ import StringMarkingTab from '@/components/project/StringMarkingTab';
 import BatteryTab from '@/components/project/BatteryTab';
 import ProductSelectionTab from '@/components/project/ProductSelectionTab.jsx';
 import MountingSystemCalculator from '@/components/project/MountingSystemCalculator';
+import SolarRoofPlanner from '@/components/project/SolarRoofPlanner';
 import SingleLineSchemaTab from '@/components/project/SingleLineSchemaTab';
 
 const statusLabels = { planering: 'Planering', projektering: 'Projektering', offert: 'Offert', installation: 'Installation', klart: 'Klart' };
@@ -107,7 +108,8 @@ export default function ProjectDetail() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="panels">
+        <TabsContent value="panels" className="space-y-4">
+          <SolarRoofPlanner project={project} onUpdate={updateMutation.mutateAsync} />
           <PanelPlacementTab project={project} onUpdate={updateMutation.mutateAsync} />
         </TabsContent>
         <TabsContent value="strings">
@@ -139,7 +141,8 @@ export default function ProjectDetail() {
         <TabsContent value="singleline">
           <SingleLineSchemaTab project={project} onUpdate={updateMutation.mutateAsync} />
         </TabsContent>
-        <TabsContent value="mounting">
+        <TabsContent value="mounting" className="space-y-4">
+          <SolarRoofPlanner project={project} onUpdate={updateMutation.mutateAsync} />
           <MountingSystemCalculator project={project} onUpdate={updateMutation.mutateAsync} />
         </TabsContent>
       </Tabs>
