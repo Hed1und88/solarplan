@@ -1,0 +1,20 @@
+[
+  {
+    "category": "solpanel",
+    "brand": "JA Solar",
+    "model": "JAM54D41-435/LB",
+    "image_source_url": ""
+  },
+  {
+    "category": "vaxelriktare",
+    "brand": "SolaX",
+    "model": "X3-Hybrid-15.0-G4",
+    "image_source_url": ""
+  },
+  {
+    "category": "batteri",
+    "brand": "BYD",
+    "model": "Battery-Box Premium HVS 10.2",
+    "image_source_url": ""
+  }
+]
