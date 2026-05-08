@@ -21,11 +21,28 @@ function clean(item) {
   result.price = Number(result.price) || 0;
   result.unit = result.unit || 'st';
   result.is_active = true;
-  result.image_url = result.image_url || svgImage(result);
+  result.image_url = result.image_url || '';
   Object.keys(result).forEach((key) => {
-    if (result[key] === null || result[key] === undefined || result[key] === '') delete result[key];
+    if (result[key] === null || result[key] === undefined) delete result[key];
   });
   return result;
+}
+
+function imagePrompt(product) {
+  return `Find a real public product image URL for this exact product. Return ONLY JSON with image_url and source_url. Requirements: image_url must be a direct HTTPS image URL ending in .jpg, .jpeg, .png or .webp when possible. Prefer official manufacturer product page, datasheet product image, or reputable distributor product image. Do not return logos, icons, generated images, SVG data URLs, or placeholder images. Product: ${product.brand || ''} ${product.model || product.name || ''}. Category: ${product.category || ''}.`;
+}
+
+const IMAGE_SCHEMA = {
+  type: 'object',
+  properties: {
+    image_url: { type: 'string' },
+    source_url: { type: 'string' },
+  },
+};
+
+function hasRealImage(product) {
+  const url = String(product?.image_url || '');
+  return url.startsWith('https://') && !url.includes('placeholder') && !url.includes('data:image/svg');
 }
 
 export default function ProductCatalogImporter({ products = [], onDone }) {
@@ -59,23 +76,52 @@ export default function ProductCatalogImporter({ products = [], onDone }) {
     }
   };
 
-  const backfillImages = async () => {
-    const missing = products.filter((product) => !product.image_url);
-    if (!missing.length) {
-      setStatus('Alla befintliga produkter har redan bild.');
+  const fetchRealImages = async () => {
+    const targetProducts = products.filter((product) => !hasRealImage(product));
+    if (!targetProducts.length) {
+      setStatus('Alla produkter har redan riktig https-bild.');
       return;
     }
-    if (!confirm(`Lägg in genererade bilder på ${missing.length} befintliga produkter?`)) return;
+    if (!confirm(`Hämta riktiga produktbilder från internet till ${targetProducts.length} produkter?`)) return;
+
     setImageRunning(true);
     let updated = 0;
+    let fallback = 0;
+
     try {
-      for (let i = 0; i < missing.length; i++) {
-        const product = missing[i];
-        setStatus(`${i + 1}/${missing.length}: bild till ${product.brand || ''} ${product.model || product.name || ''}`);
-        await base44.entities.Product.update(product.id, { image_url: svgImage(product) });
-        updated++;
+      for (let i = 0; i < targetProducts.length; i++) {
+        const product = targetProducts[i];
+        setStatus(`${i + 1}/${targetProducts.length}: hämtar bild till ${product.brand || ''} ${product.model || product.name || ''}`);
+
+        let imageUrl = '';
+        let sourceUrl = '';
+        try {
+          const result = await base44.integrations.Core.InvokeLLM({
+            prompt: imagePrompt(product),
+            add_context_from_internet: true,
+            response_json_schema: IMAGE_SCHEMA,
+          });
+          imageUrl = String(result?.image_url || '').trim();
+          sourceUrl = String(result?.source_url || '').trim();
+        } catch (error) {
+          imageUrl = '';
+        }
+
+        if (imageUrl.startsWith('https://')) {
+          await base44.entities.Product.update(product.id, {
+            image_url: imageUrl,
+            image_source_url: sourceUrl,
+          });
+          updated++;
+        } else {
+          await base44.entities.Product.update(product.id, {
+            image_url: svgImage(product),
+            image_source_url: '',
+          });
+          fallback++;
+        }
       }
-      setStatus(`Klar. Lade in bilder på ${updated} befintliga produkter.`);
+      setStatus(`Klar. Riktiga bilder: ${updated}. Fallback-bilder: ${fallback}.`);
       await onDone?.();
     } finally {
       setImageRunning(false);
@@ -88,8 +134,8 @@ export default function ProductCatalogImporter({ products = [], onDone }) {
         <button onClick={run} disabled={running || imageRunning} className="flex items-center gap-2 border border-border bg-card px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50">
           <Sparkles className="w-4 h-4" /> {running ? 'Lägger in produkter...' : `Lägg in ${ALL_PRODUCTS.length} produkter`}
         </button>
-        <button onClick={backfillImages} disabled={running || imageRunning} className="flex items-center gap-2 border border-border bg-card px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50">
-          <Image className="w-4 h-4" /> {imageRunning ? 'Lägger in bilder...' : 'Lägg in bilder på befintliga'}
+        <button onClick={fetchRealImages} disabled={running || imageRunning} className="flex items-center gap-2 border border-border bg-card px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50">
+          <Image className="w-4 h-4" /> {imageRunning ? 'Hämtar produktbilder...' : 'Hämta riktiga produktbilder'}
         </button>
       </div>
       {status && <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">{status}</div>}
