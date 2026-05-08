@@ -1,22 +1,266 @@
-import React,{useState}from'react';
-import{Button}from'@/components/ui/button';
-import{Card,CardContent,CardHeader,CardTitle}from'@/components/ui/card';
-import{Badge}from'@/components/ui/badge';
-import{AlertTriangle,Download,FileText,Home,Layers,Maximize2,PanelTop,Plus,Trash2,ZoomIn,ZoomOut}from'lucide-react';
+import React, { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { AlertTriangle, Home, Maximize2, PanelTop, Plus, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
 
-const P={model:'Standardpanel 500 W',w:1.134,h:1.953,watt:500};
-const baseRoof={id:1,name:'Tak 1',widthM:8,roofFallM:6,shape:'Rektangel',angleDeg:27,material:'Takpannor',panelGroups:[{id:2,name:'Panelgrupp 1',rows:3,cols:4,xM:.7,yM:.7,orientation:'Stående',clampMm:391,threeRails:false}],obstacles:[]};
-const shapes=['Rektangel','Trapets vänster','Trapets höger','Parallellogram vänster','Parallellogram höger','Vinkel vänster','Vinkel höger'];
-const id=()=>Math.floor(Date.now()+Math.random()*99999);
-const size=o=>o==='Liggande'?{w:P.h,h:P.w}:{w:P.w,h:P.h};
-const calc=roofs=>roofs.reduce((a,r)=>{r.panelGroups.forEach(g=>{const s=size(g.orientation),n=g.rows*g.cols,rails=g.rows*(g.threeRails?3:2),len=g.cols*s.w*rails,hooks=(Math.ceil((g.cols*s.w)/1.2)+1)*rails;a.panels+=n;a.kwp+=n*P.watt/1000;a.rails+=rails;a.len+=len;a.hooks+=hooks;a.end+=g.rows*4;a.mid+=Math.max(0,(g.cols-1)*g.rows*2)});return a},{panels:0,kwp:0,rails:0,len:0,hooks:0,end:0,mid:0});
-function poly(x,y,w,h,s){if(s==='Trapets vänster')return`${x+w*.18},${y} ${x+w},${y} ${x+w},${y+h} ${x},${y+h}`;if(s==='Trapets höger')return`${x},${y} ${x+w*.82},${y} ${x+w},${y+h} ${x},${y+h}`;if(s==='Parallellogram vänster')return`${x+w*.12},${y} ${x+w},${y} ${x+w*.88},${y+h} ${x},${y+h}`;if(s==='Parallellogram höger')return`${x},${y} ${x+w*.88},${y} ${x+w},${y+h} ${x+w*.12},${y+h}`;if(s==='Vinkel vänster')return`${x+w*.25},${y} ${x+w},${y} ${x+w},${y+h} ${x},${y+h} ${x},${y+h*.42} ${x+w*.25},${y+h*.42}`;if(s==='Vinkel höger')return`${x},${y} ${x+w*.75},${y} ${x+w*.75},${y+h*.42} ${x+w},${y+h*.42} ${x+w},${y+h} ${x},${y+h}`;return`${x},${y} ${x+w},${y} ${x+w},${y+h} ${x},${y+h}`}
-function Modal({title,onClose,children}){return <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4'><div className='w-full max-w-xl rounded-2xl bg-background shadow-xl'><div className='flex items-center justify-between border-b p-4'><h3 className='font-bold'>{title}</h3><button onClick={onClose}>✕</button></div><div className='p-4'>{children}</div></div></div>}
-const Input=({label,...p})=><label className='block text-xs text-muted-foreground'>{label}<input {...p} className='mt-1 w-full rounded-lg border bg-background px-3 py-2 text-sm'/></label>;
-const Select=({label,children,...p})=><label className='block text-xs text-muted-foreground'>{label}<select {...p} className='mt-1 w-full rounded-lg border bg-background px-3 py-2 text-sm'>{children}</select></label>;
-function Canvas({roofs,sel,setSel,zoom,setZoom,del}){const pad=70,gap=90;let cy=pad;const ls=roofs.map(r=>{const l={r,x:pad,y:cy,w:r.widthM*zoom,h:r.roofFallM*zoom};cy+=l.h+gap;return l});const sw=Math.max(760,...ls.map(l=>l.x+l.w+210)),sh=Math.max(520,cy+pad);function group(l,g){const s=size(g.orientation),pw=s.w*zoom,ph=s.h*zoom,pg=.03*zoom,sx=l.x+g.xM*zoom,sy=l.y+g.yM*zoom,out=[];for(let r=0;r<g.rows;r++)for(let c=0;c<g.cols;c++){let x=sx+c*(pw+pg),y=sy+r*(ph+pg);out.push(<g key={'p'+g.id+r+c}><rect x={x} y={y} width={pw} height={ph} rx='3' fill='#dbeafe' stroke='#2563eb'/><line x1={x+pw/3} y1={y+3} x2={x+pw/3} y2={y+ph-3} stroke='#93c5fd'/><line x1={x+pw*2/3} y1={y+3} x2={x+pw*2/3} y2={y+ph-3} stroke='#93c5fd'/></g>)}const gw=g.cols*pw+Math.max(0,g.cols-1)*pg;for(let r=0;r<g.rows;r++){let y=sy+r*(ph+pg),offs=g.threeRails?[g.clampMm/1000*zoom,ph/2,ph-g.clampMm/1000*zoom]:[g.clampMm/1000*zoom,ph-g.clampMm/1000*zoom];offs.forEach((o,i)=>{let ry=y+o;out.push(<line key={'r'+g.id+r+i} x1={sx-8} y1={ry} x2={sx+gw+8} y2={ry} stroke='#8b5e34' strokeWidth='4' strokeLinecap='round'/>);let hc=Math.max(2,Math.ceil((gw/zoom)/1.2)+1);for(let k=0;k<hc;k++)out.push(<circle key={'h'+g.id+r+i+k} cx={sx+gw/Math.max(1,hc-1)*k} cy={ry} r='5' fill='#f97316' stroke='#fff'/>)})}return out}
-return <div className='relative overflow-hidden rounded-2xl border bg-white'><div className='absolute right-3 top-3 z-10 flex flex-col gap-2 print:hidden'><button onClick={()=>setZoom(z=>Math.min(120,z+8))} className='rounded bg-white p-2 shadow'><ZoomIn className='h-4 w-4'/></button><button onClick={()=>setZoom(z=>Math.max(24,z-8))} className='rounded bg-white p-2 shadow'><ZoomOut className='h-4 w-4'/></button><button onClick={()=>setZoom(60)} className='rounded bg-white p-2 shadow'><Maximize2 className='h-4 w-4'/></button></div><svg viewBox={`0 0 ${sw} ${sh}`} preserveAspectRatio='xMidYMid meet' className='block h-[560px] w-full bg-white'><defs><pattern id='hatch' width='10' height='10' patternUnits='userSpaceOnUse' patternTransform='rotate(45)'><line x1='0' y1='0' x2='0' y2='10' stroke='#e2e8f0' strokeWidth='3'/></pattern></defs>{ls.map(l=>{const c=calc([l.r]),active=l.r.id===sel;return <g key={l.r.id} onClick={()=>setSel(l.r.id)} className='cursor-pointer'><text x={l.x} y={l.y-24} fontSize='18' fontWeight='800'>{l.r.name}</text><polygon points={poly(l.x,l.y,l.w,l.h,l.r.shape)} fill='url(#hatch)' stroke={active?'#7c3aed':'#111827'} strokeWidth={active?4:2.5}/>{l.r.panelGroups.flatMap(g=>group(l,g))}{l.r.obstacles.map(o=><g key={o.id}><rect x={l.x+o.xM*zoom} y={l.y+o.yM*zoom} width={o.widthM*zoom} height={o.lengthM*zoom} rx='4' fill='#fee2e2' stroke='#ef4444' strokeDasharray='5 4'/><text x={l.x+o.xM*zoom+6} y={l.y+o.yM*zoom+18} fontSize='11' fill='#991b1b'>{o.name}</text></g>)}<foreignObject x={l.x+l.w-120} y={l.y+14} width='110' height='36'><div className='rounded-full bg-white px-3 py-2 text-center text-xs font-bold shadow'>{c.panels} paneler</div></foreignObject><line x1={l.x} y1={l.y+l.h+28} x2={l.x+l.w} y2={l.y+l.h+28} stroke='#2563eb' strokeWidth='2'/><text x={l.x+l.w/2} y={l.y+l.h+49} textAnchor='middle' fontSize='13' fill='#2563eb' fontWeight='700'>{l.r.widthM} m</text><line x1={l.x+l.w+24} y1={l.y} x2={l.x+l.w+24} y2={l.y+l.h} stroke='#2563eb' strokeWidth='2'/><text x={l.x+l.w+46} y={l.y+l.h/2} fontSize='13' fill='#2563eb' fontWeight='700'>{l.r.roofFallM} m</text>{active&&<foreignObject x={l.x} y={l.y-14} width='50' height='34'><button onClick={e=>{e.stopPropagation();del(l.r.id)}} className='rounded-full bg-white p-2 text-red-600 shadow'><Trash2 className='h-4 w-4'/></button></foreignObject>}</g>})}</svg></div>}
-function RoofForm({onSave,onClose}){const[r,setR]=useState({...baseRoof,id:id(),name:'Tak 1',panelGroups:[],obstacles:[]});const set=p=>setR(v=>({...v,...p}));return <Modal title='Lägg till tak' onClose={onClose}><div className='grid gap-3 md:grid-cols-2'><Input label='Namn' value={r.name} onChange={e=>set({name:e.target.value})}/><Select label='Takform' value={r.shape} onChange={e=>set({shape:e.target.value})}>{shapes.map(s=><option key={s}>{s}</option>)}</Select><Input label='Bredd A (m)' type='number' step='.1' value={r.widthM} onChange={e=>set({widthM:+e.target.value})}/><Input label='Takfall B (m)' type='number' step='.1' value={r.roofFallM} onChange={e=>set({roofFallM:+e.target.value})}/><Input label='Taklutning (°)' type='number' value={r.angleDeg} onChange={e=>set({angleDeg:+e.target.value})}/><Input label='Material' value={r.material} onChange={e=>set({material:e.target.value})}/></div><div className='mt-4 flex justify-end gap-2'><Button variant='outline' onClick={onClose}>Avbryt</Button><Button onClick={()=>onSave(r)}>Spara</Button></div></Modal>}
-function GroupForm({onSave,onClose}){const[g,setG]=useState({id:id(),name:'Panelgrupp',rows:3,cols:4,xM:.7,yM:.7,orientation:'Stående',clampMm:391,threeRails:false});const set=p=>setG(v=>({...v,...p}));return <Modal title='Lägg till panelgrupp' onClose={onClose}><div className='grid gap-3 md:grid-cols-2'><Input label='Namn' value={g.name} onChange={e=>set({name:e.target.value})}/><Select label='Panelmontering' value={g.orientation} onChange={e=>set({orientation:e.target.value})}><option>Stående</option><option>Liggande</option></Select><Input label='Rader' type='number' value={g.rows} onChange={e=>set({rows:+e.target.value})}/><Input label='Kolumner' type='number' value={g.cols} onChange={e=>set({cols:+e.target.value})}/><Input label='Position X (m)' type='number' step='.1' value={g.xM} onChange={e=>set({xM:+e.target.value})}/><Input label='Position Y (m)' type='number' step='.1' value={g.yM} onChange={e=>set({yM:+e.target.value})}/><Input label='Klämzon (mm)' type='number' value={g.clampMm} onChange={e=>set({clampMm:+e.target.value})}/><label className='pt-6 text-sm'><input type='checkbox' checked={g.threeRails} onChange={e=>set({threeRails:e.target.checked})}/> Använd tre skenor</label></div><div className='mt-4 flex justify-end gap-2'><Button variant='outline' onClick={onClose}>Avbryt</Button><Button onClick={()=>onSave(g)}>Lägg till</Button></div></Modal>}
-function ObsForm({onSave,onClose}){const[o,setO]=useState({id:id(),name:'Hinder',widthM:.8,lengthM:.8,xM:2,yM:2});const set=p=>setO(v=>({...v,...p}));return <Modal title='Lägg till hinder' onClose={onClose}><div className='grid gap-3 md:grid-cols-2'><Input label='Namn' value={o.name} onChange={e=>set({name:e.target.value})}/><Input label='Bredd (m)' type='number' step='.1' value={o.widthM} onChange={e=>set({widthM:+e.target.value})}/><Input label='Längd (m)' type='number' step='.1' value={o.lengthM} onChange={e=>set({lengthM:+e.target.value})}/><Input label='Position X (m)' type='number' step='.1' value={o.xM} onChange={e=>set({xM:+e.target.value})}/><Input label='Position Y (m)' type='number' step='.1' value={o.yM} onChange={e=>set({yM:+e.target.value})}/></div><div className='mt-4 flex justify-end gap-2'><Button variant='outline' onClick={onClose}>Avbryt</Button><Button onClick={()=>onSave(o)}>Lägg till</Button></div></Modal>}
-export default function SolarRoofPlanner({project,onUpdate}){const[roofs,setRoofs]=useState(()=>{try{const d=JSON.parse(project?.solar_roof_planner_data||'null');if(d?.roofs?.length)return d.roofs}catch{}return[{...baseRoof,widthM:+project?.roof_width_m||8,roofFallM:+project?.roof_height_m||6}]});const[sel,setSel]=useState(roofs[0]?.id||1),[dlg,setDlg]=useState(null),[zoom,setZoom]=useState(60),[drawing,setDrawing]=useState(false);const selected=roofs.find(r=>r.id===sel)||roofs[0],c=calc(roofs);const save=n=>{setRoofs(n);onUpdate?.({solar_roof_planner_data:JSON.stringify({roofs:n})})};const addRoof=r=>{save([...roofs,r]);setSel(r.id);setDlg(null)};const addGroup=g=>{save(roofs.map(r=>r.id===selected.id?{...r,panelGroups:[...r.panelGroups,g]}:r));setDlg(null)};const addObs=o=>{save(roofs.map(r=>r.id===selected.id?{...r,obstacles:[...r.obstacles,o]}:r));setDlg(null)};const del=rid=>{const n=roofs.filter(r=>r.id!==rid);save(n.length?n:[{...baseRoof,id:id(),panelGroups:[],obstacles:[]}]);setSel(n[0]?.id||1)};return <div className='space-y-4'><Card className='border-0 shadow-sm'><CardHeader><div className='flex flex-wrap items-center justify-between gap-3'><div><CardTitle className='flex items-center gap-2 text-base'><PanelTop className='h-4 w-4 text-primary'/>Solcellskalkylator – projekt</CardTitle><p className='text-sm text-muted-foreground'>Skalenlig takvy enligt takmått. Bakgrundsprickarna är borttagna.</p></div><div className='flex flex-wrap gap-2'><Button size='sm' onClick={()=>setDlg('roof')}><Home className='mr-1 h-4 w-4'/>Lägg till tak</Button><Button size='sm' variant='outline' onClick={()=>setDlg('group')}><Plus className='mr-1 h-4 w-4'/>Panelgrupp</Button><Button size='sm' variant='outline' onClick={()=>setDlg('obs')}><AlertTriangle className='mr-1 h-4 w-4'/>Hinder</Button><Button size='sm' variant='outline' onClick={()=>setDrawing(v=>!v)}><FileText className='mr-1 h-4 w-4'/>{drawing?'Planering':'Skapa ritning'}</Button></div></div></CardHeader><CardContent className='space-y-4'><div className='grid gap-3 md:grid-cols-5'><div className='rounded-xl bg-muted/40 p-3'><p className='text-xs text-muted-foreground'>Paneler</p><b className='text-xl'>{c.panels}</b></div><div className='rounded-xl bg-muted/40 p-3'><p className='text-xs text-muted-foreground'>Effekt</p><b className='text-xl'>{c.kwp.toFixed(2)} kWp</b></div><div className='rounded-xl bg-muted/40 p-3'><p className='text-xs text-muted-foreground'>Skenlängd</p><b className='text-xl'>{Math.round(c.len)} m</b></div><div className='rounded-xl bg-muted/40 p-3'><p className='text-xs text-muted-foreground'>Fästen</p><b className='text-xl'>{c.hooks}</b></div><div className='rounded-xl bg-muted/40 p-3'><p className='text-xs text-muted-foreground'>Panel</p><b className='text-sm'>{P.model}</b></div></div><Canvas roofs={roofs} sel={sel} setSel={setSel} zoom={drawing?60:zoom} setZoom={drawing?()=>{}:setZoom} del={drawing?()=>{}:del}/>{drawing&&<div className='grid gap-3 text-sm md:grid-cols-3'><div className='rounded-xl bg-muted/40 p-3'><b>Montage</b><br/>{Math.round(c.len)} m skena · {c.hooks} fästen</div><div className='rounded-xl bg-muted/40 p-3'><b>Klämdata</b><br/>{c.end} ändklämmor · {c.mid} mittklämmor</div><div className='rounded-xl bg-muted/40 p-3'><b>Export</b><br/><Button size='sm' variant='outline' onClick={()=>window.print()}><Download className='mr-1 h-4 w-4'/>PDF</Button></div></div>}<div className='flex flex-wrap gap-2'>{roofs.map(r=><Badge key={r.id} variant={r.id===sel?'default':'outline'} onClick={()=>setSel(r.id)} className='cursor-pointer'><Layers className='mr-1 h-3 w-3'/>{r.name}</Badge>)}</div></CardContent></Card>{dlg==='roof'&&<RoofForm onSave={addRoof} onClose={()=>setDlg(null)}/>} {dlg==='group'&&<GroupForm onSave={addGroup} onClose={()=>setDlg(null)}/>} {dlg==='obs'&&<ObsForm onSave={addObs} onClose={()=>setDlg(null)}/>}</div>}
+const DEFAULT_PANEL = { model: 'Standardpanel 500 W', w: 1.134, h: 1.953, watt: 500 };
+const BASE_ROOF = {
+  id: 1,
+  name: 'Tak 1',
+  widthM: 8,
+  roofFallM: 6,
+  shape: 'Rektangel',
+  angleDeg: 27,
+  material: 'Takpannor',
+  panelGroups: [{ id: 2, name: 'Panelgrupp 1', rows: 3, cols: 4, xM: 0.7, yM: 0.7, orientation: 'Stående', clampMm: 391, threeRails: false }],
+  obstacles: [],
+};
+const SHAPES = ['Rektangel', 'Trapets vänster', 'Trapets höger', 'Parallellogram vänster', 'Parallellogram höger', 'Vinkel vänster', 'Vinkel höger'];
+const id = () => Math.floor(Date.now() + Math.random() * 99999);
+const toNumber = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+const panelSize = (orientation) => orientation === 'Liggande' ? { w: DEFAULT_PANEL.h, h: DEFAULT_PANEL.w } : { w: DEFAULT_PANEL.w, h: DEFAULT_PANEL.h };
+
+function calc(roofs) {
+  return roofs.reduce((acc, roof) => {
+    (roof.panelGroups || []).forEach((group) => {
+      const s = panelSize(group.orientation);
+      const panelCount = toNumber(group.rows) * toNumber(group.cols);
+      const railsPerRow = group.threeRails ? 3 : 2;
+      const rails = toNumber(group.rows) * railsPerRow;
+      const railLengthM = toNumber(group.cols) * s.w * rails;
+      const hooks = (Math.ceil((toNumber(group.cols) * s.w) / 1.2) + 1) * rails;
+      acc.panels += panelCount;
+      acc.kwp += panelCount * DEFAULT_PANEL.watt / 1000;
+      acc.rails += rails;
+      acc.len += railLengthM;
+      acc.hooks += hooks;
+      acc.end += toNumber(group.rows) * 4;
+      acc.mid += Math.max(0, (toNumber(group.cols) - 1) * toNumber(group.rows) * 2);
+    });
+    return acc;
+  }, { panels: 0, kwp: 0, rails: 0, len: 0, hooks: 0, end: 0, mid: 0 });
+}
+
+function polygonPoints(x, y, w, h, shape) {
+  if (shape === 'Trapets vänster') return `${x + w * 0.18},${y} ${x + w},${y} ${x + w},${y + h} ${x},${y + h}`;
+  if (shape === 'Trapets höger') return `${x},${y} ${x + w * 0.82},${y} ${x + w},${y + h} ${x},${y + h}`;
+  if (shape === 'Parallellogram vänster') return `${x + w * 0.12},${y} ${x + w},${y} ${x + w * 0.88},${y + h} ${x},${y + h}`;
+  if (shape === 'Parallellogram höger') return `${x},${y} ${x + w * 0.88},${y} ${x + w},${y + h} ${x + w * 0.12},${y + h}`;
+  if (shape === 'Vinkel vänster') return `${x + w * 0.25},${y} ${x + w},${y} ${x + w},${y + h} ${x},${y + h} ${x},${y + h * 0.42} ${x + w * 0.25},${y + h * 0.42}`;
+  if (shape === 'Vinkel höger') return `${x},${y} ${x + w * 0.75},${y} ${x + w * 0.75},${y + h * 0.42} ${x + w},${y + h * 0.42} ${x + w},${y + h} ${x},${y + h}`;
+  return `${x},${y} ${x + w},${y} ${x + w},${y + h} ${x},${y + h}`;
+}
+
+function Modal({ title, onClose, children }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-xl rounded-2xl bg-background shadow-xl">
+        <div className="flex items-center justify-between border-b p-4"><h3 className="font-bold">{title}</h3><button onClick={onClose}>✕</button></div>
+        <div className="p-4">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+const Input = ({ label, ...props }) => <label className="block text-xs text-muted-foreground">{label}<input {...props} className="mt-1 w-full rounded-lg border bg-background px-3 py-2 text-sm" /></label>;
+const Select = ({ label, children, ...props }) => <label className="block text-xs text-muted-foreground">{label}<select {...props} className="mt-1 w-full rounded-lg border bg-background px-3 py-2 text-sm">{children}</select></label>;
+
+function ScaleRuler({ x, y, scale }) {
+  return (
+    <g>
+      <line x1={x} y1={y} x2={x + scale} y2={y} stroke="#0f172a" strokeWidth="2" />
+      <line x1={x} y1={y - 6} x2={x} y2={y + 6} stroke="#0f172a" strokeWidth="2" />
+      <line x1={x + scale} y1={y - 6} x2={x + scale} y2={y + 6} stroke="#0f172a" strokeWidth="2" />
+      <text x={x + scale / 2} y={y - 10} textAnchor="middle" fontSize="12" fontWeight="800" fill="#0f172a">1 m</text>
+    </g>
+  );
+}
+
+function Canvas({ roofs, selectedRoofId, setSelectedRoofId, scale, setScale, deleteRoof }) {
+  const pad = 80;
+  const roofGap = 110;
+  const panelGapM = 0.03;
+  let cursorY = pad;
+
+  const layouts = roofs.map((roof) => {
+    const layout = {
+      roof,
+      x: pad,
+      y: cursorY,
+      w: toNumber(roof.widthM, 8) * scale,
+      h: toNumber(roof.roofFallM, 6) * scale,
+    };
+    cursorY += layout.h + roofGap;
+    return layout;
+  });
+
+  const svgWidth = Math.max(900, ...layouts.map((layout) => layout.x + layout.w + 220));
+  const svgHeight = Math.max(620, cursorY + pad);
+
+  function renderPanelGroup(layout, group) {
+    const s = panelSize(group.orientation);
+    const panelW = s.w * scale;
+    const panelH = s.h * scale;
+    const gap = panelGapM * scale;
+    const startX = layout.x + toNumber(group.xM) * scale;
+    const startY = layout.y + toNumber(group.yM) * scale;
+    const rows = Math.max(0, Math.round(toNumber(group.rows)));
+    const cols = Math.max(0, Math.round(toNumber(group.cols)));
+    const output = [];
+
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const x = startX + col * (panelW + gap);
+        const y = startY + row * (panelH + gap);
+        const outsideRoof = x + panelW > layout.x + layout.w || y + panelH > layout.y + layout.h;
+        output.push(
+          <g key={`p-${group.id}-${row}-${col}`}>
+            <rect x={x} y={y} width={panelW} height={panelH} rx="3" fill={outsideRoof ? '#fee2e2' : '#dbeafe'} stroke={outsideRoof ? '#ef4444' : '#2563eb'} strokeWidth="1.4" />
+            <line x1={x + panelW / 3} y1={y + 3} x2={x + panelW / 3} y2={y + panelH - 3} stroke={outsideRoof ? '#fca5a5' : '#93c5fd'} />
+            <line x1={x + panelW * 2 / 3} y1={y + 3} x2={x + panelW * 2 / 3} y2={y + panelH - 3} stroke={outsideRoof ? '#fca5a5' : '#93c5fd'} />
+          </g>
+        );
+      }
+    }
+
+    const groupWidth = cols * panelW + Math.max(0, cols - 1) * gap;
+    for (let row = 0; row < rows; row++) {
+      const y = startY + row * (panelH + gap);
+      const railOffsets = group.threeRails
+        ? [toNumber(group.clampMm, 391) / 1000 * scale, panelH / 2, panelH - toNumber(group.clampMm, 391) / 1000 * scale]
+        : [toNumber(group.clampMm, 391) / 1000 * scale, panelH - toNumber(group.clampMm, 391) / 1000 * scale];
+      railOffsets.forEach((offset, index) => {
+        const railY = y + offset;
+        output.push(<line key={`rail-${group.id}-${row}-${index}`} x1={startX - 8} y1={railY} x2={startX + groupWidth + 8} y2={railY} stroke="#8b5e34" strokeWidth="4" strokeLinecap="round" />);
+        const hookCount = Math.max(2, Math.ceil((groupWidth / scale) / 1.2) + 1);
+        for (let h = 0; h < hookCount; h++) {
+          output.push(<circle key={`hook-${group.id}-${row}-${index}-${h}`} cx={startX + groupWidth / Math.max(1, hookCount - 1) * h} cy={railY} r="5" fill="#f97316" stroke="#fff" />);
+        }
+      });
+    }
+
+    return output;
+  }
+
+  return (
+    <div className="relative overflow-auto rounded-2xl border bg-white">
+      <div className="absolute right-3 top-3 z-10 flex flex-col gap-2 print:hidden">
+        <button onClick={() => setScale((z) => Math.min(120, z + 8))} className="rounded bg-white p-2 shadow"><ZoomIn className="h-4 w-4" /></button>
+        <button onClick={() => setScale((z) => Math.max(24, z - 8))} className="rounded bg-white p-2 shadow"><ZoomOut className="h-4 w-4" /></button>
+        <button onClick={() => setScale(60)} className="rounded bg-white p-2 shadow"><Maximize2 className="h-4 w-4" /></button>
+      </div>
+      <svg viewBox={`0 0 ${svgWidth} ${svgHeight}`} preserveAspectRatio="xMidYMid meet" className="block h-[620px] w-full min-w-[900px] bg-white">
+        <defs>
+          <pattern id="roof-hatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2="10" stroke="#e2e8f0" strokeWidth="3" />
+          </pattern>
+        </defs>
+        <ScaleRuler x={24} y={34} scale={scale} />
+        {layouts.map((layout) => {
+          const roofCalc = calc([layout.roof]);
+          const active = layout.roof.id === selectedRoofId;
+          return (
+            <g key={layout.roof.id} onClick={() => setSelectedRoofId(layout.roof.id)} className="cursor-pointer">
+              <text x={layout.x} y={layout.y - 24} fontSize="18" fontWeight="800">{layout.roof.name}</text>
+              <polygon points={polygonPoints(layout.x, layout.y, layout.w, layout.h, layout.roof.shape)} fill="url(#roof-hatch)" stroke={active ? '#7c3aed' : '#111827'} strokeWidth={active ? 4 : 2.5} />
+              {(layout.roof.panelGroups || []).flatMap((group) => renderPanelGroup(layout, group))}
+              {(layout.roof.obstacles || []).map((obstacle) => (
+                <g key={obstacle.id}>
+                  <rect x={layout.x + toNumber(obstacle.xM) * scale} y={layout.y + toNumber(obstacle.yM) * scale} width={toNumber(obstacle.widthM) * scale} height={toNumber(obstacle.lengthM) * scale} rx="4" fill="#fee2e2" stroke="#ef4444" strokeDasharray="5 4" />
+                  <text x={layout.x + toNumber(obstacle.xM) * scale + 6} y={layout.y + toNumber(obstacle.yM) * scale + 18} fontSize="11" fill="#991b1b">{obstacle.name}</text>
+                </g>
+              ))}
+              <foreignObject x={layout.x + layout.w - 120} y={layout.y + 14} width="110" height="36"><div className="rounded-full bg-white px-3 py-2 text-center text-xs font-bold shadow">{roofCalc.panels} paneler</div></foreignObject>
+              <line x1={layout.x} y1={layout.y + layout.h + 28} x2={layout.x + layout.w} y2={layout.y + layout.h + 28} stroke="#2563eb" strokeWidth="2" />
+              <text x={layout.x + layout.w / 2} y={layout.y + layout.h + 49} textAnchor="middle" fontSize="13" fill="#2563eb" fontWeight="700">{layout.roof.widthM} m</text>
+              <line x1={layout.x + layout.w + 24} y1={layout.y} x2={layout.x + layout.w + 24} y2={layout.y + layout.h} stroke="#2563eb" strokeWidth="2" />
+              <text x={layout.x + layout.w + 46} y={layout.y + layout.h / 2} fontSize="13" fill="#2563eb" fontWeight="700">{layout.roof.roofFallM} m</text>
+              {active && <foreignObject x={layout.x} y={layout.y - 14} width="50" height="34"><button onClick={(event) => { event.stopPropagation(); deleteRoof(layout.roof.id); }} className="rounded-full bg-white p-2 text-red-600 shadow"><Trash2 className="h-4 w-4" /></button></foreignObject>}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function RoofForm({ onSave, onClose }) {
+  const [roof, setRoof] = useState({ ...BASE_ROOF, id: id(), name: 'Tak 1', panelGroups: [], obstacles: [] });
+  const set = (patch) => setRoof((value) => ({ ...value, ...patch }));
+  return <Modal title="Lägg till tak" onClose={onClose}><div className="grid gap-3 md:grid-cols-2"><Input label="Namn" value={roof.name} onChange={(e) => set({ name: e.target.value })} /><Select label="Takform" value={roof.shape} onChange={(e) => set({ shape: e.target.value })}>{SHAPES.map((shape) => <option key={shape}>{shape}</option>)}</Select><Input label="Bredd A (m)" type="number" step=".1" value={roof.widthM} onChange={(e) => set({ widthM: Number(e.target.value) })} /><Input label="Takfall B (m)" type="number" step=".1" value={roof.roofFallM} onChange={(e) => set({ roofFallM: Number(e.target.value) })} /><Input label="Taklutning (°)" type="number" value={roof.angleDeg} onChange={(e) => set({ angleDeg: Number(e.target.value) })} /><Input label="Material" value={roof.material} onChange={(e) => set({ material: e.target.value })} /></div><div className="mt-4 flex justify-end gap-2"><Button variant="outline" onClick={onClose}>Avbryt</Button><Button onClick={() => onSave(roof)}>Spara</Button></div></Modal>;
+}
+
+function GroupForm({ onSave, onClose }) {
+  const [group, setGroup] = useState({ id: id(), name: 'Panelgrupp', rows: 3, cols: 4, xM: 0.7, yM: 0.7, orientation: 'Stående', clampMm: 391, threeRails: false });
+  const set = (patch) => setGroup((value) => ({ ...value, ...patch }));
+  return <Modal title="Lägg till panelgrupp" onClose={onClose}><div className="grid gap-3 md:grid-cols-2"><Input label="Namn" value={group.name} onChange={(e) => set({ name: e.target.value })} /><Select label="Panelmontering" value={group.orientation} onChange={(e) => set({ orientation: e.target.value })}><option>Stående</option><option>Liggande</option></Select><Input label="Rader" type="number" value={group.rows} onChange={(e) => set({ rows: Number(e.target.value) })} /><Input label="Kolumner" type="number" value={group.cols} onChange={(e) => set({ cols: Number(e.target.value) })} /><Input label="Position X från vänster takkant (m)" type="number" step=".1" value={group.xM} onChange={(e) => set({ xM: Number(e.target.value) })} /><Input label="Position Y från övre takkant (m)" type="number" step=".1" value={group.yM} onChange={(e) => set({ yM: Number(e.target.value) })} /><Input label="Klämzon (mm)" type="number" value={group.clampMm} onChange={(e) => set({ clampMm: Number(e.target.value) })} /><label className="pt-6 text-sm"><input type="checkbox" checked={group.threeRails} onChange={(e) => set({ threeRails: e.target.checked })} /> Använd tre skenor</label></div><div className="mt-4 flex justify-end gap-2"><Button variant="outline" onClick={onClose}>Avbryt</Button><Button onClick={() => onSave(group)}>Lägg till</Button></div></Modal>;
+}
+
+function ObstacleForm({ onSave, onClose }) {
+  const [obstacle, setObstacle] = useState({ id: id(), name: 'Hinder', widthM: 0.8, lengthM: 0.8, xM: 2, yM: 2 });
+  const set = (patch) => setObstacle((value) => ({ ...value, ...patch }));
+  return <Modal title="Lägg till hinder" onClose={onClose}><div className="grid gap-3 md:grid-cols-2"><Input label="Namn" value={obstacle.name} onChange={(e) => set({ name: e.target.value })} /><Input label="Bredd (m)" type="number" step=".1" value={obstacle.widthM} onChange={(e) => set({ widthM: Number(e.target.value) })} /><Input label="Längd (m)" type="number" step=".1" value={obstacle.lengthM} onChange={(e) => set({ lengthM: Number(e.target.value) })} /><Input label="Position X (m)" type="number" step=".1" value={obstacle.xM} onChange={(e) => set({ xM: Number(e.target.value) })} /><Input label="Position Y (m)" type="number" step=".1" value={obstacle.yM} onChange={(e) => set({ yM: Number(e.target.value) })} /></div><div className="mt-4 flex justify-end gap-2"><Button variant="outline" onClick={onClose}>Avbryt</Button><Button onClick={() => onSave(obstacle)}>Lägg till</Button></div></Modal>;
+}
+
+export default function SolarRoofPlanner({ project, onUpdate }) {
+  const [roofs, setRoofs] = useState(() => {
+    try {
+      const data = JSON.parse(project?.solar_roof_planner_data || 'null');
+      if (data?.roofs?.length) return data.roofs;
+    } catch {}
+    return [{ ...BASE_ROOF, widthM: Number(project?.roof_width_m) || 8, roofFallM: Number(project?.roof_height_m) || 6 }];
+  });
+  const [selectedRoofId, setSelectedRoofId] = useState(roofs[0]?.id || 1);
+  const [dialog, setDialog] = useState(null);
+  const [scale, setScale] = useState(60);
+  const selectedRoof = roofs.find((roof) => roof.id === selectedRoofId) || roofs[0];
+  const totals = calc(roofs);
+
+  const save = (nextRoofs) => {
+    setRoofs(nextRoofs);
+    onUpdate?.({ solar_roof_planner_data: JSON.stringify({ version: 2, scaleType: 'meter', panelModel: DEFAULT_PANEL, roofs: nextRoofs }) });
+  };
+  const addRoof = (roof) => { save([...roofs, roof]); setSelectedRoofId(roof.id); setDialog(null); };
+  const addGroup = (group) => { save(roofs.map((roof) => roof.id === selectedRoof.id ? { ...roof, panelGroups: [...(roof.panelGroups || []), group] } : roof)); setDialog(null); };
+  const addObstacle = (obstacle) => { save(roofs.map((roof) => roof.id === selectedRoof.id ? { ...roof, obstacles: [...(roof.obstacles || []), obstacle] } : roof)); setDialog(null); };
+  const deleteRoof = (roofId) => { const next = roofs.filter((roof) => roof.id !== roofId); save(next.length ? next : [{ ...BASE_ROOF, id: id(), panelGroups: [], obstacles: [] }]); setSelectedRoofId(next[0]?.id || 1); };
+
+  return (
+    <div className="space-y-4">
+      <Card className="border-0 shadow-sm">
+        <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-base"><PanelTop className="h-4 w-4 text-primary" />Solcellskalkylator – skalenlig projektvy</CardTitle>
+              <p className="text-sm text-muted-foreground">Ritningen använder fast meterskala: takmått, panelmått, hinder, panelpositioner och skenor ritas med samma skala i X- och Y-led.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="secondary">1 m = {scale} px</Badge>
+              <Button variant="outline" size="sm" onClick={() => setDialog('roof')}><Plus className="mr-1 h-4 w-4" />Tak</Button>
+              <Button variant="outline" size="sm" onClick={() => setDialog('group')} disabled={!selectedRoof}><PanelTop className="mr-1 h-4 w-4" />Panelgrupp</Button>
+              <Button variant="outline" size="sm" onClick={() => setDialog('obstacle')} disabled={!selectedRoof}><AlertTriangle className="mr-1 h-4 w-4" />Hinder</Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-5">
+            <div className="rounded-xl bg-muted p-3"><div className="text-xs text-muted-foreground">Paneler</div><div className="text-2xl font-bold">{totals.panels}</div></div>
+            <div className="rounded-xl bg-muted p-3"><div className="text-xs text-muted-foreground">Effekt</div><div className="text-2xl font-bold">{totals.kwp.toFixed(2)} kWp</div></div>
+            <div className="rounded-xl bg-muted p-3"><div className="text-xs text-muted-foreground">Skenor</div><div className="text-2xl font-bold">{totals.rails}</div></div>
+            <div className="rounded-xl bg-muted p-3"><div className="text-xs text-muted-foreground">Skenlängd</div><div className="text-2xl font-bold">{totals.len.toFixed(1)} m</div></div>
+            <div className="rounded-xl bg-muted p-3"><div className="text-xs text-muted-foreground">Takkrokar</div><div className="text-2xl font-bold">{totals.hooks}</div></div>
+          </div>
+          <Canvas roofs={roofs} selectedRoofId={selectedRoofId} setSelectedRoofId={setSelectedRoofId} scale={scale} setScale={setScale} deleteRoof={deleteRoof} />
+          <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
+            <Home className="mr-2 inline h-4 w-4" />
+            Skalan är nu geometriskt korrekt: ett tak på 8 × 6 m ritas i exakt samma proportion som paneler på 1,134 × 1,953 m. Om en panelgrupp hamnar utanför taket markeras panelerna rött.
+          </div>
+        </CardContent>
+      </Card>
+      {dialog === 'roof' && <RoofForm onSave={addRoof} onClose={() => setDialog(null)} />}
+      {dialog === 'group' && <GroupForm onSave={addGroup} onClose={() => setDialog(null)} />}
+      {dialog === 'obstacle' && <ObstacleForm onSave={addObstacle} onClose={() => setDialog(null)} />}
+    </div>
+  );
+}
