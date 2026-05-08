@@ -2,13 +2,11 @@ import React, { useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowLeft, Sun, Cable, Battery, ShoppingCart, BarChart2, Wrench, GitBranch } from 'lucide-react';
 import SolarDataPanel from '@/components/project/SolarDataPanel';
-import PanelPlacementTab from '@/components/project/PanelPlacementTab';
 import ProjectPDFExport from '@/components/project/ProjectPDFExport';
 import StringMarkingTab from '@/components/project/StringMarkingTab';
 import BatteryTab from '@/components/project/BatteryTab';
@@ -72,10 +70,7 @@ export default function ProjectDetail() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {project.status === 'projektering' && (
-            <Button
-              onClick={() => updateMutation.mutate({ status: 'offert' })}
-              className="gap-2 bg-purple-600 hover:bg-purple-700 text-white"
-            >
+            <Button onClick={() => updateMutation.mutate({ status: 'offert' })} className="gap-2 bg-purple-600 hover:bg-purple-700 text-white">
               Skicka som offert
             </Button>
           )}
@@ -85,32 +80,17 @@ export default function ProjectDetail() {
 
       <Tabs defaultValue="panels" className="space-y-4">
         <TabsList className="grid grid-cols-7 w-full max-w-3xl">
-          <TabsTrigger value="panels" className="gap-1.5 text-xs sm:text-sm">
-            <Sun className="w-4 h-4" /> <span className="hidden sm:inline">Paneler</span>
-          </TabsTrigger>
-          <TabsTrigger value="strings" className="gap-1.5 text-xs sm:text-sm">
-            <Cable className="w-4 h-4" /> <span className="hidden sm:inline">Slingor</span>
-          </TabsTrigger>
-          <TabsTrigger value="battery" className="gap-1.5 text-xs sm:text-sm">
-            <Battery className="w-4 h-4" /> <span className="hidden sm:inline">Batteri</span>
-          </TabsTrigger>
-          <TabsTrigger value="products" className="gap-1.5 text-xs sm:text-sm">
-            <ShoppingCart className="w-4 h-4" /> <span className="hidden sm:inline">Produkter</span>
-          </TabsTrigger>
-          <TabsTrigger value="solar" className="gap-1.5 text-xs sm:text-sm">
-            <BarChart2 className="w-4 h-4" /> <span className="hidden sm:inline">Soldata</span>
-          </TabsTrigger>
-          <TabsTrigger value="singleline" className="gap-1.5 text-xs sm:text-sm">
-            <GitBranch className="w-4 h-4" /> <span className="hidden sm:inline">Enlinje</span>
-          </TabsTrigger>
-          <TabsTrigger value="mounting" className="gap-1.5 text-xs sm:text-sm">
-            <Wrench className="w-4 h-4" /> <span className="hidden sm:inline">Montage</span>
-          </TabsTrigger>
+          <TabsTrigger value="panels" className="gap-1.5 text-xs sm:text-sm"><Sun className="w-4 h-4" /> <span className="hidden sm:inline">Paneler</span></TabsTrigger>
+          <TabsTrigger value="strings" className="gap-1.5 text-xs sm:text-sm"><Cable className="w-4 h-4" /> <span className="hidden sm:inline">Slingor</span></TabsTrigger>
+          <TabsTrigger value="battery" className="gap-1.5 text-xs sm:text-sm"><Battery className="w-4 h-4" /> <span className="hidden sm:inline">Batteri</span></TabsTrigger>
+          <TabsTrigger value="products" className="gap-1.5 text-xs sm:text-sm"><ShoppingCart className="w-4 h-4" /> <span className="hidden sm:inline">Produkter</span></TabsTrigger>
+          <TabsTrigger value="solar" className="gap-1.5 text-xs sm:text-sm"><BarChart2 className="w-4 h-4" /> <span className="hidden sm:inline">Soldata</span></TabsTrigger>
+          <TabsTrigger value="singleline" className="gap-1.5 text-xs sm:text-sm"><GitBranch className="w-4 h-4" /> <span className="hidden sm:inline">Enlinje</span></TabsTrigger>
+          <TabsTrigger value="mounting" className="gap-1.5 text-xs sm:text-sm"><Wrench className="w-4 h-4" /> <span className="hidden sm:inline">Montage</span></TabsTrigger>
         </TabsList>
 
         <TabsContent value="panels" className="space-y-4">
           <SolarRoofPlanner project={project} onUpdate={updateMutation.mutateAsync} />
-          <PanelPlacementTab project={project} onUpdate={updateMutation.mutateAsync} />
         </TabsContent>
         <TabsContent value="strings">
           <StringMarkingTab
@@ -123,24 +103,14 @@ export default function ProjectDetail() {
                 const pid = panels[0]?.product_id;
                 if (pid) return products.find(p => p.id === pid) || null;
               } catch {}
-              return products.find(p =>
-                project.selected_products?.some(sp => sp.product_id === p.id) && p.category === 'solpanel'
-              ) || null;
+              return products.find(p => project.selected_products?.some(sp => sp.product_id === p.id) && p.category === 'solpanel') || null;
             })()}
           />
         </TabsContent>
-        <TabsContent value="battery">
-          <BatteryTab project={project} onUpdate={updateMutation.mutateAsync} />
-        </TabsContent>
-        <TabsContent value="products">
-          <ProductSelectionTab project={project} onUpdate={updateMutation.mutateAsync} />
-        </TabsContent>
-        <TabsContent value="solar">
-          <SolarDataPanel project={project} onUpdate={updateMutation.mutateAsync} />
-        </TabsContent>
-        <TabsContent value="singleline">
-          <SingleLineSchemaTab project={project} onUpdate={updateMutation.mutateAsync} />
-        </TabsContent>
+        <TabsContent value="battery"><BatteryTab project={project} onUpdate={updateMutation.mutateAsync} /></TabsContent>
+        <TabsContent value="products"><ProductSelectionTab project={project} onUpdate={updateMutation.mutateAsync} /></TabsContent>
+        <TabsContent value="solar"><SolarDataPanel project={project} onUpdate={updateMutation.mutateAsync} /></TabsContent>
+        <TabsContent value="singleline"><SingleLineSchemaTab project={project} onUpdate={updateMutation.mutateAsync} /></TabsContent>
         <TabsContent value="mounting" className="space-y-4">
           <SolarRoofPlanner project={project} onUpdate={updateMutation.mutateAsync} />
           <MountingSystemCalculator project={project} onUpdate={updateMutation.mutateAsync} />
