@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Sparkles } from 'lucide-react';
+import { Image, Sparkles } from 'lucide-react';
 import { PRODUCT_SEED_CATALOG } from '@/data/productSeedCatalog';
 import { SWEDEN_EXTRA_PRODUCT_CATALOG } from '@/data/productSeedCatalogSwedenExtra';
 
@@ -30,6 +30,7 @@ function clean(item) {
 
 export default function ProductCatalogImporter({ products = [], onDone }) {
   const [running, setRunning] = useState(false);
+  const [imageRunning, setImageRunning] = useState(false);
   const [status, setStatus] = useState('');
 
   const run = async () => {
@@ -58,11 +59,39 @@ export default function ProductCatalogImporter({ products = [], onDone }) {
     }
   };
 
+  const backfillImages = async () => {
+    const missing = products.filter((product) => !product.image_url);
+    if (!missing.length) {
+      setStatus('Alla befintliga produkter har redan bild.');
+      return;
+    }
+    if (!confirm(`Lägg in genererade bilder på ${missing.length} befintliga produkter?`)) return;
+    setImageRunning(true);
+    let updated = 0;
+    try {
+      for (let i = 0; i < missing.length; i++) {
+        const product = missing[i];
+        setStatus(`${i + 1}/${missing.length}: bild till ${product.brand || ''} ${product.model || product.name || ''}`);
+        await base44.entities.Product.update(product.id, { image_url: svgImage(product) });
+        updated++;
+      }
+      setStatus(`Klar. Lade in bilder på ${updated} befintliga produkter.`);
+      await onDone?.();
+    } finally {
+      setImageRunning(false);
+    }
+  };
+
   return (
     <div className="space-y-2">
-      <button onClick={run} disabled={running} className="flex items-center gap-2 border border-border bg-card px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50">
-        <Sparkles className="w-4 h-4" /> {running ? 'Lägger in produkter...' : `Lägg in ${ALL_PRODUCTS.length} produkter`}
-      </button>
+      <div className="flex flex-wrap gap-2">
+        <button onClick={run} disabled={running || imageRunning} className="flex items-center gap-2 border border-border bg-card px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50">
+          <Sparkles className="w-4 h-4" /> {running ? 'Lägger in produkter...' : `Lägg in ${ALL_PRODUCTS.length} produkter`}
+        </button>
+        <button onClick={backfillImages} disabled={running || imageRunning} className="flex items-center gap-2 border border-border bg-card px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50">
+          <Image className="w-4 h-4" /> {imageRunning ? 'Lägger in bilder...' : 'Lägg in bilder på befintliga'}
+        </button>
+      </div>
       {status && <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">{status}</div>}
     </div>
   );
