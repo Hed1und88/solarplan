@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Save, Plus, Trash2, ChevronDown, ChevronUp, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import StringDrawingCanvas from './StringDrawingCanvas';
+import ProjectStringSimulator from './ProjectStringSimulator';
 
 const STRING_COLORS = ['#ef4444','#3b82f6','#22c55e','#f59e0b','#8b5cf6','#ec4899','#06b6d4','#84cc16','#f97316','#e879f9'];
 const STRING_NAMES = Array.from({ length: 10 }, (_, i) => `Slinga ${i + 1}`);
@@ -310,6 +311,13 @@ export default function StringMarkingTab({ project, onUpdate, selectedProduct: s
         />
 
         {/* String list */}
+        {/* Advanced string simulator — always visible */}
+        <ProjectStringSimulator
+          project={project}
+          onUpdate={onUpdate}
+          preselectedPanelId={selectedProductId || selectedProductProp?.id}
+        />
+
         {imageUrl && (
           <div className="space-y-2">
             <div className="flex items-center justify-between">
