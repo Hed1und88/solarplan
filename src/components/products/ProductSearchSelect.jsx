@@ -1,20 +1,13 @@
 import { useMemo, useState } from 'react';
-import { ChevronDown, Package, Search } from 'lucide-react';
+import { ChevronDown, Search } from 'lucide-react';
+import ProductVisual from '@/components/products/ProductVisual';
 
 function labelFor(product) {
   return [product?.brand, product?.model].filter(Boolean).join(' ') || product?.name || 'Produkt';
 }
 
 function ProductThumb({ product }) {
-  if (product?.image_url) {
-    return <img src={product.image_url} alt={product.name || labelFor(product)} className="h-10 w-10 rounded-lg bg-muted object-contain" />;
-  }
-
-  return (
-    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-      <Package className="h-4 w-4" />
-    </div>
-  );
+  return <ProductVisual product={product} className="h-10 w-10" compact />;
 }
 
 export default function ProductSearchSelect({ label, products = [], value, onChange, placeholder = 'Sök eller välj produkt' }) {
