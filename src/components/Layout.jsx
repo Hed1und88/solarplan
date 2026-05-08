@@ -1,14 +1,13 @@
 import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, FolderOpen, Package, Settings, ChevronLeft, Calculator, Cable } from 'lucide-react';
+import { LayoutDashboard, FolderOpen, Package, Settings, ChevronLeft, Calculator } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const ROOT_ROUTES = ['/', '/projects', '/products', '/settings', '/kalkylator', '/kalkylator/avancerad-slingberakning'];
+const ROOT_ROUTES = ['/', '/projects', '/products', '/settings', '/kalkylator'];
 
 const navItems = [
   { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { path: '/projects', icon: FolderOpen, label: 'Projekt' },
   { path: '/kalkylator', icon: Calculator, label: 'Kalkylator' },
-  { path: '/kalkylator/avancerad-slingberakning', icon: Cable, label: 'Slingor' },
   { path: '/products', icon: Package, label: 'Produkter' },
   { path: '/settings', icon: Settings, label: 'Inställningar' },
 ];
