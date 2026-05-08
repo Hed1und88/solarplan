@@ -3,6 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { Plus, Package, Pencil, Trash2, Sun, Battery, Zap, Cable, Box } from 'lucide-react';
 import ProductFormModal from '@/components/products/ProductFormModal';
 import ProductCatalogImporter from '@/components/products/ProductCatalogImporter';
+import ProductVisual from '@/components/products/ProductVisual';
 
 const categoryConfig = {
   solpanel: { label: 'Solpanel', icon: Sun, color: 'bg-orange-100 text-orange-700' },
@@ -92,11 +93,7 @@ export default function Products() {
                   </div>
                 </div>
 
-                {product.image_url ? (
-                  <img src={product.image_url} alt={product.name} className="w-full h-28 object-contain mb-3 rounded-lg bg-muted" />
-                ) : (
-                  <div className="w-full h-28 mb-3 rounded-lg bg-muted flex items-center justify-center text-muted-foreground"><Package className="w-8 h-8" /></div>
-                )}
+                <ProductVisual product={product} className="w-full h-28 mb-3" />
 
                 <h3 className="font-semibold text-sm text-foreground leading-snug">{product.name}</h3>
                 {product.brand && <p className="text-xs text-muted-foreground mt-0.5">{product.brand} {product.model}</p>}
