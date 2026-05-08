@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { Sun, Save, RotateCcw, Download, Home, CloudSun, TreePine } from 'lucide-react';
+import { Sun, Save, RotateCcw, Download, Home, CloudSun, TreePine, Play } from 'lucide-react';
 import { calculateSolarPosition, calculateWeatherFactor, calculateShadeLoss, calculatePvEstimate, generateHourlySimulation, annualFactorFromDate, clamp } from '@/lib/solarShadowEngine';
 
 const KEY = 'solarplan_shadow_analysis_v1';
@@ -25,14 +25,14 @@ function Viewer({ model, solar, shadeLoss }) {
     const scene = new THREE.Scene(); scene.background = new THREE.Color(0xf8fafc);
     const camera = new THREE.PerspectiveCamera(45, el.clientWidth / Math.max(1, el.clientHeight), 0.1, 1000);
     camera.position.set(16, 13, 18); camera.lookAt(0, 2.5, 0);
-    const renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setSize(el.clientWidth, el.clientHeight); renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    const renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setSize(el.clientWidth, el.clientHeight); renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     el.appendChild(renderer.domElement); scene.add(new THREE.HemisphereLight(0xffffff, 0x475569, 1.2));
     const light = new THREE.DirectionalLight(0xffffff, 1.4); light.position.set(8, 15, 8); scene.add(light); scene.add(new THREE.GridHelper(36, 36));
     keep.current = { scene, camera, renderer, items: [] };
     let raf; const run = () => { raf = requestAnimationFrame(run); renderer.render(scene, camera); }; run();
     const resize = () => { camera.aspect = el.clientWidth / Math.max(1, el.clientHeight); camera.updateProjectionMatrix(); renderer.setSize(el.clientWidth, el.clientHeight); };
-    addEventListener('resize', resize);
-    return () => { removeEventListener('resize', resize); cancelAnimationFrame(raf); renderer.dispose(); el.innerHTML = ''; };
+    window.addEventListener('resize', resize);
+    return () => { window.removeEventListener('resize', resize); cancelAnimationFrame(raf); renderer.dispose(); el.innerHTML = ''; };
   }, []);
   useEffect(() => {
     const k = keep.current; if (!k.scene) return; k.items.forEach(o => k.scene.remove(o)); k.items = [];
