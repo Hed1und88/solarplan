@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { X, Upload, Loader2, Sparkles } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -30,6 +30,10 @@ const INVERTER_FIELDS = [
   'phase_type',
   'inverter_type',
 ];
+
+function normalizeKey(...parts) {
+  return parts.filter(Boolean).join(' ').trim().toLowerCase().replace(/\s+/g, ' ');
+}
 
 function getAutoFetchConfig(category, query) {
   if (category === 'vaxelriktare') {
@@ -181,16 +185,18 @@ export default function ProductFormModal({ product, onSave, onClose }) {
   const [saving, setSaving] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [fetchMsg, setFetchMsg] = useState(null);
+  const autoFetchedInverterKeyRef = useRef(product?.category === 'vaxelriktare' ? normalizeKey(product?.brand, product?.model) : '');
 
-  const handleAutoFetch = async () => {
-    const query = [form.brand, form.model, form.name].filter(Boolean).join(' ');
+  const handleAutoFetch = async ({ automatic = false, categoryOverride, queryOverride } = {}) => {
+    const activeCategory = categoryOverride || form.category;
+    const query = queryOverride || [form.brand, form.model, form.name].filter(Boolean).join(' ');
     if (!query) return;
 
     setFetching(true);
-    setFetchMsg(null);
+    setFetchMsg(automatic ? 'Hämtar växelriktardata automatiskt...' : null);
 
     try {
-      const config = getAutoFetchConfig(form.category, query);
+      const config = getAutoFetchConfig(activeCategory, query);
       const result = await base44.integrations.Core.InvokeLLM({
         prompt: config.prompt,
         add_context_from_internet: true,
@@ -206,6 +212,11 @@ export default function ProductFormModal({ product, onSave, onClose }) {
             filled++;
           }
         });
+
+        if (activeCategory === 'vaxelriktare') {
+          autoFetchedInverterKeyRef.current = normalizeKey(result?.brand || next.brand, result?.model || next.model);
+        }
+
         return next;
       });
       setFetchMsg(filled > 0 ? `✓ Fyllde i ${filled} fält automatiskt` : '⚠ Hittade ingen data — fyll i manuellt');
@@ -216,6 +227,26 @@ export default function ProductFormModal({ product, onSave, onClose }) {
       setFetching(false);
     }
   };
+
+  useEffect(() => {
+    if (form.category !== 'vaxelriktare') return;
+    if (!form.brand?.trim() || !form.model?.trim()) return;
+    if (fetching) return;
+
+    const key = normalizeKey(form.brand, form.model);
+    if (!key || key === autoFetchedInverterKeyRef.current) return;
+
+    const timer = window.setTimeout(() => {
+      autoFetchedInverterKeyRef.current = key;
+      handleAutoFetch({
+        automatic: true,
+        categoryOverride: 'vaxelriktare',
+        queryOverride: `${form.brand.trim()} ${form.model.trim()}`,
+      });
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [form.category, form.brand, form.model, fetching]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -286,14 +317,16 @@ export default function ProductFormModal({ product, onSave, onClose }) {
         </div>
 
         <div className="p-5 space-y-4">
-          {/* Category */}
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Kategori</label>
             <div className="flex flex-wrap gap-2">
               {categories.map(c => (
                 <button
                   key={c.value}
-                  onClick={() => set('category', c.value)}
+                  onClick={() => {
+                    set('category', c.value);
+                    if (c.value !== 'vaxelriktare') autoFetchedInverterKeyRef.current = '';
+                  }}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all
                     ${form.category === c.value ? 'bg-primary text-white border-primary' : 'border-border hover:border-primary/50 text-muted-foreground'}`}
                 >
@@ -303,22 +336,28 @@ export default function ProductFormModal({ product, onSave, onClose }) {
             </div>
           </div>
 
-          <Field label="Produktnamn *" value={form.name} onChange={v => set('name', v)} placeholder={form.category === 'vaxelriktare' ? 'T.ex. SolaX X3-Hybrid-15.0-D G4' : 'T.ex. JA Solar 415W'} />
+          <Field label="Produktnamn *" value={form.name} onChange={v => set('name', v)} placeholder={form.category === 'vaxelriktare' ? 'Fylls automatiskt efter märke + modell' : 'T.ex. JA Solar 415W'} />
           
           <div className="grid grid-cols-2 gap-3">
             <Field label="Varumärke" value={form.brand} onChange={v => set('brand', v)} placeholder={form.category === 'vaxelriktare' ? 'T.ex. SolaX' : 'T.ex. JA Solar'} />
             <Field label="Modell" value={form.model} onChange={v => set('model', v)} placeholder={form.category === 'vaxelriktare' ? 'T.ex. X3-Hybrid-15.0-D G4' : 'T.ex. JAM54S30'} />
           </div>
 
+          {form.category === 'vaxelriktare' && (
+            <div className="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+              Skriv in varumärke och modell. När båda fälten är ifyllda hämtas teknisk växelriktardata automatiskt.
+            </div>
+          )}
+
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={handleAutoFetch}
+              onClick={() => handleAutoFetch()}
               disabled={fetching || (!form.brand && !form.model && !form.name)}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-accent text-white text-xs font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
             >
               {fetching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-              {fetching ? 'Hämtar data...' : form.category === 'vaxelriktare' ? 'Hämta växelriktardata automatiskt' : 'Hämta data automatiskt'}
+              {fetching ? 'Hämtar data...' : form.category === 'vaxelriktare' ? 'Hämta igen' : 'Hämta data automatiskt'}
             </button>
             {fetchMsg && <span className={`text-xs ${fetchMsg.startsWith('✓') ? 'text-green-600' : 'text-amber-600'}`}>{fetchMsg}</span>}
           </div>
@@ -413,7 +452,6 @@ export default function ProductFormModal({ product, onSave, onClose }) {
 
           <Field label="Beskrivning" value={form.description} onChange={v => set('description', v)} placeholder="Valfri beskrivning..." multiline />
 
-          {/* Image upload */}
           <div>
             <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Produktbild</label>
             {form.image_url ? (
