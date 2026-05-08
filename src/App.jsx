@@ -12,7 +12,6 @@ import ProjectDetail from '@/pages/ProjectDetail';
 import Products from '@/pages/Products';
 import Settings from '@/pages/Settings';
 import Kalkylator from '@/pages/Kalkylator';
-import AdvancedStringCalculatorPage from '@/pages/AdvancedStringCalculatorPage';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
@@ -50,7 +49,6 @@ const AuthenticatedApp = () => {
         <Route path="/products" element={<Products />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/kalkylator" element={<Kalkylator />} />
-        <Route path="/kalkylator/avancerad-slingberakning" element={<AdvancedStringCalculatorPage />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>
