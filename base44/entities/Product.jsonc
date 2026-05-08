@@ -29,7 +29,7 @@
     },
     "power_watts": {
       "type": "number",
-      "description": "Effekt i Watt (f\u00f6r paneler/batterier)"
+      "description": "Nominell effekt i Watt (AC f\u00f6r v\u00e4xelriktare, STC f\u00f6r paneler)"
     },
     "capacity_kwh": {
       "type": "number",
@@ -73,6 +73,80 @@
     "imp_a": {
       "type": "number",
       "description": "Str\u00f6m vid maxeffekt Imp (A) per panel"
+    },
+    "temp_coeff_pmax_percent_c": {
+      "type": "number",
+      "description": "Temperaturkoefficient Pmax (%/\u00b0C), t.ex. -0.35"
+    },
+    "temp_coeff_voc_percent_c": {
+      "type": "number",
+      "description": "Temperaturkoefficient Voc (%/\u00b0C), t.ex. -0.27"
+    },
+    "temp_coeff_isc_percent_c": {
+      "type": "number",
+      "description": "Temperaturkoefficient Isc (%/\u00b0C), t.ex. 0.05"
+    },
+    "noct_c": {
+      "type": "number",
+      "description": "NOCT/NMOT (\u00b0C), t.ex. 45"
+    },
+    "bifacial": {
+      "type": "boolean",
+      "description": "Bifacial panel",
+      "default": false
+    },
+    "max_dc_power_kw": {
+      "type": "number",
+      "description": "Max DC-ing\u00e5ngseffekt (kW) f\u00f6r v\u00e4xelriktare"
+    },
+    "max_dc_voltage_v": {
+      "type": "number",
+      "description": "Max DC-sp\u00e4nning (V) f\u00f6r v\u00e4xelriktare"
+    },
+    "startup_voltage_v": {
+      "type": "number",
+      "description": "Startsp\u00e4nning (V) f\u00f6r v\u00e4xelriktare"
+    },
+    "mppt_voltage_min_v": {
+      "type": "number",
+      "description": "MPPT min sp\u00e4nning (V)"
+    },
+    "mppt_voltage_max_v": {
+      "type": "number",
+      "description": "MPPT max sp\u00e4nning (V)"
+    },
+    "nominal_dc_voltage_v": {
+      "type": "number",
+      "description": "Nominell DC-sp\u00e4nning (V)"
+    },
+    "mppt_count": {
+      "type": "number",
+      "description": "Antal MPPT-ing\u00e5ngar"
+    },
+    "strings_per_mppt": {
+      "type": "number",
+      "description": "Antal str\u00e4ngar per MPPT"
+    },
+    "max_input_current_a": {
+      "type": "number",
+      "description": "Max ing\u00e5ngsstr\u00f6m per MPPT (A)"
+    },
+    "max_short_circuit_current_a": {
+      "type": "number",
+      "description": "Max kortslutningsstr\u00f6m per MPPT (A)"
+    },
+    "battery_supported": {
+      "type": "boolean",
+      "description": "St\u00f6d f\u00f6r batteri/hybrid",
+      "default": false
+    },
+    "phase_type": {
+      "type": "string",
+      "description": "Fastyp, t.ex. '1-fas' eller '3-fas'"
+    },
+    "inverter_type": {
+      "type": "string",
+      "description": "V\u00e4xelriktartyp, t.ex. 'String', 'Hybrid', 'Mikro'"
     },
     "image_url": {
       "type": "string",
