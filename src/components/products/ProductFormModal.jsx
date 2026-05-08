@@ -13,6 +13,133 @@ const categories = [
   { value: 'ovrigt', label: 'Övrigt' },
 ];
 
+const COMMON_FIELDS = ['name', 'brand', 'model', 'power_watts', 'capacity_kwh', 'description'];
+const PANEL_FIELDS = ['width_mm', 'height_mm', 'voc_v', 'isc_a', 'vmp_v', 'imp_a', 'temp_coeff_pmax_percent_c', 'temp_coeff_voc_percent_c', 'temp_coeff_isc_percent_c', 'noct_c', 'bifacial'];
+const INVERTER_FIELDS = [
+  'max_dc_power_kw',
+  'max_dc_voltage_v',
+  'startup_voltage_v',
+  'mppt_voltage_min_v',
+  'mppt_voltage_max_v',
+  'nominal_dc_voltage_v',
+  'mppt_count',
+  'strings_per_mppt',
+  'max_input_current_a',
+  'max_short_circuit_current_a',
+  'battery_supported',
+  'phase_type',
+  'inverter_type',
+];
+
+function getAutoFetchConfig(category, query) {
+  if (category === 'vaxelriktare') {
+    return {
+      prompt: `Find the complete official datasheet specifications for this photovoltaic inverter: "${query}".
+Prioritize manufacturer datasheets and product manuals. Return ONLY a JSON object. Use null if unknown.
+Fields:
+name, brand, model, power_watts, max_dc_power_kw, max_dc_voltage_v, startup_voltage_v, mppt_voltage_min_v, mppt_voltage_max_v, nominal_dc_voltage_v, mppt_count, strings_per_mppt, max_input_current_a, max_short_circuit_current_a, battery_supported, phase_type, inverter_type, description.
+
+Important unit rules:
+- power_watts = nominal AC power in watts.
+- max_dc_power_kw = maximum PV/DC input power in kW.
+- voltage fields are volts.
+- current fields are amperes per MPPT/input according to datasheet.
+- mppt_count and strings_per_mppt must be numbers.
+- battery_supported must be true or false.
+- phase_type should be for example "1-fas" or "3-fas".
+- inverter_type should be for example "String", "Hybrid", "Mikro", or "Hybrid-ready".`,
+      fields: [...COMMON_FIELDS, ...INVERTER_FIELDS],
+      schema: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          brand: { type: 'string' },
+          model: { type: 'string' },
+          power_watts: { type: 'number' },
+          max_dc_power_kw: { type: 'number' },
+          max_dc_voltage_v: { type: 'number' },
+          startup_voltage_v: { type: 'number' },
+          mppt_voltage_min_v: { type: 'number' },
+          mppt_voltage_max_v: { type: 'number' },
+          nominal_dc_voltage_v: { type: 'number' },
+          mppt_count: { type: 'number' },
+          strings_per_mppt: { type: 'number' },
+          max_input_current_a: { type: 'number' },
+          max_short_circuit_current_a: { type: 'number' },
+          battery_supported: { type: 'boolean' },
+          phase_type: { type: 'string' },
+          inverter_type: { type: 'string' },
+          description: { type: 'string' },
+        },
+      },
+    };
+  }
+
+  if (category === 'solpanel') {
+    return {
+      prompt: `Find the complete official datasheet specifications for this photovoltaic solar panel/module: "${query}".
+Prioritize manufacturer datasheets. Return ONLY a JSON object. Use null if unknown.
+Fields:
+name, brand, model, power_watts, width_mm, height_mm, voc_v, isc_a, vmp_v, imp_a, temp_coeff_pmax_percent_c, temp_coeff_voc_percent_c, temp_coeff_isc_percent_c, noct_c, bifacial, description.
+
+Important unit rules:
+- power_watts = STC module power in watts.
+- width_mm and height_mm are module dimensions in millimeters.
+- voc_v, vmp_v are volts.
+- isc_a, imp_a are amperes.
+- temperature coefficients are percent per °C, for example -0.35.
+- noct_c is °C.
+- bifacial must be true or false.`,
+      fields: [...COMMON_FIELDS, ...PANEL_FIELDS],
+      schema: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          brand: { type: 'string' },
+          model: { type: 'string' },
+          power_watts: { type: 'number' },
+          width_mm: { type: 'number' },
+          height_mm: { type: 'number' },
+          voc_v: { type: 'number' },
+          isc_a: { type: 'number' },
+          vmp_v: { type: 'number' },
+          imp_a: { type: 'number' },
+          temp_coeff_pmax_percent_c: { type: 'number' },
+          temp_coeff_voc_percent_c: { type: 'number' },
+          temp_coeff_isc_percent_c: { type: 'number' },
+          noct_c: { type: 'number' },
+          bifacial: { type: 'boolean' },
+          description: { type: 'string' },
+        },
+      },
+    };
+  }
+
+  return {
+    prompt: `Find the complete technical datasheet specifications for this solar product: "${query}".
+Return ONLY a JSON object with these fields. Use null if unknown:
+name, brand, model, power_watts, width_mm, height_mm, voc_v, isc_a, vmp_v, imp_a, capacity_kwh, description`,
+    fields: ['name','brand','model','power_watts','width_mm','height_mm','voc_v','isc_a','vmp_v','imp_a','capacity_kwh','description'],
+    schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string' },
+        brand: { type: 'string' },
+        model: { type: 'string' },
+        power_watts: { type: 'number' },
+        width_mm: { type: 'number' },
+        height_mm: { type: 'number' },
+        voc_v: { type: 'number' },
+        isc_a: { type: 'number' },
+        vmp_v: { type: 'number' },
+        imp_a: { type: 'number' },
+        capacity_kwh: { type: 'number' },
+        description: { type: 'string' },
+      },
+    },
+  };
+}
+
 export default function ProductFormModal({ product, onSave, onClose }) {
   const [form, setForm] = useState({
     name: product?.name || '',
@@ -29,6 +156,24 @@ export default function ProductFormModal({ product, onSave, onClose }) {
     isc_a: product?.isc_a || '',
     vmp_v: product?.vmp_v || '',
     imp_a: product?.imp_a || '',
+    temp_coeff_pmax_percent_c: product?.temp_coeff_pmax_percent_c || '',
+    temp_coeff_voc_percent_c: product?.temp_coeff_voc_percent_c || '',
+    temp_coeff_isc_percent_c: product?.temp_coeff_isc_percent_c || '',
+    noct_c: product?.noct_c || '',
+    bifacial: product?.bifacial ?? false,
+    max_dc_power_kw: product?.max_dc_power_kw || '',
+    max_dc_voltage_v: product?.max_dc_voltage_v || '',
+    startup_voltage_v: product?.startup_voltage_v || '',
+    mppt_voltage_min_v: product?.mppt_voltage_min_v || '',
+    mppt_voltage_max_v: product?.mppt_voltage_max_v || '',
+    nominal_dc_voltage_v: product?.nominal_dc_voltage_v || '',
+    mppt_count: product?.mppt_count || '',
+    strings_per_mppt: product?.strings_per_mppt || '',
+    max_input_current_a: product?.max_input_current_a || '',
+    max_short_circuit_current_a: product?.max_short_circuit_current_a || '',
+    battery_supported: product?.battery_supported ?? false,
+    phase_type: product?.phase_type || '',
+    inverter_type: product?.inverter_type || '',
     description: product?.description || '',
     image_url: product?.image_url || '',
   });
@@ -40,45 +185,36 @@ export default function ProductFormModal({ product, onSave, onClose }) {
   const handleAutoFetch = async () => {
     const query = [form.brand, form.model, form.name].filter(Boolean).join(' ');
     if (!query) return;
+
     setFetching(true);
     setFetchMsg(null);
-    const result = await base44.integrations.Core.InvokeLLM({
-      prompt: `Find the complete technical datasheet specifications for the solar product: "${query}".
-Return ONLY a JSON object with these fields (use null if unknown):
-name, brand, model, power_watts, width_mm, height_mm, voc_v, isc_a, vmp_v, imp_a, capacity_kwh, description`,
-      add_context_from_internet: true,
-      response_json_schema: {
-        type: 'object',
-        properties: {
-          name: { type: 'string' },
-          brand: { type: 'string' },
-          model: { type: 'string' },
-          power_watts: { type: 'number' },
-          width_mm: { type: 'number' },
-          height_mm: { type: 'number' },
-          voc_v: { type: 'number' },
-          isc_a: { type: 'number' },
-          vmp_v: { type: 'number' },
-          imp_a: { type: 'number' },
-          capacity_kwh: { type: 'number' },
-          description: { type: 'string' },
-        }
-      }
-    });
-    const fields = ['name','brand','model','power_watts','width_mm','height_mm','voc_v','isc_a','vmp_v','imp_a','capacity_kwh','description'];
-    let filled = 0;
-    setForm(f => {
-      const next = { ...f };
-      fields.forEach(k => {
-        if (result[k] != null && result[k] !== '') {
-          next[k] = result[k];
-          filled++;
-        }
+
+    try {
+      const config = getAutoFetchConfig(form.category, query);
+      const result = await base44.integrations.Core.InvokeLLM({
+        prompt: config.prompt,
+        add_context_from_internet: true,
+        response_json_schema: config.schema,
       });
-      return next;
-    });
-    setFetchMsg(filled > 0 ? `✓ Fyllde i ${filled} fält automatiskt` : '⚠ Hittade ingen data — fyll i manuellt');
-    setFetching(false);
+
+      let filled = 0;
+      setForm(f => {
+        const next = { ...f };
+        config.fields.forEach(k => {
+          if (result?.[k] != null && result[k] !== '') {
+            next[k] = result[k];
+            filled++;
+          }
+        });
+        return next;
+      });
+      setFetchMsg(filled > 0 ? `✓ Fyllde i ${filled} fält automatiskt` : '⚠ Hittade ingen data — fyll i manuellt');
+    } catch (error) {
+      console.error('Auto fetch failed', error);
+      setFetchMsg('⚠ Kunde inte hämta data automatiskt');
+    } finally {
+      setFetching(false);
+    }
   };
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -96,14 +232,37 @@ name, brand, model, power_watts, width_mm, height_mm, voc_v, isc_a, vmp_v, imp_a
     setSaving(true);
     const numOrNull = v => (v !== '' && v != null && !isNaN(Number(v))) ? Number(v) : undefined;
     const data = { ...form, price: Number(form.price) || 0 };
-    data.power_watts = numOrNull(form.power_watts);
-    data.capacity_kwh = numOrNull(form.capacity_kwh);
-    data.width_mm = numOrNull(form.width_mm);
-    data.height_mm = numOrNull(form.height_mm);
-    data.voc_v = numOrNull(form.voc_v);
-    data.isc_a = numOrNull(form.isc_a);
-    data.vmp_v = numOrNull(form.vmp_v);
-    data.imp_a = numOrNull(form.imp_a);
+
+    [
+      'power_watts',
+      'capacity_kwh',
+      'width_mm',
+      'height_mm',
+      'voc_v',
+      'isc_a',
+      'vmp_v',
+      'imp_a',
+      'temp_coeff_pmax_percent_c',
+      'temp_coeff_voc_percent_c',
+      'temp_coeff_isc_percent_c',
+      'noct_c',
+      'max_dc_power_kw',
+      'max_dc_voltage_v',
+      'startup_voltage_v',
+      'mppt_voltage_min_v',
+      'mppt_voltage_max_v',
+      'nominal_dc_voltage_v',
+      'mppt_count',
+      'strings_per_mppt',
+      'max_input_current_a',
+      'max_short_circuit_current_a',
+    ].forEach(k => {
+      data[k] = numOrNull(form[k]);
+    });
+
+    data.bifacial = Boolean(form.bifacial);
+    data.battery_supported = Boolean(form.battery_supported);
+
     // Remove undefined keys to avoid sending invalid data
     Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
 
@@ -118,7 +277,7 @@ name, brand, model, power_watts, width_mm, height_mm, voc_v, isc_a, vmp_v, imp_a
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-card rounded-2xl border border-border w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <div className="bg-card rounded-2xl border border-border w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-border">
           <h2 className="font-semibold text-foreground">{product ? 'Redigera produkt' : 'Ny produkt'}</h2>
           <button onClick={onClose} className="p-1.5 hover:bg-muted rounded-lg transition-colors">
@@ -144,11 +303,11 @@ name, brand, model, power_watts, width_mm, height_mm, voc_v, isc_a, vmp_v, imp_a
             </div>
           </div>
 
-          <Field label="Produktnamn *" value={form.name} onChange={v => set('name', v)} placeholder="T.ex. JA Solar 415W" />
+          <Field label="Produktnamn *" value={form.name} onChange={v => set('name', v)} placeholder={form.category === 'vaxelriktare' ? 'T.ex. SolaX X3-Hybrid-15.0-D G4' : 'T.ex. JA Solar 415W'} />
           
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Varumärke" value={form.brand} onChange={v => set('brand', v)} placeholder="T.ex. JA Solar" />
-            <Field label="Modell" value={form.model} onChange={v => set('model', v)} placeholder="T.ex. JAM54S30" />
+            <Field label="Varumärke" value={form.brand} onChange={v => set('brand', v)} placeholder={form.category === 'vaxelriktare' ? 'T.ex. SolaX' : 'T.ex. JA Solar'} />
+            <Field label="Modell" value={form.model} onChange={v => set('model', v)} placeholder={form.category === 'vaxelriktare' ? 'T.ex. X3-Hybrid-15.0-D G4' : 'T.ex. JAM54S30'} />
           </div>
 
           <div className="flex items-center gap-3">
@@ -159,7 +318,7 @@ name, brand, model, power_watts, width_mm, height_mm, voc_v, isc_a, vmp_v, imp_a
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-accent text-white text-xs font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
             >
               {fetching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-              {fetching ? 'Hämtar data...' : 'Hämta data automatiskt'}
+              {fetching ? 'Hämtar data...' : form.category === 'vaxelriktare' ? 'Hämta växelriktardata automatiskt' : 'Hämta data automatiskt'}
             </button>
             {fetchMsg && <span className={`text-xs ${fetchMsg.startsWith('✓') ? 'text-green-600' : 'text-amber-600'}`}>{fetchMsg}</span>}
           </div>
@@ -183,11 +342,12 @@ name, brand, model, power_watts, width_mm, height_mm, voc_v, isc_a, vmp_v, imp_a
           </div>
 
           {(form.category === 'solpanel' || form.category === 'vaxelriktare' || form.category === 'optimerare') && (
-            <Field label="Effekt (W)" type="number" value={form.power_watts} onChange={v => set('power_watts', v)} placeholder="415" />
+            <Field label={form.category === 'vaxelriktare' ? 'Nominell AC-effekt (W)' : 'Effekt (W)'} type="number" value={form.power_watts} onChange={v => set('power_watts', v)} placeholder={form.category === 'vaxelriktare' ? '15000' : '415'} />
           )}
           {form.category === 'batteri' && (
             <Field label="Kapacitet (kWh)" type="number" value={form.capacity_kwh} onChange={v => set('capacity_kwh', v)} placeholder="10" />
           )}
+
           {form.category === 'solpanel' && (
             <>
               <div className="grid grid-cols-2 gap-3">
@@ -202,6 +362,51 @@ name, brand, model, power_watts, width_mm, height_mm, voc_v, isc_a, vmp_v, imp_a
                   <Field label="Vmp (V)" type="number" value={form.vmp_v} onChange={v => set('vmp_v', v)} placeholder="41.8" />
                   <Field label="Imp (A)" type="number" value={form.imp_a} onChange={v => set('imp_a', v)} placeholder="9.93" />
                 </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Temperaturdata</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Tempkoeff. Pmax (%/°C)" type="number" value={form.temp_coeff_pmax_percent_c} onChange={v => set('temp_coeff_pmax_percent_c', v)} placeholder="-0.35" />
+                  <Field label="Tempkoeff. Voc (%/°C)" type="number" value={form.temp_coeff_voc_percent_c} onChange={v => set('temp_coeff_voc_percent_c', v)} placeholder="-0.27" />
+                  <Field label="Tempkoeff. Isc (%/°C)" type="number" value={form.temp_coeff_isc_percent_c} onChange={v => set('temp_coeff_isc_percent_c', v)} placeholder="0.05" />
+                  <Field label="NOCT/NMOT (°C)" type="number" value={form.noct_c} onChange={v => set('noct_c', v)} placeholder="45" />
+                </div>
+                <BooleanToggle label="Bifacial panel" checked={form.bifacial} onChange={v => set('bifacial', v)} />
+              </div>
+            </>
+          )}
+
+          {form.category === 'vaxelriktare' && (
+            <>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Växelriktardata</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Max DC-effekt (kW)" type="number" value={form.max_dc_power_kw} onChange={v => set('max_dc_power_kw', v)} placeholder="22.5" />
+                  <Field label="Max DC-spänning (V)" type="number" value={form.max_dc_voltage_v} onChange={v => set('max_dc_voltage_v', v)} placeholder="1000" />
+                  <Field label="Startspänning (V)" type="number" value={form.startup_voltage_v} onChange={v => set('startup_voltage_v', v)} placeholder="180" />
+                  <Field label="Nominell DC-spänning (V)" type="number" value={form.nominal_dc_voltage_v} onChange={v => set('nominal_dc_voltage_v', v)} placeholder="640" />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">MPPT och strömgränser</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="MPPT min (V)" type="number" value={form.mppt_voltage_min_v} onChange={v => set('mppt_voltage_min_v', v)} placeholder="160" />
+                  <Field label="MPPT max (V)" type="number" value={form.mppt_voltage_max_v} onChange={v => set('mppt_voltage_max_v', v)} placeholder="950" />
+                  <Field label="Antal MPPT" type="number" value={form.mppt_count} onChange={v => set('mppt_count', v)} placeholder="2" />
+                  <Field label="Strängar per MPPT" type="number" value={form.strings_per_mppt} onChange={v => set('strings_per_mppt', v)} placeholder="1" />
+                  <Field label="Max ingångsström (A)" type="number" value={form.max_input_current_a} onChange={v => set('max_input_current_a', v)} placeholder="16" />
+                  <Field label="Max kortslutningsström (A)" type="number" value={form.max_short_circuit_current_a} onChange={v => set('max_short_circuit_current_a', v)} placeholder="20" />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Typ och system</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <Field label="Fas" value={form.phase_type} onChange={v => set('phase_type', v)} placeholder="3-fas" />
+                  <Field label="Växelriktartyp" value={form.inverter_type} onChange={v => set('inverter_type', v)} placeholder="Hybrid" />
+                </div>
+                <BooleanToggle label="Batteristöd / hybrid" checked={form.battery_supported} onChange={v => set('battery_supported', v)} />
               </div>
             </>
           )}
@@ -247,6 +452,19 @@ name, brand, model, power_watts, width_mm, height_mm, voc_v, isc_a, vmp_v, imp_a
         </div>
       </div>
     </div>
+  );
+}
+
+function BooleanToggle({ label, checked, onChange }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className={`mt-3 inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium transition-colors ${checked ? 'border-primary bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:border-primary/50'}`}
+    >
+      <span className={`h-3 w-3 rounded-full ${checked ? 'bg-primary' : 'bg-muted-foreground/40'}`} />
+      {label}: {checked ? 'Ja' : 'Nej'}
+    </button>
   );
 }
 
