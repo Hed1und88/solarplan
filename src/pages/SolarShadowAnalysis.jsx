@@ -98,10 +98,10 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
     mount.appendChild(renderer.domElement);
 
     const camera = new THREE.OrthographicCamera(-12, 12, 7.2, -7.2, 0.1, 100);
-    const cameraTarget = new THREE.Vector3(0, 3.4, 0.8);
-    let orbitTheta = 0.18;
-    let orbitPhi = 0.36;
-    let orbitRadius = 18;
+    const cameraTarget = new THREE.Vector3(0, 4.5, 0.8);
+    let orbitTheta = 0.32;
+    let orbitPhi = 0.18;
+    let orbitRadius = 19;
     const updateCamera = () => {
       camera.position.set(
         Math.sin(orbitPhi) * Math.sin(orbitTheta) * orbitRadius,
@@ -293,7 +293,7 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
       const heightPx = Math.max(1, clientHeight);
       renderer.setSize(widthPx, heightPx, false);
       const aspect = widthPx / heightPx;
-      const view = 10.8;
+      const view = 8.4;
       camera.left = -view * aspect;
       camera.right = view * aspect;
       camera.top = view;
@@ -316,7 +316,7 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
       pointer.x = event.clientX;
       pointer.y = event.clientY;
       orbitTheta -= dx * 0.008;
-      orbitPhi = clamp(orbitPhi + dy * 0.006, 0.34, 1.28);
+      orbitPhi = clamp(orbitPhi + dy * 0.006, 0.12, 1.28);
       updateCamera();
     };
     const onPointerUp = (event) => {
@@ -363,20 +363,16 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
   }, [model, panelLayout.columns, panelLayout.panelCount, shadeLoss, solar]);
 
   return (
-    <div className="relative h-[600px] w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-inner">
+    <div className="relative h-[640px] w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-inner">
       <div ref={mountRef} className="absolute inset-0" aria-label="WebGL-baserad BIM-vy for 3D-solanalys" />
-      <div className="pointer-events-none absolute left-5 top-5 rounded-2xl border border-slate-200 bg-white/88 px-4 py-3 shadow-xl backdrop-blur-md">
-        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Interaktiv BIM-vy</p>
-        <p className="mt-1 text-2xl font-black text-slate-950">{Math.max(0, solar.altitude).toFixed(1)}&deg; solhöjd</p>
-        <p className="text-xs font-medium text-slate-600">Dra för att rotera · scrolla för zoom</p>
-      </div>
-      <div className="pointer-events-none absolute right-5 top-5 rounded-2xl border border-slate-200 bg-white/92 px-4 py-3 shadow-xl backdrop-blur-md">
-        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Anläggning</p>
-        <p className="mt-1 text-2xl font-black text-slate-950">{panelLayout.panelCount} paneler</p>
-        <p className="text-xs font-medium text-slate-600">{panelLayout.installedKw.toFixed(1)} kWp · {model.buildingLength} x {model.buildingWidth} m</p>
-      </div>
       <div className="pointer-events-none absolute bottom-5 left-5 right-5 flex flex-wrap gap-2">
-        {['Dra och rotera', 'Takfokus', 'Skuggstudie', siteData?.tile?.url ? 'Geodata kopplad' : 'Manuell platsdata'].map((item) => (
+        {[
+          `${Math.max(0, solar.altitude).toFixed(1)}° solhöjd`,
+          `${panelLayout.panelCount} paneler`,
+          'Dra och rotera',
+          'Scrolla för zoom',
+          siteData?.tile?.url ? 'Geodata kopplad' : 'Manuell platsdata'
+        ].map((item) => (
           <span key={item} className="rounded-full border border-slate-200 bg-white/82 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-700 shadow-sm backdrop-blur">{item}</span>
         ))}
       </div>
