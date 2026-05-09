@@ -83,8 +83,8 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
     if (!mount) return undefined;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x07111f);
-    scene.fog = new THREE.Fog(0x07111f, 22, 46);
+    scene.background = new THREE.Color(0xf4f8fb);
+    scene.fog = new THREE.Fog(0xf4f8fb, 34, 62);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -93,13 +93,26 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.08;
+    renderer.domElement.style.cursor = 'grab';
+    renderer.domElement.style.touchAction = 'none';
     mount.appendChild(renderer.domElement);
 
     const camera = new THREE.OrthographicCamera(-12, 12, 7.2, -7.2, 0.1, 100);
-    camera.position.set(12, 10, 14);
-    camera.lookAt(0, 1.8, 0);
+    const cameraTarget = new THREE.Vector3(0, 2.4, 0);
+    let orbitTheta = 0.72;
+    let orbitPhi = 0.58;
+    let orbitRadius = 20;
+    const updateCamera = () => {
+      camera.position.set(
+        Math.sin(orbitPhi) * Math.sin(orbitTheta) * orbitRadius,
+        Math.cos(orbitPhi) * orbitRadius,
+        Math.sin(orbitPhi) * Math.cos(orbitTheta) * orbitRadius
+      );
+      camera.lookAt(cameraTarget);
+    };
+    updateCamera();
 
-    const hemi = new THREE.HemisphereLight(0xcfe7ff, 0x172819, 1.9);
+    const hemi = new THREE.HemisphereLight(0xffffff, 0xb7c9b4, 2.3);
     scene.add(hemi);
 
     const sunVector = new THREE.Vector3(
@@ -120,23 +133,23 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
     key.shadow.bias = -0.00035;
     scene.add(key);
 
-    const rim = new THREE.DirectionalLight(0x7dd3fc, 1.2);
+    const rim = new THREE.DirectionalLight(0xb7ddff, 1.1);
     rim.position.set(-9, 7, -8);
     scene.add(rim);
 
     const materials = {
-      ground: new THREE.MeshStandardMaterial({ color: 0x314436, roughness: 0.92, metalness: 0.02 }),
-      plot: new THREE.MeshStandardMaterial({ color: 0x64785b, roughness: 0.86, metalness: 0.02 }),
-      wall: new THREE.MeshStandardMaterial({ color: 0xf2f6f8, roughness: 0.55, metalness: 0.01 }),
-      sideWall: new THREE.MeshStandardMaterial({ color: 0xc9d4df, roughness: 0.62, metalness: 0.02 }),
-      roof: new THREE.MeshStandardMaterial({ color: 0x202a38, roughness: 0.5, metalness: 0.08 }),
-      roofEdge: new THREE.LineBasicMaterial({ color: 0x91a4ba, transparent: true, opacity: 0.52 }),
+      ground: new THREE.MeshStandardMaterial({ color: 0xdfeadf, roughness: 0.92, metalness: 0.01 }),
+      plot: new THREE.MeshStandardMaterial({ color: 0xbfd2b7, roughness: 0.82, metalness: 0.01 }),
+      wall: new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.48, metalness: 0.01 }),
+      sideWall: new THREE.MeshStandardMaterial({ color: 0xd8e0e8, roughness: 0.56, metalness: 0.02 }),
+      roof: new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.46, metalness: 0.06 }),
+      roofEdge: new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.72 }),
       glass: new THREE.MeshPhysicalMaterial({ color: 0x0f1c2e, roughness: 0.22, metalness: 0.08, transmission: 0.04, clearcoat: 0.7, clearcoatRoughness: 0.18 }),
-      panel: new THREE.MeshPhysicalMaterial({ color: 0x07335f, roughness: 0.18, metalness: 0.12, clearcoat: 1, clearcoatRoughness: 0.08 }),
-      panelLine: new THREE.LineBasicMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.54 }),
-      shadow: new THREE.MeshBasicMaterial({ color: 0x020617, transparent: true, opacity: clamp(shadeLoss / 100, 0.12, 0.5), depthWrite: false }),
-      neighbor: new THREE.MeshStandardMaterial({ color: 0xaeb9c7, roughness: 0.72, metalness: 0.02 }),
-      neighborRoof: new THREE.MeshStandardMaterial({ color: 0x56657a, roughness: 0.66, metalness: 0.03 }),
+      panel: new THREE.MeshPhysicalMaterial({ color: 0x064e8a, roughness: 0.14, metalness: 0.16, clearcoat: 1, clearcoatRoughness: 0.06 }),
+      panelLine: new THREE.LineBasicMaterial({ color: 0xbbe9ff, transparent: true, opacity: 0.7 }),
+      shadow: new THREE.MeshBasicMaterial({ color: 0x1e293b, transparent: true, opacity: clamp(shadeLoss / 100, 0.10, 0.36), depthWrite: false }),
+      neighbor: new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.7, metalness: 0.02 }),
+      neighborRoof: new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.62, metalness: 0.03 }),
       bark: new THREE.MeshStandardMaterial({ color: 0x6a4523, roughness: 0.85 }),
       foliage: new THREE.MeshStandardMaterial({ color: 0x146437, roughness: 0.72 }),
       chimney: new THREE.MeshStandardMaterial({ color: 0x883413, roughness: 0.78 })
@@ -280,7 +293,7 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
       const heightPx = Math.max(1, clientHeight);
       renderer.setSize(widthPx, heightPx, false);
       const aspect = widthPx / heightPx;
-      const view = 15.5;
+      const view = 12.6;
       camera.left = -view * aspect;
       camera.right = view * aspect;
       camera.top = view;
@@ -288,16 +301,58 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
       camera.updateProjectionMatrix();
     };
 
+    const pointer = { active: false, x: 0, y: 0 };
+    const onPointerDown = (event) => {
+      pointer.active = true;
+      pointer.x = event.clientX;
+      pointer.y = event.clientY;
+      renderer.domElement.setPointerCapture?.(event.pointerId);
+      renderer.domElement.style.cursor = 'grabbing';
+    };
+    const onPointerMove = (event) => {
+      if (!pointer.active) return;
+      const dx = event.clientX - pointer.x;
+      const dy = event.clientY - pointer.y;
+      pointer.x = event.clientX;
+      pointer.y = event.clientY;
+      orbitTheta -= dx * 0.008;
+      orbitPhi = clamp(orbitPhi + dy * 0.006, 0.34, 1.28);
+      updateCamera();
+    };
+    const onPointerUp = (event) => {
+      pointer.active = false;
+      renderer.domElement.releasePointerCapture?.(event.pointerId);
+      renderer.domElement.style.cursor = 'grab';
+    };
+    const onWheel = (event) => {
+      event.preventDefault();
+      orbitRadius = clamp(orbitRadius + event.deltaY * 0.018, 14, 31);
+      updateCamera();
+    };
+
     const animate = () => {
+      frameId = window.requestAnimationFrame(animate);
       renderer.render(scene, camera);
     };
 
+    let frameId = 0;
     resize();
+    renderer.domElement.addEventListener('pointerdown', onPointerDown);
+    renderer.domElement.addEventListener('pointermove', onPointerMove);
+    renderer.domElement.addEventListener('pointerup', onPointerUp);
+    renderer.domElement.addEventListener('pointercancel', onPointerUp);
+    renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
     animate();
     window.addEventListener('resize', resize);
 
     return () => {
+      window.cancelAnimationFrame(frameId);
       window.removeEventListener('resize', resize);
+      renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+      renderer.domElement.removeEventListener('pointermove', onPointerMove);
+      renderer.domElement.removeEventListener('pointerup', onPointerUp);
+      renderer.domElement.removeEventListener('pointercancel', onPointerUp);
+      renderer.domElement.removeEventListener('wheel', onWheel);
       renderer.dispose();
       scene.traverse((object) => {
         if (object.geometry) object.geometry.dispose();
@@ -308,21 +363,21 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
   }, [model, panelLayout.columns, panelLayout.panelCount, shadeLoss, solar]);
 
   return (
-    <div className="relative h-[560px] w-full overflow-hidden rounded-2xl border border-slate-700 bg-[#07111f]">
+    <div className="relative h-[600px] w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-inner">
       <div ref={mountRef} className="absolute inset-0" aria-label="WebGL-baserad BIM-vy for 3D-solanalys" />
-      <div className="pointer-events-none absolute left-5 top-5 rounded-2xl border border-white/10 bg-slate-950/82 px-4 py-3 shadow-2xl backdrop-blur-md">
-        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-200">BIM Shadow Study</p>
-        <p className="mt-1 text-2xl font-black text-white">{Math.max(0, solar.altitude).toFixed(1)}&deg; solhojd</p>
-        <p className="text-xs font-medium text-slate-300">Skugga {shadeLoss.toFixed(0)}% · Azimut {model.roofAzimuth}&deg;</p>
+      <div className="pointer-events-none absolute left-5 top-5 rounded-2xl border border-slate-200 bg-white/88 px-4 py-3 shadow-xl backdrop-blur-md">
+        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Interaktiv BIM-vy</p>
+        <p className="mt-1 text-2xl font-black text-slate-950">{Math.max(0, solar.altitude).toFixed(1)}&deg; solhöjd</p>
+        <p className="text-xs font-medium text-slate-600">Dra för att rotera · scrolla för zoom</p>
       </div>
-      <div className="pointer-events-none absolute right-5 top-5 rounded-2xl border border-white/10 bg-white/92 px-4 py-3 shadow-2xl backdrop-blur-md">
-        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Anlaggning</p>
+      <div className="pointer-events-none absolute right-5 top-5 rounded-2xl border border-slate-200 bg-white/92 px-4 py-3 shadow-xl backdrop-blur-md">
+        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Anläggning</p>
         <p className="mt-1 text-2xl font-black text-slate-950">{panelLayout.panelCount} paneler</p>
         <p className="text-xs font-medium text-slate-600">{panelLayout.installedKw.toFixed(1)} kWp · {model.buildingLength} x {model.buildingWidth} m</p>
       </div>
       <div className="pointer-events-none absolute bottom-5 left-5 right-5 flex flex-wrap gap-2">
-        {['WebGL', 'Skuggkarta', 'Grannvolymer', siteData?.tile?.url ? 'Geodata kopplad' : 'Manuell platsdata'].map((item) => (
-          <span key={item} className="rounded-full border border-slate-600 bg-slate-950/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-200 backdrop-blur">{item}</span>
+        {['Dra och rotera', 'Takfokus', 'Skuggstudie', siteData?.tile?.url ? 'Geodata kopplad' : 'Manuell platsdata'].map((item) => (
+          <span key={item} className="rounded-full border border-slate-200 bg-white/82 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-700 shadow-sm backdrop-blur">{item}</span>
         ))}
       </div>
     </div>
@@ -340,13 +395,13 @@ function Technical3DModel({ model, solar, shadeLoss, siteData }) {
         </div>
         <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">Solhöjd {Math.max(0, solar.altitude).toFixed(1)}° · Skugga {shadeLoss.toFixed(0)}%</div>
       </div>
-      <div className="bg-slate-950 p-3 sm:p-5">
+      <div className="bg-slate-50 p-3 sm:p-5">
         <ParametricHouse3D model={model} solar={solar} shadeLoss={shadeLoss} siteData={siteData} />
-        <div className="mt-4 grid gap-2 text-xs text-slate-300 sm:grid-cols-4">
-          <div className="rounded-2xl border border-slate-700 bg-slate-900 p-3"><b className="text-white">Byggnad</b><br />{model.buildingLength} x {model.buildingWidth} m</div>
-          <div className="rounded-2xl border border-slate-700 bg-slate-900 p-3"><b className="text-white">Tak</b><br />{model.roofType} · {model.roofPitch}°</div>
-          <div className="rounded-2xl border border-slate-700 bg-slate-900 p-3"><b className="text-white">Paneler</b><br />{panelLayout.panelCount} st · {panelLayout.installedKw.toFixed(1)} kWp</div>
-          <div className="rounded-2xl border border-slate-700 bg-slate-900 p-3"><b className="text-white">Platsdata</b><br />{siteData?.elevation?.elevation ? `${siteData.elevation.elevation} m ö.h.` : 'Ej hämtad'}</div>
+        <div className="mt-4 grid gap-2 text-xs text-slate-600 sm:grid-cols-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"><b className="text-slate-950">Byggnad</b><br />{model.buildingLength} x {model.buildingWidth} m</div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"><b className="text-slate-950">Tak</b><br />{model.roofType} · {model.roofPitch}°</div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"><b className="text-slate-950">Paneler</b><br />{panelLayout.panelCount} st · {panelLayout.installedKw.toFixed(1)} kWp</div>
+          <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"><b className="text-slate-950">Platsdata</b><br />{siteData?.elevation?.elevation ? `${siteData.elevation.elevation} m ö.h.` : 'Ej hämtad'}</div>
         </div>
       </div>
     </div>
