@@ -20,6 +20,71 @@ function hourFromTime(time) {
   return h + m / 60;
 }
 
+export function roofRise(width, pitchDegrees) {
+  return (Number(width) / 2) * Math.tan(rad(Number(pitchDegrees)));
+}
+
+export function roofSlopeLength(width, pitchDegrees) {
+  return (Number(width) / 2) / Math.cos(rad(Number(pitchDegrees)));
+}
+
+export function calculateRoofAreas(model) {
+  const length = clamp(model.buildingLength, 1, 200);
+  const width = clamp(model.buildingWidth, 1, 100);
+  const pitch = clamp(model.roofPitch, 0, 75);
+  const roofType = model.roofType || 'sadeltak';
+  const pitchRad = rad(pitch);
+
+  let totalRoofArea = length * width;
+  let activeRoofArea = totalRoofArea;
+  let ridgeHeight = clamp(model.buildingHeight, 1, 80);
+
+  if (roofType === 'sadeltak') {
+    const slopeLength = roofSlopeLength(width, pitch);
+    totalRoofArea = length * slopeLength * 2;
+    activeRoofArea = length * slopeLength;
+    ridgeHeight += roofRise(width, pitch);
+  } else if (roofType === 'pulpettak') {
+    totalRoofArea = (length * width) / Math.max(0.18, Math.cos(pitchRad));
+    activeRoofArea = totalRoofArea;
+    ridgeHeight += width * Math.tan(pitchRad);
+  }
+
+  return {
+    totalRoofArea,
+    activeRoofArea,
+    usableRoofArea: Math.max(0, activeRoofArea * 0.82),
+    ridgeHeight,
+    roofType
+  };
+}
+
+export function calculatePanelLayout(model) {
+  const panelLength = clamp(model.panelLengthM, 1.4, 2.6);
+  const panelWidth = clamp(model.panelWidthM, 0.8, 1.4);
+  const panelPowerW = clamp(model.panelPowerW, 250, 750);
+  const rows = Math.max(1, Math.floor(Number(model.panelRows) || 1));
+  const columns = Math.max(1, Math.floor(Number(model.panelColumns) || 1));
+  const panelCount = rows * columns;
+  const installedKw = (panelCount * panelPowerW) / 1000;
+  const roofAreas = calculateRoofAreas(model);
+  const requiredArea = panelCount * panelLength * panelWidth * 1.18;
+  const fitRatio = clamp(roofAreas.usableRoofArea / Math.max(1, requiredArea), 0, 1);
+
+  return {
+    rows,
+    columns,
+    panelCount,
+    panelLength,
+    panelWidth,
+    panelPowerW,
+    installedKw,
+    requiredArea,
+    fitRatio,
+    roofAreas
+  };
+}
+
 export function calculateSolarPosition({ latitude, longitude, date, time }) {
   const lat = clamp(latitude, -89.9, 89.9);
   const lon = clamp(longitude, -180, 180);
@@ -65,7 +130,8 @@ export function calculateShadeLoss({ solar, model }) {
   const alignmentLoss = clamp(azimuthDiff(solar.azimuth, roofAzimuth) / 120, 0, 1) * 24;
   const lowSunLoss = solar.altitude < 12 ? (12 - solar.altitude) * 3.5 : 0;
   const pitchLoss = clamp((Math.abs(roofPitch - solar.altitude) - 15) * 0.35, 0, 14);
-  let obstacleLoss = 0;
+  const terrainPenalty = clamp((Number(model.terrainSlopeDeg || 0) / 35) * 6, 0, 6);
+  let obstacleLoss = terrainPenalty;
 
   if (obstacles.chimney) obstacleLoss += solar.altitude < 45 ? 8 + (45 - solar.altitude) * 0.18 : 4;
 
@@ -83,13 +149,15 @@ export function calculateShadeLoss({ solar, model }) {
 }
 
 export function calculatePvEstimate({ solar, model, weatherFactor, shadeLoss }) {
-  if (!solar || solar.altitude <= 0) return { irradiance: 0, productionKw: 0, factor: 0 };
+  const panelLayout = calculatePanelLayout(model);
+  if (!solar || solar.altitude <= 0) return { irradiance: 0, productionKw: 0, factor: 0, panelLayout };
   const altitudeFactor = Math.sin(rad(solar.altitude));
   const azimuthFactor = clamp(1 - azimuthDiff(solar.azimuth, Number(model.roofAzimuth)) / 155, 0.12, 1);
   const pitchFactor = clamp(1 - Math.abs(Number(model.roofPitch) - solar.altitude) / 95, 0.24, 1);
   const shadeFactor = 1 - clamp(shadeLoss, 0, 100) / 100;
-  const factor = clamp(altitudeFactor * azimuthFactor * pitchFactor * weatherFactor * shadeFactor, 0, 1.15);
-  return { irradiance: 1000 * factor, productionKw: Number(model.panelKw) * factor, factor };
+  const fitFactor = clamp(panelLayout.fitRatio, 0.15, 1);
+  const factor = clamp(altitudeFactor * azimuthFactor * pitchFactor * weatherFactor * shadeFactor * fitFactor, 0, 1.15);
+  return { irradiance: 1000 * factor, productionKw: panelLayout.installedKw * factor, factor, panelLayout };
 }
 
 export function generateHourlySimulation({ model, date }) {
