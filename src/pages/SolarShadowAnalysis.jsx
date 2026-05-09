@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import * as THREE from 'three';
+import { useEffect, useMemo, useState } from 'react';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Sun, Save, RotateCcw, Download, Home, CloudSun, TreePine, Compass, Zap, ScanLine, Activity, MapPin, Mountain, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
 import {
@@ -73,268 +72,131 @@ function Stat({ icon: Icon, title, value, text }) {
   );
 }
 
-function addBox(scene, { size, position, color, roughness = 0.65, metalness = 0, name, cast = true, receive = true }) {
-  const geometry = new THREE.BoxGeometry(size[0], size[1], size[2]);
-  const material = new THREE.MeshStandardMaterial({ color, roughness, metalness });
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.set(position[0], position[1], position[2]);
-  mesh.castShadow = cast;
-  mesh.receiveShadow = receive;
-  if (name) mesh.name = name;
-  scene.add(mesh);
-  return mesh;
-}
-
-function makeRoofPlane({ width, length, pitch, side, color = 0x7f1d1d }) {
-  const geometry = new THREE.PlaneGeometry(length, width / 2);
-  const material = new THREE.MeshStandardMaterial({ color, roughness: 0.78, metalness: 0.02, side: THREE.DoubleSide });
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.rotation.order = 'YXZ';
-  mesh.rotation.y = Math.PI / 2;
-  mesh.rotation.x = side * THREE.MathUtils.degToRad(pitch);
-  return mesh;
-}
-
-function clearScene(scene) {
-  while (scene.children.length) {
-    const object = scene.children.pop();
-    object.traverse?.((child) => {
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) {
-        if (Array.isArray(child.material)) child.material.forEach((mat) => mat.dispose());
-        else child.material.dispose();
-      }
-    });
-  }
-}
-
 function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
-  const mountRef = useRef(null);
-  const rendererRef = useRef(null);
-  const frameRef = useRef(null);
-  const cameraState = useRef({ yaw: -0.78, pitch: 0.45, distance: 25, dragging: false, x: 0, y: 0 });
+  const panelLayout = calculatePanelLayout(model);
+  const shadeOpacity = clamp(shadeLoss / 100, 0.08, 0.46);
+  const sunX = 520 + solar.sunVector.x * 120;
+  const sunY = 125 - Math.max(0, solar.sunVector.y) * 70;
+  const mapUrl = siteData?.tile?.url;
 
-  useEffect(() => {
-    const mount = mountRef.current;
-    if (!mount) return undefined;
+  const panelCells = Array.from({ length: Math.min(panelLayout.panelCount, 32) }, (_, index) => ({
+    x: 368 + (index % panelLayout.columns) * 22,
+    y: 221 + Math.floor(index / panelLayout.columns) * 20,
+  }));
 
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xe9f1f8);
-    scene.fog = new THREE.Fog(0xe9f1f8, 32, 90);
+  return (
+    <div className="relative h-[520px] w-full overflow-hidden rounded-2xl border border-slate-700 bg-[#07111f]">
+      {mapUrl && <img src={mapUrl} alt="" className="absolute inset-x-10 bottom-6 h-32 w-[calc(100%-5rem)] rounded-xl object-cover opacity-25 saturate-75" />}
+      <svg className="absolute inset-0 h-full w-full" viewBox="0 0 920 520" role="img" aria-label="Teknisk 3D-solanalys av fastighet, takpaneler, träd och grannhus">
+        <defs>
+          <filter id="softDrop" x="-20%" y="-20%" width="140%" height="150%">
+            <feDropShadow dx="0" dy="18" stdDeviation="18" floodColor="#000000" floodOpacity="0.28" />
+          </filter>
+          <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#dce8f2" />
+            <stop offset="52%" stopColor="#edf3f8" />
+            <stop offset="100%" stopColor="#d9e6da" />
+          </linearGradient>
+          <linearGradient id="plot" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#d7e4d8" />
+            <stop offset="55%" stopColor="#b9cda9" />
+            <stop offset="100%" stopColor="#8fa177" />
+          </linearGradient>
+          <linearGradient id="roof" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#475569" />
+            <stop offset="100%" stopColor="#1e293b" />
+          </linearGradient>
+          <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#38bdf8" />
+            <stop offset="45%" stopColor="#0f4c81" />
+            <stop offset="100%" stopColor="#081a36" />
+          </linearGradient>
+          <pattern id="grid" x="0" y="0" width="34" height="34" patternUnits="userSpaceOnUse">
+            <path d="M34 0H0V34" fill="none" stroke="#94a3b8" strokeWidth="0.8" opacity="0.22" />
+          </pattern>
+        </defs>
 
-    const camera = new THREE.PerspectiveCamera(42, mount.clientWidth / Math.max(1, mount.clientHeight), 0.1, 500);
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.setSize(mount.clientWidth, mount.clientHeight);
-    mount.appendChild(renderer.domElement);
-    rendererRef.current = renderer;
+        <rect width="920" height="520" fill="url(#sky)" />
+        <rect width="920" height="520" fill="url(#grid)" />
+        <circle cx={sunX} cy={sunY} r="14" fill="#fbbf24" />
+        <circle cx={sunX} cy={sunY} r="34" fill="#fbbf24" opacity="0.14" />
+        <path d="M96 365 L462 168 L822 365 L462 492 Z" fill="url(#plot)" stroke="#d7e7d9" strokeWidth="1.5" filter="url(#softDrop)" />
+        <path d="M96 365 L462 168 L822 365 L462 492 Z" fill="none" stroke="#ffffff" strokeWidth="1.2" strokeDasharray="7 9" opacity="0.45" />
 
-    const updateCamera = () => {
-      const state = cameraState.current;
-      const target = new THREE.Vector3(0, 2, 0);
-      camera.position.set(
-        Math.sin(state.yaw) * Math.cos(state.pitch) * state.distance,
-        Math.sin(state.pitch) * state.distance + 3,
-        Math.cos(state.yaw) * Math.cos(state.pitch) * state.distance
-      );
-      camera.lookAt(target);
-    };
+        <g opacity="0.8" transform="translate(184 242)">
+          <ellipse cx="0" cy="88" rx="78" ry="17" fill="#0f172a" opacity="0.16" />
+          <polygon points="-72,32 0,-10 72,32 42,51 -30,12 -102,51" fill="#64748b" />
+          <polygon points="-72,32 -72,82 42,82 42,51 -30,12" fill="#cbd5e1" />
+          <polygon points="42,51 72,32 72,68 42,82" fill="#94a3b8" />
+        </g>
 
-    const resize = () => {
-      if (!mount || !renderer) return;
-      camera.aspect = mount.clientWidth / Math.max(1, mount.clientHeight);
-      camera.updateProjectionMatrix();
-      renderer.setSize(mount.clientWidth, mount.clientHeight);
-    };
+        {model.obstacles.neighbour && (
+          <g opacity="0.85" transform="translate(716 265)">
+            <ellipse cx="0" cy="86" rx="82" ry="18" fill="#0f172a" opacity="0.16" />
+            <polygon points="-76,32 0,-14 76,32 44,52 -30,10 -106,52" fill="#64748b" />
+            <polygon points="-76,32 -76,86 44,86 44,52 -30,10" fill="#d8e1eb" />
+            <polygon points="44,52 76,32 76,72 44,86" fill="#aebccd" />
+          </g>
+        )}
 
-    const pointerDown = (event) => {
-      cameraState.current.dragging = true;
-      cameraState.current.x = event.clientX;
-      cameraState.current.y = event.clientY;
-    };
-    const pointerMove = (event) => {
-      const state = cameraState.current;
-      if (!state.dragging) return;
-      state.yaw -= (event.clientX - state.x) * 0.006;
-      state.pitch = clamp(state.pitch + (event.clientY - state.y) * 0.004, 0.18, 1.1);
-      state.x = event.clientX;
-      state.y = event.clientY;
-      updateCamera();
-    };
-    const pointerUp = () => { cameraState.current.dragging = false; };
-    const wheel = (event) => {
-      cameraState.current.distance = clamp(cameraState.current.distance + event.deltaY * 0.015, 12, 48);
-      updateCamera();
-    };
+        {model.obstacles.tree && (
+          <g transform="translate(204 303)">
+            <ellipse cx="19" cy="98" rx="86" ry="24" fill="#0f172a" opacity="0.22" />
+            <path d="M0 90 L12 18 L25 90 Z" fill="#6b4a28" />
+            <circle cx="-16" cy="28" r="34" fill="#14532d" />
+            <circle cx="28" cy="22" r="38" fill="#166534" />
+            <circle cx="6" cy="-6" r="42" fill="#15803d" />
+          </g>
+        )}
 
-    mount.addEventListener('pointerdown', pointerDown);
-    window.addEventListener('pointermove', pointerMove);
-    window.addEventListener('pointerup', pointerUp);
-    mount.addEventListener('wheel', wheel, { passive: true });
-    window.addEventListener('resize', resize);
+        <g transform="translate(458 284)" filter="url(#softDrop)">
+          <ellipse cx="0" cy="125" rx="174" ry="30" fill="#0f172a" opacity="0.18" />
+          <polygon points="-168,18 0,-72 168,18 128,52 -36,-34 -206,52" fill="url(#roof)" />
+          <polygon points="-168,18 -168,118 128,118 128,52 -36,-34" fill="#eef3f7" stroke="#c8d4df" strokeWidth="1.2" />
+          <polygon points="128,52 168,18 168,100 128,118" fill="#cbd5e1" stroke="#b9c6d4" strokeWidth="1.2" />
+          <polygon points="-36,-34 128,52 168,18 0,-72" fill="#263244" opacity="0.95" />
+          <rect x="-136" y="64" width="32" height="48" rx="3" fill="#1f2937" />
+          <rect x="-82" y="62" width="34" height="50" rx="3" fill="#1f2937" />
+          <rect x="-26" y="62" width="34" height="50" rx="3" fill="#1f2937" />
+          <rect x="68" y="58" width="44" height="60" rx="3" fill="#334155" />
 
-    updateCamera();
-    const animate = () => {
-      frameRef.current = requestAnimationFrame(animate);
-      renderer.render(scene, camera);
-    };
-    animate();
+          <g transform="translate(-52 -12) rotate(28)">
+            {panelCells.map((cell) => (
+              <g key={`${cell.x}-${cell.y}`} transform={`translate(${(cell.x - 430) * 0.82} ${(cell.y - 230) * 0.72})`}>
+                <rect x="-10" y="-9" width="20" height="18" rx="2" fill="url(#panel)" stroke="#7dd3fc" strokeWidth="0.7" />
+                <path d="M-4 -8V8 M4 -8V8 M-9 0H9" stroke="#bae6fd" strokeWidth="0.45" opacity="0.55" />
+              </g>
+            ))}
+          </g>
 
-    rendererRef.current.scene = scene;
-    rendererRef.current.camera = camera;
+          {model.obstacles.chimney && (
+            <g transform="translate(72 -34)">
+              <rect x="-9" y="-34" width="18" height="48" rx="2" fill="#7c2d12" />
+              <rect x="-11" y="-38" width="22" height="7" rx="1.5" fill="#9a3412" />
+            </g>
+          )}
+        </g>
 
-    return () => {
-      cancelAnimationFrame(frameRef.current);
-      window.removeEventListener('resize', resize);
-      mount.removeEventListener('pointerdown', pointerDown);
-      window.removeEventListener('pointermove', pointerMove);
-      window.removeEventListener('pointerup', pointerUp);
-      mount.removeEventListener('wheel', wheel);
-      clearScene(scene);
-      renderer.dispose();
-      mount.innerHTML = '';
-    };
-  }, []);
+        <path d="M650 287 C720 329 774 351 852 381 L814 403 C742 376 680 340 606 298 Z" fill="#020617" opacity={shadeOpacity} />
+        {model.obstacles.tree && <path d="M214 350 C318 369 410 412 500 475 L442 490 C350 427 265 397 160 381 Z" fill="#020617" opacity={shadeOpacity * 0.72} />}
+        {model.obstacles.neighbour && <path d="M714 343 C782 366 823 390 876 427 L826 446 C778 407 725 381 656 358 Z" fill="#020617" opacity={shadeOpacity * 0.7} />}
 
-  useEffect(() => {
-    const renderer = rendererRef.current;
-    const scene = renderer?.scene;
-    if (!scene) return;
-    clearScene(scene);
+        <g transform="translate(40 44)">
+          <rect width="242" height="96" rx="18" fill="#07111f" opacity="0.88" />
+          <text x="18" y="30" fill="#94a3b8" fontSize="11" fontWeight="700">3D SOLANALYS</text>
+          <text x="18" y="58" fill="#f8fafc" fontSize="23" fontWeight="900">{Math.max(0, solar.altitude).toFixed(1)}° solhöjd</text>
+          <text x="18" y="80" fill="#cbd5e1" fontSize="12">Skuggpåverkan {shadeLoss.toFixed(0)}% · {model.roofAzimuth}° azimut</text>
+        </g>
 
-    const length = clamp(model.buildingLength, 3, 80);
-    const width = clamp(model.buildingWidth, 3, 50);
-    const wallHeight = clamp(model.buildingHeight, 2, 18);
-    const pitch = clamp(model.roofPitch, 0, 65);
-    const roofRise = (width / 2) * Math.tan(THREE.MathUtils.degToRad(pitch));
-    const ridgeY = wallHeight + (model.roofType === 'platt' ? 0.2 : roofRise);
-    const shade = clamp(shadeLoss / 100, 0, 1);
-
-    const ambient = new THREE.AmbientLight(0xffffff, 0.42);
-    scene.add(ambient);
-
-    const sunLight = new THREE.DirectionalLight(0xfff2bd, solar.altitude > 0 ? 1.25 : 0.25);
-    const sunDistance = 30;
-    sunLight.position.set(solar.sunVector.x * sunDistance, Math.max(4, solar.sunVector.y * sunDistance), solar.sunVector.z * sunDistance);
-    sunLight.castShadow = true;
-    sunLight.shadow.mapSize.width = 2048;
-    sunLight.shadow.mapSize.height = 2048;
-    sunLight.shadow.camera.near = 0.5;
-    sunLight.shadow.camera.far = 100;
-    sunLight.shadow.camera.left = -32;
-    sunLight.shadow.camera.right = 32;
-    sunLight.shadow.camera.top = 32;
-    sunLight.shadow.camera.bottom = -32;
-    scene.add(sunLight);
-
-    const hemi = new THREE.HemisphereLight(0x90cdf4, 0x24420f, 0.45);
-    scene.add(hemi);
-
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(90, 90, 16, 16),
-      new THREE.MeshStandardMaterial({ color: 0x5c7c38, roughness: 0.95 })
-    );
-    ground.rotation.x = -Math.PI / 2;
-    ground.rotation.z = THREE.MathUtils.degToRad(model.terrainAspect || 0);
-    ground.rotation.y = THREE.MathUtils.degToRad(model.terrainSlopeDeg || 0) * 0.22;
-    ground.receiveShadow = true;
-    scene.add(ground);
-
-    addBox(scene, { size: [length + 5.5, 0.14, width + 7.5], position: [0, 0.07, 2], color: 0xb09068, cast: false });
-    addBox(scene, { size: [length, wallHeight, width], position: [0, wallHeight / 2, 0], color: 0xf6f3ea, roughness: 0.82 });
-
-    addBox(scene, { size: [0.14, 2.3, 1.35], position: [-length / 2 - 0.08, 1.9, -2.1], color: 0x293241, roughness: 0.35, metalness: 0.05 });
-    addBox(scene, { size: [0.14, 2.3, 1.35], position: [-length / 2 - 0.08, 1.9, 0], color: 0x293241, roughness: 0.35, metalness: 0.05 });
-    addBox(scene, { size: [0.14, 2.3, 1.35], position: [-length / 2 - 0.08, 1.9, 2.1], color: 0x293241, roughness: 0.35, metalness: 0.05 });
-    addBox(scene, { size: [2.4, 2.4, 0.12], position: [length * 0.25, 1.85, width / 2 + 0.08], color: 0x334155, roughness: 0.38 });
-    addBox(scene, { size: [1.35, 2.35, 0.12], position: [length * 0.43, 1.85, width / 2 + 0.08], color: 0x1f2937, roughness: 0.45 });
-    addBox(scene, { size: [1.1, 2.15, 0.12], position: [length * -0.37, 1.45, width / 2 + 0.08], color: 0x475569, roughness: 0.45 });
-
-    if (model.roofType === 'platt') {
-      addBox(scene, { size: [length + 0.8, 0.35, width + 0.8], position: [0, wallHeight + 0.18, 0], color: 0x374151, roughness: 0.85 });
-    } else if (model.roofType === 'pulpettak') {
-      const roof = new THREE.Mesh(
-        new THREE.BoxGeometry(length + 0.7, 0.24, width + 0.8),
-        new THREE.MeshStandardMaterial({ color: 0x7f1d1d, roughness: 0.82 })
-      );
-      roof.rotation.x = THREE.MathUtils.degToRad(-pitch);
-      roof.position.set(0, wallHeight + roofRise / 2 + 0.12, 0);
-      roof.castShadow = true;
-      roof.receiveShadow = true;
-      scene.add(roof);
-    } else {
-      const leftRoof = makeRoofPlane({ width: width + 0.8, length: length + 0.9, pitch, side: -1 });
-      const rightRoof = makeRoofPlane({ width: width + 0.8, length: length + 0.9, pitch, side: 1 });
-      leftRoof.position.set(0, wallHeight + roofRise / 2, -width / 4);
-      rightRoof.position.set(0, wallHeight + roofRise / 2, width / 4);
-      leftRoof.castShadow = rightRoof.castShadow = true;
-      leftRoof.receiveShadow = rightRoof.receiveShadow = true;
-      scene.add(leftRoof, rightRoof);
-      addBox(scene, { size: [length + 1.0, 0.1, 0.18], position: [0, ridgeY + 0.08, 0], color: 0x441515, roughness: 0.7 });
-
-      const tileRows = 9;
-      for (let i = 0; i < tileRows; i += 1) {
-        const z = -width / 2 + (i * width) / tileRows + 0.4;
-        addBox(scene, { size: [length + 0.6, 0.035, 0.04], position: [0, wallHeight + 0.2 + i * (roofRise / tileRows), z], color: 0x9f2d20, roughness: 0.8, cast: false });
-      }
-    }
-
-    const panelLayout = calculatePanelLayout(model);
-    const panelColor = new THREE.Color(0x0f2f68).lerp(new THREE.Color(0x0b1220), shade * 0.65);
-    const rows = panelLayout.rows;
-    const cols = panelLayout.columns;
-    const activeWidth = Math.min(width * 0.44, rows * panelLayout.panelWidth * 0.66);
-    const activeLength = Math.min(length * 0.82, cols * panelLayout.panelLength * 0.54);
-    const startX = -activeLength / 2;
-    const startZ = width * 0.08;
-    for (let r = 0; r < rows; r += 1) {
-      for (let c = 0; c < cols; c += 1) {
-        const panel = new THREE.Mesh(
-          new THREE.BoxGeometry(panelLayout.panelLength * 0.5, 0.045, panelLayout.panelWidth * 0.48),
-          new THREE.MeshStandardMaterial({ color: panelColor, roughness: 0.45, metalness: 0.2 })
-        );
-        panel.position.set(startX + c * panelLayout.panelLength * 0.54 + panelLayout.panelLength * 0.25, wallHeight + roofRise * 0.62 + 0.13 + r * 0.08, startZ + r * (activeWidth / Math.max(1, rows)));
-        panel.rotation.x = THREE.MathUtils.degToRad(pitch);
-        panel.castShadow = true;
-        panel.receiveShadow = true;
-        scene.add(panel);
-      }
-    }
-
-    if (model.obstacles.chimney) addBox(scene, { size: [0.65, 2.1, 0.65], position: [length * 0.3, ridgeY + 0.55, -0.65], color: 0x7c2d12, roughness: 0.8 });
-
-    if (model.obstacles.tree) {
-      addBox(scene, { size: [0.45, model.treeHeight * 0.45, 0.45], position: [-length / 2 - model.treeDistance * 0.45, model.treeHeight * 0.225, -width / 2 - 1.5], color: 0x7c4a1f, roughness: 0.9 });
-      const crown = new THREE.Mesh(new THREE.SphereGeometry(model.treeHeight * 0.24, 24, 18), new THREE.MeshStandardMaterial({ color: 0x14532d, roughness: 0.85 }));
-      crown.position.set(-length / 2 - model.treeDistance * 0.45, model.treeHeight * 0.45 + 1.8, -width / 2 - 1.5);
-      crown.castShadow = true;
-      crown.receiveShadow = true;
-      scene.add(crown);
-    }
-
-    if (model.obstacles.neighbour) {
-      addBox(scene, { size: [length * 0.55, model.neighbourHeight, width * 0.62], position: [length / 2 + model.neighbourDistance * 0.35, model.neighbourHeight / 2, 0], color: 0x94a3b8, roughness: 0.8 });
-    }
-
-    const sunSphere = new THREE.Mesh(new THREE.SphereGeometry(0.42, 24, 16), new THREE.MeshBasicMaterial({ color: solar.altitude > 0 ? 0xfbbf24 : 0x64748b }));
-    sunSphere.position.set(sunLight.position.x * 0.42, sunLight.position.y * 0.42, sunLight.position.z * 0.42);
-    scene.add(sunSphere);
-
-    if (siteData?.tile?.url) {
-      const loader = new THREE.TextureLoader();
-      loader.crossOrigin = 'anonymous';
-      loader.load(siteData.tile.url, (texture) => {
-        const mapMesh = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 0.82, side: THREE.DoubleSide }));
-        mapMesh.rotation.x = -Math.PI / 2;
-        mapMesh.position.set(-length / 2 - 7, 0.09, width / 2 + 4);
-        scene.add(mapMesh);
-      });
-    }
-  }, [model, solar, shadeLoss, siteData]);
-
-  return <div ref={mountRef} className="h-[520px] w-full cursor-grab overflow-hidden rounded-2xl bg-slate-900 active:cursor-grabbing" />;
+        <g transform="translate(630 46)">
+          <rect width="244" height="100" rx="18" fill="#ffffff" opacity="0.92" />
+          <text x="18" y="31" fill="#64748b" fontSize="11" fontWeight="800">ANLÄGGNING</text>
+          <text x="18" y="59" fill="#0f172a" fontSize="22" fontWeight="900">{panelLayout.panelCount} paneler</text>
+          <text x="18" y="81" fill="#475569" fontSize="12">{panelLayout.installedKw.toFixed(1)} kWp · {model.buildingLength} × {model.buildingWidth} m</text>
+        </g>
+      </svg>
+    </div>
+  );
 }
 
 function Technical3DModel({ model, solar, shadeLoss, siteData }) {
@@ -343,8 +205,8 @@ function Technical3DModel({ model, solar, shadeLoss, siteData }) {
     <div className={`${card} overflow-hidden`}>
       <div className="flex flex-col gap-2 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-600"><ScanLine className="h-4 w-4" /> Parametrisk WebGL-vy</div>
-          <h2 className="text-lg font-bold text-slate-950">3D Solanalys · Huset byggs om direkt när måtten ändras</h2>
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-600"><ScanLine className="h-4 w-4" /> Teknisk analysvy</div>
+          <h2 className="text-lg font-bold text-slate-950">3D Solanalys · Professionell situationsmodell</h2>
         </div>
         <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">Solhöjd {Math.max(0, solar.altitude).toFixed(1)}° · Skugga {shadeLoss.toFixed(0)}%</div>
       </div>
