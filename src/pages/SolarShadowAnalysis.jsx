@@ -495,7 +495,7 @@ function Technical3DModel({ model, solar, shadeLoss, siteData }) {
       <div className="flex flex-col gap-2 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-600"><ScanLine className="h-4 w-4" /> Teknisk analysvy</div>
-          <h2 className="text-lg font-bold text-slate-950">3D Solanalys · BIM-skuggstudie i WebGL</h2>
+          <h2 className="text-lg font-bold text-slate-950">3D Solanalys · Premium takvisualisering</h2>
         </div>
         <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">Solhöjd {Math.max(0, solar.altitude).toFixed(1)}° · Skugga {shadeLoss.toFixed(0)}%</div>
       </div>
