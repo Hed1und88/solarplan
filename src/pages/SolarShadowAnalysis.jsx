@@ -98,10 +98,10 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
     mount.appendChild(renderer.domElement);
 
     const camera = new THREE.OrthographicCamera(-12, 12, 7.2, -7.2, 0.1, 100);
-    const cameraTarget = new THREE.Vector3(0, 4.5, 0.8);
-    let orbitTheta = 0.32;
-    let orbitPhi = 0.18;
-    let orbitRadius = 19;
+    const cameraTarget = new THREE.Vector3(0, 4.8, 0.55);
+    let orbitTheta = 0.28;
+    let orbitPhi = 0.1;
+    let orbitRadius = 23;
     const updateCamera = () => {
       camera.position.set(
         Math.sin(orbitPhi) * Math.sin(orbitTheta) * orbitRadius,
@@ -138,12 +138,17 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
     scene.add(rim);
 
     const materials = {
-      ground: new THREE.MeshStandardMaterial({ color: 0xdfeadf, roughness: 0.92, metalness: 0.01 }),
-      plot: new THREE.MeshStandardMaterial({ color: 0xbfd2b7, roughness: 0.82, metalness: 0.01 }),
-      wall: new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.48, metalness: 0.01 }),
-      sideWall: new THREE.MeshStandardMaterial({ color: 0xd8e0e8, roughness: 0.56, metalness: 0.02 }),
-      roof: new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.46, metalness: 0.06 }),
-      roofEdge: new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.72 }),
+      ground: new THREE.MeshStandardMaterial({ color: 0x4f7d3d, roughness: 0.96, metalness: 0.01 }),
+      plot: new THREE.MeshStandardMaterial({ color: 0xaebc98, roughness: 0.82, metalness: 0.01 }),
+      wall: new THREE.MeshStandardMaterial({ color: 0xf4efe7, roughness: 0.58, metalness: 0.01 }),
+      sideWall: new THREE.MeshStandardMaterial({ color: 0xe1dbd1, roughness: 0.6, metalness: 0.01 }),
+      roof: new THREE.MeshStandardMaterial({ color: 0x8a3d24, roughness: 0.62, metalness: 0.02 }),
+      roofEdge: new THREE.LineBasicMaterial({ color: 0x3f1d13, transparent: true, opacity: 0.82 }),
+      roofLine: new THREE.LineBasicMaterial({ color: 0xd39a72, transparent: true, opacity: 0.64 }),
+      sidingLine: new THREE.LineBasicMaterial({ color: 0xb9b0a3, transparent: true, opacity: 0.5 }),
+      trim: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.46, metalness: 0.01 }),
+      deck: new THREE.MeshStandardMaterial({ color: 0xb89162, roughness: 0.76, metalness: 0.01 }),
+      railing: new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5, metalness: 0.01 }),
       glass: new THREE.MeshPhysicalMaterial({ color: 0x0f1c2e, roughness: 0.22, metalness: 0.08, transmission: 0.04, clearcoat: 0.7, clearcoatRoughness: 0.18 }),
       panel: new THREE.MeshPhysicalMaterial({ color: 0x064e8a, roughness: 0.14, metalness: 0.16, clearcoat: 1, clearcoatRoughness: 0.06 }),
       panelLine: new THREE.LineBasicMaterial({ color: 0xbbe9ff, transparent: true, opacity: 0.7 }),
@@ -168,6 +173,13 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
 
     const addBox = (size, material, position, rotation) => addMesh(new THREE.BoxGeometry(size[0], size[1], size[2]), material, position, rotation);
 
+    const addLineSegments = (points, material) => {
+      const geometry = new THREE.BufferGeometry().setFromPoints(points);
+      const lines = new THREE.LineSegments(geometry, material);
+      scene.add(lines);
+      return lines;
+    };
+
     const createRoofGeometry = (length, width, wallHeight, pitchDeg) => {
       const rise = Math.tan(THREE.MathUtils.degToRad(pitchDeg)) * (width / 2);
       const x = length / 2;
@@ -187,6 +199,43 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
       return geometry;
     };
 
+    const addRoofSurfaceLines = (roofLength, roofWidth, wallTop, pitchDeg) => {
+      const roofHalf = roofWidth / 2;
+      const roofHalfLength = roofLength / 2;
+      const roofRiseValue = Math.tan(THREE.MathUtils.degToRad(pitchDeg)) * roofHalf;
+      const points = [];
+      const yOnRoof = (z) => wallTop + roofRiseValue - Math.tan(THREE.MathUtils.degToRad(pitchDeg)) * Math.abs(z) + 0.035;
+
+      for (let z = -roofHalf + 0.55; z <= roofHalf - 0.55; z += 0.55) {
+        points.push(new THREE.Vector3(-roofHalfLength + 0.2, yOnRoof(z), z));
+        points.push(new THREE.Vector3(roofHalfLength - 0.2, yOnRoof(z), z));
+      }
+
+      for (let x = -roofHalfLength + 0.75; x <= roofHalfLength - 0.75; x += 0.75) {
+        points.push(new THREE.Vector3(x, yOnRoof(-roofHalf + 0.35), -roofHalf + 0.35));
+        points.push(new THREE.Vector3(x, yOnRoof(-0.08), -0.08));
+        points.push(new THREE.Vector3(x, yOnRoof(0.08), 0.08));
+        points.push(new THREE.Vector3(x, yOnRoof(roofHalf - 0.35), roofHalf - 0.35));
+      }
+
+      return addLineSegments(points, materials.roofLine);
+    };
+
+    const addVerticalSiding = (lengthValue, widthValue, wallTop) => {
+      const points = [];
+      const frontZ = widthValue / 2 + 0.062;
+      const backZ = -widthValue / 2 - 0.062;
+      for (let x = -lengthValue / 2 + 0.4; x <= lengthValue / 2 - 0.4; x += 0.38) {
+        points.push(new THREE.Vector3(x, 0.08, frontZ), new THREE.Vector3(x, wallTop - 0.12, frontZ));
+        points.push(new THREE.Vector3(x, 0.08, backZ), new THREE.Vector3(x, wallTop - 0.12, backZ));
+      }
+      for (let z = -widthValue / 2 + 0.4; z <= widthValue / 2 - 0.4; z += 0.38) {
+        points.push(new THREE.Vector3(lengthValue / 2 + 0.062, 0.08, z), new THREE.Vector3(lengthValue / 2 + 0.062, wallTop - 0.12, z));
+        points.push(new THREE.Vector3(-lengthValue / 2 - 0.062, 0.08, z), new THREE.Vector3(-lengthValue / 2 - 0.062, wallTop - 0.12, z));
+      }
+      addLineSegments(points, materials.sidingLine);
+    };
+
     const createNeighbor = (x, z, scale = 1) => {
       const base = addBox([4.2 * scale, 2.1 * scale, 2.9 * scale], materials.neighbor, [x, 1.05 * scale, z]);
       base.castShadow = true;
@@ -204,7 +253,7 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
     addMesh(new THREE.PlaneGeometry(34, 24), materials.ground, [0, -0.02, 0], [-Math.PI / 2, 0, 0]);
     const grid = new THREE.GridHelper(32, 32, 0x7dd3fc, 0x27384a);
     grid.material.transparent = true;
-    grid.material.opacity = 0.18;
+    grid.material.opacity = 0.05;
     grid.position.y = 0.015;
     scene.add(grid);
 
@@ -214,6 +263,12 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
     addBox([length, wallHeight, width], materials.wall, [0, wallHeight / 2, 0]);
     addBox([0.08, wallHeight * 0.98, width + 0.02], materials.sideWall, [length / 2 + 0.04, wallHeight / 2, 0]);
     addBox([0.08, wallHeight * 0.98, width + 0.02], materials.sideWall, [-length / 2 - 0.04, wallHeight / 2, 0]);
+    addVerticalSiding(length, width, wallHeight);
+
+    addBox([length + 0.35, 0.18, 0.18], materials.trim, [0, wallHeight + 0.02, width / 2 + 0.12]);
+    addBox([length + 0.35, 0.18, 0.18], materials.trim, [0, wallHeight + 0.02, -width / 2 - 0.12]);
+    addBox([0.18, 0.18, width + 0.35], materials.trim, [length / 2 + 0.12, wallHeight + 0.02, 0]);
+    addBox([0.18, 0.18, width + 0.35], materials.trim, [-length / 2 - 0.12, wallHeight + 0.02, 0]);
 
     const roof = addMesh(
       createRoofGeometry(length + 0.7, width + 0.7, wallHeight, pitch),
@@ -223,13 +278,24 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
     const roofEdges = new THREE.LineSegments(new THREE.EdgesGeometry(roof.geometry, 18), materials.roofEdge);
     roofEdges.position.copy(roof.position);
     scene.add(roofEdges);
+    addRoofSurfaceLines(length + 0.7, width + 0.7, wallHeight, pitch);
 
     const windowCount = 4;
     for (let i = 0; i < windowCount; i += 1) {
       const x = -length / 2 + 1.4 + i * 1.45;
-      addBox([0.58, 1.25, 0.08], materials.glass, [x, 1.35, width / 2 + 0.055]);
+      addBox([0.72, 1.39, 0.06], materials.trim, [x, 1.35, width / 2 + 0.03]);
+      addBox([0.58, 1.25, 0.08], materials.glass, [x, 1.35, width / 2 + 0.07]);
     }
-    addBox([0.9, 1.65, 0.08], materials.glass, [length / 2 - 1.35, 1.22, width / 2 + 0.06]);
+    addBox([1.08, 1.84, 0.06], materials.trim, [length / 2 - 1.35, 1.22, width / 2 + 0.035]);
+    addBox([0.9, 1.65, 0.08], materials.glass, [length / 2 - 1.35, 1.22, width / 2 + 0.075]);
+
+    const deckZ = width / 2 + 2.3;
+    addBox([length + 2.5, 0.16, 2.6], materials.deck, [0, 0.11, deckZ]);
+    for (let x = -length / 2 - 1; x <= length / 2 + 1; x += 0.75) {
+      addBox([0.08, 0.72, 0.08], materials.railing, [x, 0.52, deckZ + 1.28]);
+    }
+    addBox([length + 2.1, 0.08, 0.08], materials.railing, [0, 0.9, deckZ + 1.28]);
+    addBox([length + 2.1, 0.06, 0.06], materials.railing, [0, 0.58, deckZ + 1.28]);
 
     if (model.obstacles.chimney) {
       addBox([0.42, 1.65, 0.42], materials.chimney, [length / 2 - 2.1, wallHeight + roofRise * 0.72, -0.75]);
@@ -237,8 +303,8 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
     }
 
     const columns = Math.max(1, Math.min(panelLayout.columns, 10));
-    const panelW = 0.92;
-    const panelH = 1.46;
+    const panelW = 0.76;
+    const panelH = 1.2;
     const gap = 0.09;
     const pitchRad = THREE.MathUtils.degToRad(pitch);
     const totalPanelWidth = columns * panelW + (columns - 1) * gap;
@@ -247,7 +313,7 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
       const col = index % columns;
       const row = Math.floor(index / columns);
       const x = startX + col * (panelW + gap);
-      const z = 0.62 + row * (panelH * 0.58 + gap);
+      const z = 0.68 + row * (panelH * 0.62 + gap);
       const y = wallHeight + roofRise - Math.tan(pitchRad) * z + 0.09;
       const panel = addBox([panelW, 0.055, panelH], materials.panel, [x, y, z], [pitchRad, 0, 0]);
       panel.castShadow = true;
@@ -293,7 +359,7 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
       const heightPx = Math.max(1, clientHeight);
       renderer.setSize(widthPx, heightPx, false);
       const aspect = widthPx / heightPx;
-      const view = 8.4;
+      const view = 6.8;
       camera.left = -view * aspect;
       camera.right = view * aspect;
       camera.top = view;
