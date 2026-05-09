@@ -98,10 +98,10 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
     mount.appendChild(renderer.domElement);
 
     const camera = new THREE.OrthographicCamera(-12, 12, 7.2, -7.2, 0.1, 100);
-    const cameraTarget = new THREE.Vector3(0, 2.4, 0);
-    let orbitTheta = 0.72;
-    let orbitPhi = 0.58;
-    let orbitRadius = 20;
+    const cameraTarget = new THREE.Vector3(0, 3.4, 0.8);
+    let orbitTheta = 0.18;
+    let orbitPhi = 0.36;
+    let orbitRadius = 18;
     const updateCamera = () => {
       camera.position.set(
         Math.sin(orbitPhi) * Math.sin(orbitTheta) * orbitRadius,
@@ -237,8 +237,8 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
     }
 
     const columns = Math.max(1, Math.min(panelLayout.columns, 10));
-    const panelW = 0.82;
-    const panelH = 1.12;
+    const panelW = 0.92;
+    const panelH = 1.46;
     const gap = 0.09;
     const pitchRad = THREE.MathUtils.degToRad(pitch);
     const totalPanelWidth = columns * panelW + (columns - 1) * gap;
@@ -247,9 +247,9 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
       const col = index % columns;
       const row = Math.floor(index / columns);
       const x = startX + col * (panelW + gap);
-      const z = 0.55 + row * (panelH * 0.54 + gap);
-      const y = wallHeight + roofRise - Math.tan(pitchRad) * z + 0.07;
-      const panel = addBox([panelW, 0.055, panelH], materials.panel, [x, y, z], [-pitchRad, 0, 0]);
+      const z = 0.62 + row * (panelH * 0.58 + gap);
+      const y = wallHeight + roofRise - Math.tan(pitchRad) * z + 0.09;
+      const panel = addBox([panelW, 0.055, panelH], materials.panel, [x, y, z], [pitchRad, 0, 0]);
       panel.castShadow = true;
       const panelEdge = new THREE.LineSegments(new THREE.EdgesGeometry(panel.geometry), materials.panelLine);
       panelEdge.position.copy(panel.position);
@@ -293,7 +293,7 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
       const heightPx = Math.max(1, clientHeight);
       renderer.setSize(widthPx, heightPx, false);
       const aspect = widthPx / heightPx;
-      const view = 12.6;
+      const view = 10.8;
       camera.left = -view * aspect;
       camera.right = view * aspect;
       camera.top = view;
