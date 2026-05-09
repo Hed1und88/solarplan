@@ -6,16 +6,6 @@ import { SWEDEN_EXTRA_PRODUCT_CATALOG } from '@/data/productSeedCatalogSwedenExt
 
 const ALL_PRODUCTS = [...PRODUCT_SEED_CATALOG, ...SWEDEN_EXTRA_PRODUCT_CATALOG];
 
-function svgImage(item) {
-  const type = item.category === 'solpanel' ? 'SOLPANEL' : item.category === 'vaxelriktare' ? 'VÄXELRIKTARE' : item.category === 'batteri' ? 'BATTERI' : 'MONTAGE';
-  const value = item.power_watts ? `${item.power_watts} W` : item.capacity_kwh ? `${item.capacity_kwh} kWh` : 'SYSTEM';
-  const brand = String(item.brand || '').replace(/[<>&]/g, '');
-  const model = String(item.model || '').replace(/[<>&]/g, '');
-  const color = item.category === 'solpanel' ? '#f97316' : item.category === 'vaxelriktare' ? '#2563eb' : item.category === 'batteri' ? '#16a34a' : '#ca8a04';
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360"><rect width="640" height="360" rx="36" fill="#f8fafc"/><rect x="32" y="32" width="576" height="296" rx="28" fill="#ffffff" stroke="#e2e8f0" stroke-width="4"/><rect x="56" y="56" width="180" height="44" rx="22" fill="${color}"/><text x="146" y="85" text-anchor="middle" font-family="Arial" font-size="20" font-weight="700" fill="white">${type}</text><text x="56" y="160" font-family="Arial" font-size="42" font-weight="800" fill="#0f172a">${brand}</text><text x="56" y="208" font-family="Arial" font-size="28" font-weight="600" fill="#334155">${model}</text><text x="56" y="278" font-family="Arial" font-size="34" font-weight="800" fill="${color}">${value}</text><circle cx="530" cy="248" r="58" fill="${color}" opacity="0.14"/><circle cx="530" cy="248" r="34" fill="${color}" opacity="0.28"/></svg>`;
-  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
-}
-
 function clean(item) {
   const result = { ...item };
   result.price = Number(result.price) || 0;
@@ -86,7 +76,7 @@ export default function ProductCatalogImporter({ products = [], onDone }) {
 
     setImageRunning(true);
     let updated = 0;
-    let fallback = 0;
+    let missing = 0;
 
     try {
       for (let i = 0; i < targetProducts.length; i++) {
@@ -115,13 +105,13 @@ export default function ProductCatalogImporter({ products = [], onDone }) {
           updated++;
         } else {
           await base44.entities.Product.update(product.id, {
-            image_url: svgImage(product),
+            image_url: '',
             image_source_url: '',
           });
-          fallback++;
+          missing++;
         }
       }
-      setStatus(`Klar. Riktiga bilder: ${updated}. Fallback-bilder: ${fallback}.`);
+      setStatus(`Klar. Riktiga produktbilder: ${updated}. Saknar fortfarande bild: ${missing}.`);
       await onDone?.();
     } finally {
       setImageRunning(false);

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import * as THREE from 'three';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Sun, Save, RotateCcw, Download, Home, CloudSun, TreePine, Compass, Zap, ScanLine, Activity, MapPin, Mountain, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
 import {
@@ -73,128 +74,257 @@ function Stat({ icon: Icon, title, value, text }) {
 }
 
 function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
+  const mountRef = useRef(null);
   const panelLayout = calculatePanelLayout(model);
-  const shadeOpacity = clamp(shadeLoss / 100, 0.08, 0.46);
-  const sunX = 520 + solar.sunVector.x * 120;
-  const sunY = 125 - Math.max(0, solar.sunVector.y) * 70;
-  const mapUrl = siteData?.tile?.url;
+  const visiblePanelCount = Math.min(panelLayout.panelCount, 40);
 
-  const panelCells = Array.from({ length: Math.min(panelLayout.panelCount, 32) }, (_, index) => ({
-    x: 368 + (index % panelLayout.columns) * 22,
-    y: 221 + Math.floor(index / panelLayout.columns) * 20,
-  }));
+  useEffect(() => {
+    const mount = mountRef.current;
+    if (!mount) return undefined;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x07111f);
+    scene.fog = new THREE.Fog(0x07111f, 22, 46);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.08;
+    mount.appendChild(renderer.domElement);
+
+    const camera = new THREE.OrthographicCamera(-12, 12, 7.2, -7.2, 0.1, 100);
+    camera.position.set(12, 10, 14);
+    camera.lookAt(0, 1.8, 0);
+
+    const hemi = new THREE.HemisphereLight(0xcfe7ff, 0x172819, 1.9);
+    scene.add(hemi);
+
+    const sunVector = new THREE.Vector3(
+      solar.sunVector?.x || 0.45,
+      Math.max(0.22, solar.sunVector?.y || 0.55),
+      solar.sunVector?.z || 0.72
+    ).normalize();
+    const key = new THREE.DirectionalLight(0xfff3cf, 4.2);
+    key.position.copy(sunVector).multiplyScalar(22);
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.camera.near = 1;
+    key.shadow.camera.far = 60;
+    key.shadow.camera.left = -18;
+    key.shadow.camera.right = 18;
+    key.shadow.camera.top = 18;
+    key.shadow.camera.bottom = -18;
+    key.shadow.bias = -0.00035;
+    scene.add(key);
+
+    const rim = new THREE.DirectionalLight(0x7dd3fc, 1.2);
+    rim.position.set(-9, 7, -8);
+    scene.add(rim);
+
+    const materials = {
+      ground: new THREE.MeshStandardMaterial({ color: 0x314436, roughness: 0.92, metalness: 0.02 }),
+      plot: new THREE.MeshStandardMaterial({ color: 0x64785b, roughness: 0.86, metalness: 0.02 }),
+      wall: new THREE.MeshStandardMaterial({ color: 0xf2f6f8, roughness: 0.55, metalness: 0.01 }),
+      sideWall: new THREE.MeshStandardMaterial({ color: 0xc9d4df, roughness: 0.62, metalness: 0.02 }),
+      roof: new THREE.MeshStandardMaterial({ color: 0x202a38, roughness: 0.5, metalness: 0.08 }),
+      roofEdge: new THREE.LineBasicMaterial({ color: 0x91a4ba, transparent: true, opacity: 0.52 }),
+      glass: new THREE.MeshPhysicalMaterial({ color: 0x0f1c2e, roughness: 0.22, metalness: 0.08, transmission: 0.04, clearcoat: 0.7, clearcoatRoughness: 0.18 }),
+      panel: new THREE.MeshPhysicalMaterial({ color: 0x07335f, roughness: 0.18, metalness: 0.12, clearcoat: 1, clearcoatRoughness: 0.08 }),
+      panelLine: new THREE.LineBasicMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.54 }),
+      shadow: new THREE.MeshBasicMaterial({ color: 0x020617, transparent: true, opacity: clamp(shadeLoss / 100, 0.12, 0.5), depthWrite: false }),
+      neighbor: new THREE.MeshStandardMaterial({ color: 0xaeb9c7, roughness: 0.72, metalness: 0.02 }),
+      neighborRoof: new THREE.MeshStandardMaterial({ color: 0x56657a, roughness: 0.66, metalness: 0.03 }),
+      bark: new THREE.MeshStandardMaterial({ color: 0x6a4523, roughness: 0.85 }),
+      foliage: new THREE.MeshStandardMaterial({ color: 0x146437, roughness: 0.72 }),
+      chimney: new THREE.MeshStandardMaterial({ color: 0x883413, roughness: 0.78 })
+    };
+
+    const addMesh = (geometry, material, position, rotation = [0, 0, 0], scale = [1, 1, 1]) => {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(...position);
+      mesh.rotation.set(...rotation);
+      mesh.scale.set(...scale);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+      return mesh;
+    };
+
+    const addBox = (size, material, position, rotation) => addMesh(new THREE.BoxGeometry(size[0], size[1], size[2]), material, position, rotation);
+
+    const createRoofGeometry = (length, width, wallHeight, pitchDeg) => {
+      const rise = Math.tan(THREE.MathUtils.degToRad(pitchDeg)) * (width / 2);
+      const x = length / 2;
+      const z = width / 2;
+      const h = wallHeight;
+      const vertices = new Float32Array([
+        -x, h, -z, x, h, -z, x, h + rise, 0, -x, h + rise, 0,
+        -x, h + rise, 0, x, h + rise, 0, x, h, z, -x, h, z,
+        -x, h, -z, -x, h + rise, 0, -x, h, z,
+        x, h, -z, x, h, z, x, h + rise, 0
+      ]);
+      const indices = [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7, 8, 9, 10, 11, 12, 13];
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+      geometry.setIndex(indices);
+      geometry.computeVertexNormals();
+      return geometry;
+    };
+
+    const createNeighbor = (x, z, scale = 1) => {
+      const base = addBox([4.2 * scale, 2.1 * scale, 2.9 * scale], materials.neighbor, [x, 1.05 * scale, z]);
+      base.castShadow = true;
+      const roof = addMesh(createRoofGeometry(4.7 * scale, 3.3 * scale, 2.1 * scale, 24), materials.neighborRoof, [x, 0, z]);
+      roof.rotation.y = z > 0 ? -0.08 : 0.12;
+      base.rotation.y = roof.rotation.y;
+    };
+
+    const width = Math.max(5, model.buildingWidth);
+    const length = Math.max(7, model.buildingLength);
+    const wallHeight = Math.max(3.2, model.buildingHeight);
+    const pitch = model.roofType === 'platt' ? 3 : Math.max(8, model.roofPitch);
+    const roofRise = Math.tan(THREE.MathUtils.degToRad(pitch)) * (width / 2);
+
+    addMesh(new THREE.PlaneGeometry(34, 24), materials.ground, [0, -0.02, 0], [-Math.PI / 2, 0, 0]);
+    const grid = new THREE.GridHelper(32, 32, 0x7dd3fc, 0x27384a);
+    grid.material.transparent = true;
+    grid.material.opacity = 0.18;
+    grid.position.y = 0.015;
+    scene.add(grid);
+
+    const plot = addMesh(new THREE.PlaneGeometry(18, 13), materials.plot, [0, 0.02, 0], [-Math.PI / 2, 0, THREE.MathUtils.degToRad(45)]);
+    plot.receiveShadow = true;
+
+    addBox([length, wallHeight, width], materials.wall, [0, wallHeight / 2, 0]);
+    addBox([0.08, wallHeight * 0.98, width + 0.02], materials.sideWall, [length / 2 + 0.04, wallHeight / 2, 0]);
+    addBox([0.08, wallHeight * 0.98, width + 0.02], materials.sideWall, [-length / 2 - 0.04, wallHeight / 2, 0]);
+
+    const roof = addMesh(
+      createRoofGeometry(length + 0.7, width + 0.7, wallHeight, pitch),
+      materials.roof,
+      [0, 0, 0]
+    );
+    const roofEdges = new THREE.LineSegments(new THREE.EdgesGeometry(roof.geometry, 18), materials.roofEdge);
+    roofEdges.position.copy(roof.position);
+    scene.add(roofEdges);
+
+    const windowCount = 4;
+    for (let i = 0; i < windowCount; i += 1) {
+      const x = -length / 2 + 1.4 + i * 1.45;
+      addBox([0.58, 1.25, 0.08], materials.glass, [x, 1.35, width / 2 + 0.055]);
+    }
+    addBox([0.9, 1.65, 0.08], materials.glass, [length / 2 - 1.35, 1.22, width / 2 + 0.06]);
+
+    if (model.obstacles.chimney) {
+      addBox([0.42, 1.65, 0.42], materials.chimney, [length / 2 - 2.1, wallHeight + roofRise * 0.72, -0.75]);
+      addBox([0.56, 0.16, 0.56], materials.chimney, [length / 2 - 2.1, wallHeight + roofRise * 0.72 + 0.86, -0.75]);
+    }
+
+    const columns = Math.max(1, Math.min(panelLayout.columns, 10));
+    const panelW = 0.82;
+    const panelH = 1.12;
+    const gap = 0.09;
+    const pitchRad = THREE.MathUtils.degToRad(pitch);
+    const totalPanelWidth = columns * panelW + (columns - 1) * gap;
+    const startX = -totalPanelWidth / 2 + panelW / 2;
+    for (let index = 0; index < visiblePanelCount; index += 1) {
+      const col = index % columns;
+      const row = Math.floor(index / columns);
+      const x = startX + col * (panelW + gap);
+      const z = 0.55 + row * (panelH * 0.54 + gap);
+      const y = wallHeight + roofRise - Math.tan(pitchRad) * z + 0.07;
+      const panel = addBox([panelW, 0.055, panelH], materials.panel, [x, y, z], [-pitchRad, 0, 0]);
+      panel.castShadow = true;
+      const panelEdge = new THREE.LineSegments(new THREE.EdgesGeometry(panel.geometry), materials.panelLine);
+      panelEdge.position.copy(panel.position);
+      panelEdge.rotation.copy(panel.rotation);
+      scene.add(panelEdge);
+    }
+
+    if (model.obstacles.tree) {
+      const treeX = -length / 2 - Math.max(2.2, model.treeDistance * 0.26);
+      const treeZ = width / 2 + 1.6;
+      const trunkHeight = Math.max(2.6, model.treeHeight * 0.38);
+      addMesh(new THREE.CylinderGeometry(0.18, 0.28, trunkHeight, 12), materials.bark, [treeX, trunkHeight / 2, treeZ]);
+      const crownY = trunkHeight + 0.9;
+      [
+        [0, 0.1, 0, 1.08],
+        [-0.7, -0.05, 0.22, 0.78],
+        [0.72, 0.02, 0.05, 0.88],
+        [0.12, 0.65, -0.28, 0.72]
+      ].forEach(([dx, dy, dz, radius]) => {
+        addMesh(new THREE.IcosahedronGeometry(radius, 2), materials.foliage, [treeX + dx, crownY + dy, treeZ + dz]);
+      });
+    }
+
+    createNeighbor(-length / 2 - 4.4, -width / 2 - 2.4, 0.82);
+    if (model.obstacles.neighbour) {
+      createNeighbor(length / 2 + Math.max(3.6, model.neighbourDistance * 0.3), -width / 2 - 0.5, 1.05);
+    } else {
+      createNeighbor(length / 2 + 4.9, -width / 2 - 1.4, 0.68);
+    }
+
+    const shadowLong = 6.5 + clamp(shadeLoss / 10, 0, 5);
+    const houseShadow = addMesh(new THREE.PlaneGeometry(length + 2.2, shadowLong), materials.shadow, [3.4, 0.045, width / 2 + 3.6], [-Math.PI / 2, 0, -0.55]);
+    houseShadow.receiveShadow = false;
+    if (model.obstacles.tree) {
+      addMesh(new THREE.CircleGeometry(2.25, 48), materials.shadow, [-length / 2 - 1.8, 0.05, width / 2 + 4.8], [-Math.PI / 2, 0, -0.35]);
+    }
+
+    const resize = () => {
+      const { clientWidth, clientHeight } = mount;
+      const widthPx = Math.max(1, clientWidth);
+      const heightPx = Math.max(1, clientHeight);
+      renderer.setSize(widthPx, heightPx, false);
+      const aspect = widthPx / heightPx;
+      const view = 15.5;
+      camera.left = -view * aspect;
+      camera.right = view * aspect;
+      camera.top = view;
+      camera.bottom = -view;
+      camera.updateProjectionMatrix();
+    };
+
+    const animate = () => {
+      renderer.render(scene, camera);
+    };
+
+    resize();
+    animate();
+    window.addEventListener('resize', resize);
+
+    return () => {
+      window.removeEventListener('resize', resize);
+      renderer.dispose();
+      scene.traverse((object) => {
+        if (object.geometry) object.geometry.dispose();
+      });
+      Object.values(materials).forEach((material) => material.dispose());
+      if (renderer.domElement.parentElement === mount) mount.removeChild(renderer.domElement);
+    };
+  }, [model, panelLayout.columns, panelLayout.panelCount, shadeLoss, solar]);
 
   return (
-    <div className="relative h-[520px] w-full overflow-hidden rounded-2xl border border-slate-700 bg-[#07111f]">
-      {mapUrl && <img src={mapUrl} alt="" className="absolute inset-x-10 bottom-6 h-32 w-[calc(100%-5rem)] rounded-xl object-cover opacity-25 saturate-75" />}
-      <svg className="absolute inset-0 h-full w-full" viewBox="0 0 920 520" role="img" aria-label="Teknisk 3D-solanalys av fastighet, takpaneler, träd och grannhus">
-        <defs>
-          <filter id="softDrop" x="-20%" y="-20%" width="140%" height="150%">
-            <feDropShadow dx="0" dy="18" stdDeviation="18" floodColor="#000000" floodOpacity="0.28" />
-          </filter>
-          <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#dce8f2" />
-            <stop offset="52%" stopColor="#edf3f8" />
-            <stop offset="100%" stopColor="#d9e6da" />
-          </linearGradient>
-          <linearGradient id="plot" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#d7e4d8" />
-            <stop offset="55%" stopColor="#b9cda9" />
-            <stop offset="100%" stopColor="#8fa177" />
-          </linearGradient>
-          <linearGradient id="roof" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#475569" />
-            <stop offset="100%" stopColor="#1e293b" />
-          </linearGradient>
-          <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#38bdf8" />
-            <stop offset="45%" stopColor="#0f4c81" />
-            <stop offset="100%" stopColor="#081a36" />
-          </linearGradient>
-          <pattern id="grid" x="0" y="0" width="34" height="34" patternUnits="userSpaceOnUse">
-            <path d="M34 0H0V34" fill="none" stroke="#94a3b8" strokeWidth="0.8" opacity="0.22" />
-          </pattern>
-        </defs>
-
-        <rect width="920" height="520" fill="url(#sky)" />
-        <rect width="920" height="520" fill="url(#grid)" />
-        <circle cx={sunX} cy={sunY} r="14" fill="#fbbf24" />
-        <circle cx={sunX} cy={sunY} r="34" fill="#fbbf24" opacity="0.14" />
-        <path d="M96 365 L462 168 L822 365 L462 492 Z" fill="url(#plot)" stroke="#d7e7d9" strokeWidth="1.5" filter="url(#softDrop)" />
-        <path d="M96 365 L462 168 L822 365 L462 492 Z" fill="none" stroke="#ffffff" strokeWidth="1.2" strokeDasharray="7 9" opacity="0.45" />
-
-        <g opacity="0.8" transform="translate(184 242)">
-          <ellipse cx="0" cy="88" rx="78" ry="17" fill="#0f172a" opacity="0.16" />
-          <polygon points="-72,32 0,-10 72,32 42,51 -30,12 -102,51" fill="#64748b" />
-          <polygon points="-72,32 -72,82 42,82 42,51 -30,12" fill="#cbd5e1" />
-          <polygon points="42,51 72,32 72,68 42,82" fill="#94a3b8" />
-        </g>
-
-        {model.obstacles.neighbour && (
-          <g opacity="0.85" transform="translate(716 265)">
-            <ellipse cx="0" cy="86" rx="82" ry="18" fill="#0f172a" opacity="0.16" />
-            <polygon points="-76,32 0,-14 76,32 44,52 -30,10 -106,52" fill="#64748b" />
-            <polygon points="-76,32 -76,86 44,86 44,52 -30,10" fill="#d8e1eb" />
-            <polygon points="44,52 76,32 76,72 44,86" fill="#aebccd" />
-          </g>
-        )}
-
-        {model.obstacles.tree && (
-          <g transform="translate(204 303)">
-            <ellipse cx="19" cy="98" rx="86" ry="24" fill="#0f172a" opacity="0.22" />
-            <path d="M0 90 L12 18 L25 90 Z" fill="#6b4a28" />
-            <circle cx="-16" cy="28" r="34" fill="#14532d" />
-            <circle cx="28" cy="22" r="38" fill="#166534" />
-            <circle cx="6" cy="-6" r="42" fill="#15803d" />
-          </g>
-        )}
-
-        <g transform="translate(458 284)" filter="url(#softDrop)">
-          <ellipse cx="0" cy="125" rx="174" ry="30" fill="#0f172a" opacity="0.18" />
-          <polygon points="-168,18 0,-72 168,18 128,52 -36,-34 -206,52" fill="url(#roof)" />
-          <polygon points="-168,18 -168,118 128,118 128,52 -36,-34" fill="#eef3f7" stroke="#c8d4df" strokeWidth="1.2" />
-          <polygon points="128,52 168,18 168,100 128,118" fill="#cbd5e1" stroke="#b9c6d4" strokeWidth="1.2" />
-          <polygon points="-36,-34 128,52 168,18 0,-72" fill="#263244" opacity="0.95" />
-          <rect x="-136" y="64" width="32" height="48" rx="3" fill="#1f2937" />
-          <rect x="-82" y="62" width="34" height="50" rx="3" fill="#1f2937" />
-          <rect x="-26" y="62" width="34" height="50" rx="3" fill="#1f2937" />
-          <rect x="68" y="58" width="44" height="60" rx="3" fill="#334155" />
-
-          <g transform="translate(-52 -12) rotate(28)">
-            {panelCells.map((cell) => (
-              <g key={`${cell.x}-${cell.y}`} transform={`translate(${(cell.x - 430) * 0.82} ${(cell.y - 230) * 0.72})`}>
-                <rect x="-10" y="-9" width="20" height="18" rx="2" fill="url(#panel)" stroke="#7dd3fc" strokeWidth="0.7" />
-                <path d="M-4 -8V8 M4 -8V8 M-9 0H9" stroke="#bae6fd" strokeWidth="0.45" opacity="0.55" />
-              </g>
-            ))}
-          </g>
-
-          {model.obstacles.chimney && (
-            <g transform="translate(72 -34)">
-              <rect x="-9" y="-34" width="18" height="48" rx="2" fill="#7c2d12" />
-              <rect x="-11" y="-38" width="22" height="7" rx="1.5" fill="#9a3412" />
-            </g>
-          )}
-        </g>
-
-        <path d="M650 287 C720 329 774 351 852 381 L814 403 C742 376 680 340 606 298 Z" fill="#020617" opacity={shadeOpacity} />
-        {model.obstacles.tree && <path d="M214 350 C318 369 410 412 500 475 L442 490 C350 427 265 397 160 381 Z" fill="#020617" opacity={shadeOpacity * 0.72} />}
-        {model.obstacles.neighbour && <path d="M714 343 C782 366 823 390 876 427 L826 446 C778 407 725 381 656 358 Z" fill="#020617" opacity={shadeOpacity * 0.7} />}
-
-        <g transform="translate(40 44)">
-          <rect width="242" height="96" rx="18" fill="#07111f" opacity="0.88" />
-          <text x="18" y="30" fill="#94a3b8" fontSize="11" fontWeight="700">3D SOLANALYS</text>
-          <text x="18" y="58" fill="#f8fafc" fontSize="23" fontWeight="900">{Math.max(0, solar.altitude).toFixed(1)}° solhöjd</text>
-          <text x="18" y="80" fill="#cbd5e1" fontSize="12">Skuggpåverkan {shadeLoss.toFixed(0)}% · {model.roofAzimuth}° azimut</text>
-        </g>
-
-        <g transform="translate(630 46)">
-          <rect width="244" height="100" rx="18" fill="#ffffff" opacity="0.92" />
-          <text x="18" y="31" fill="#64748b" fontSize="11" fontWeight="800">ANLÄGGNING</text>
-          <text x="18" y="59" fill="#0f172a" fontSize="22" fontWeight="900">{panelLayout.panelCount} paneler</text>
-          <text x="18" y="81" fill="#475569" fontSize="12">{panelLayout.installedKw.toFixed(1)} kWp · {model.buildingLength} × {model.buildingWidth} m</text>
-        </g>
-      </svg>
+    <div className="relative h-[560px] w-full overflow-hidden rounded-2xl border border-slate-700 bg-[#07111f]">
+      <div ref={mountRef} className="absolute inset-0" aria-label="WebGL-baserad BIM-vy for 3D-solanalys" />
+      <div className="pointer-events-none absolute left-5 top-5 rounded-2xl border border-white/10 bg-slate-950/82 px-4 py-3 shadow-2xl backdrop-blur-md">
+        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-200">BIM Shadow Study</p>
+        <p className="mt-1 text-2xl font-black text-white">{Math.max(0, solar.altitude).toFixed(1)}&deg; solhojd</p>
+        <p className="text-xs font-medium text-slate-300">Skugga {shadeLoss.toFixed(0)}% · Azimut {model.roofAzimuth}&deg;</p>
+      </div>
+      <div className="pointer-events-none absolute right-5 top-5 rounded-2xl border border-white/10 bg-white/92 px-4 py-3 shadow-2xl backdrop-blur-md">
+        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Anlaggning</p>
+        <p className="mt-1 text-2xl font-black text-slate-950">{panelLayout.panelCount} paneler</p>
+        <p className="text-xs font-medium text-slate-600">{panelLayout.installedKw.toFixed(1)} kWp · {model.buildingLength} x {model.buildingWidth} m</p>
+      </div>
+      <div className="pointer-events-none absolute bottom-5 left-5 right-5 flex flex-wrap gap-2">
+        {['WebGL', 'Skuggkarta', 'Grannvolymer', siteData?.tile?.url ? 'Geodata kopplad' : 'Manuell platsdata'].map((item) => (
+          <span key={item} className="rounded-full border border-slate-600 bg-slate-950/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-200 backdrop-blur">{item}</span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -206,14 +336,14 @@ function Technical3DModel({ model, solar, shadeLoss, siteData }) {
       <div className="flex flex-col gap-2 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-600"><ScanLine className="h-4 w-4" /> Teknisk analysvy</div>
-          <h2 className="text-lg font-bold text-slate-950">3D Solanalys · Professionell situationsmodell</h2>
+          <h2 className="text-lg font-bold text-slate-950">3D Solanalys · BIM-skuggstudie i WebGL</h2>
         </div>
         <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">Solhöjd {Math.max(0, solar.altitude).toFixed(1)}° · Skugga {shadeLoss.toFixed(0)}%</div>
       </div>
       <div className="bg-slate-950 p-3 sm:p-5">
         <ParametricHouse3D model={model} solar={solar} shadeLoss={shadeLoss} siteData={siteData} />
         <div className="mt-4 grid gap-2 text-xs text-slate-300 sm:grid-cols-4">
-          <div className="rounded-2xl border border-slate-700 bg-slate-900 p-3"><b className="text-white">Byggnad</b><br />{model.buildingLength} × {model.buildingWidth} m</div>
+          <div className="rounded-2xl border border-slate-700 bg-slate-900 p-3"><b className="text-white">Byggnad</b><br />{model.buildingLength} x {model.buildingWidth} m</div>
           <div className="rounded-2xl border border-slate-700 bg-slate-900 p-3"><b className="text-white">Tak</b><br />{model.roofType} · {model.roofPitch}°</div>
           <div className="rounded-2xl border border-slate-700 bg-slate-900 p-3"><b className="text-white">Paneler</b><br />{panelLayout.panelCount} st · {panelLayout.installedKw.toFixed(1)} kWp</div>
           <div className="rounded-2xl border border-slate-700 bg-slate-900 p-3"><b className="text-white">Platsdata</b><br />{siteData?.elevation?.elevation ? `${siteData.elevation.elevation} m ö.h.` : 'Ej hämtad'}</div>

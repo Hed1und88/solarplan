@@ -3,11 +3,12 @@ import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Plus, Minus, Save, Trash2 } from 'lucide-react';
+import ProductVisual from '@/components/products/ProductVisual';
 
 const categoryLabels = { solpanel: 'Solpanel', batteri: 'Batteri', vaxelriktare: 'Växelriktare', optimerare: 'Optimerare', kabel: 'Kabel', montagesystem: 'Montagesystem', ovrigt: 'Övrigt' };
+const categoryOrder = ['solpanel', 'vaxelriktare', 'batteri', 'optimerare', 'montagesystem', 'kabel', 'ovrigt'];
 
 export default function ProductSelectionTab({ project, onUpdate }) {
   const [selectedProducts, setSelectedProducts] = useState(project.selected_products || []);
@@ -47,6 +48,13 @@ export default function ProductSelectionTab({ project, onUpdate }) {
   };
 
   const totalCost = selectedProducts.reduce((sum, sp) => sum + sp.unit_price * sp.quantity, 0);
+  const groupedProducts = categoryOrder
+    .map(category => ({
+      category,
+      label: categoryLabels[category] || categoryLabels.ovrigt,
+      items: products.filter(product => (product.category || 'ovrigt') === category),
+    }))
+    .filter(group => group.items.length);
 
   const handleSave = async () => {
     setSaving(true);
@@ -110,24 +118,36 @@ export default function ProductSelectionTab({ project, onUpdate }) {
           <CardTitle className="text-lg">Produktsortiment</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {products.map(product => {
-              const inProject = selectedProducts.find(sp => sp.product_id === product.id);
-              return (
-                <div key={product.id} className="flex items-center justify-between p-3 border rounded-xl hover:bg-muted/30 transition-colors">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium truncate">{product.name}</p>
-                      {inProject && <Badge variant="secondary" className="text-xs shrink-0">{inProject.quantity}st</Badge>}
-                    </div>
-                    <p className="text-sm text-muted-foreground">{categoryLabels[product.category]} • {product.price?.toLocaleString('sv-SE')} SEK</p>
-                  </div>
-                  <Button size="sm" variant="outline" className="gap-1 shrink-0 ml-2" onClick={() => addProduct(product)}>
-                    <Plus className="w-3.5 h-3.5" /> Lägg till
-                  </Button>
+          <div className="space-y-6">
+            {groupedProducts.map(group => (
+              <section key={group.category} className="space-y-3">
+                <div className="flex items-center justify-between border-b pb-2">
+                  <h3 className="text-sm font-semibold text-foreground">{group.label}</h3>
+                  <span className="text-xs font-medium text-muted-foreground">{group.items.length} produkter</span>
                 </div>
-              );
-            })}
+                <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                  {group.items.map(product => {
+                    const inProject = selectedProducts.find(sp => sp.product_id === product.id);
+                    return (
+                      <div key={product.id} className="grid grid-cols-[88px_1fr_auto] items-center gap-3 rounded-xl border p-3 transition-colors hover:bg-muted/30">
+                        <ProductVisual product={product} className="h-20 w-24" />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="truncate font-medium">{product.name}</p>
+                            {inProject && <Badge variant="secondary" className="shrink-0 text-xs">{inProject.quantity}st</Badge>}
+                          </div>
+                          <p className="mt-1 text-sm text-muted-foreground">{product.brand} {product.model}</p>
+                          <p className="mt-1 text-sm font-semibold">{product.price?.toLocaleString('sv-SE')} SEK</p>
+                        </div>
+                        <Button size="sm" variant="outline" className="shrink-0 gap-1" onClick={() => addProduct(product)}>
+                          <Plus className="h-3.5 w-3.5" /> Lägg till
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
           </div>
         </CardContent>
       </Card>
