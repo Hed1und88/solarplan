@@ -141,17 +141,17 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
     roofTextureCanvas.width = 512;
     roofTextureCanvas.height = 512;
     const roofCtx = roofTextureCanvas.getContext('2d');
-    roofCtx.fillStyle = '#8f4a2f';
+    roofCtx.fillStyle = '#5b3a2f';
     roofCtx.fillRect(0, 0, 512, 512);
-    roofCtx.strokeStyle = 'rgba(255, 218, 185, 0.22)';
-    roofCtx.lineWidth = 2;
+    roofCtx.strokeStyle = 'rgba(245, 222, 201, 0.12)';
+    roofCtx.lineWidth = 1;
     for (let y = 18; y < 512; y += 34) {
       roofCtx.beginPath();
       roofCtx.moveTo(0, y);
       roofCtx.lineTo(512, y);
       roofCtx.stroke();
     }
-    roofCtx.strokeStyle = 'rgba(74, 31, 19, 0.18)';
+    roofCtx.strokeStyle = 'rgba(31, 18, 13, 0.14)';
     roofCtx.lineWidth = 1;
     for (let x = 0; x < 512; x += 42) {
       roofCtx.beginPath();
@@ -170,12 +170,12 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
     panelTextureCanvas.height = 512;
     const panelCtx = panelTextureCanvas.getContext('2d');
     const panelGradient = panelCtx.createLinearGradient(0, 0, 512, 512);
-    panelGradient.addColorStop(0, '#123f68');
-    panelGradient.addColorStop(0.5, '#082a4f');
-    panelGradient.addColorStop(1, '#041629');
+    panelGradient.addColorStop(0, '#102d46');
+    panelGradient.addColorStop(0.5, '#071c33');
+    panelGradient.addColorStop(1, '#020b18');
     panelCtx.fillStyle = panelGradient;
     panelCtx.fillRect(0, 0, 512, 512);
-    panelCtx.strokeStyle = 'rgba(219, 234, 254, 0.13)';
+    panelCtx.strokeStyle = 'rgba(219, 234, 254, 0.07)';
     panelCtx.lineWidth = 1;
     for (let x = 85; x < 512; x += 85) {
       panelCtx.beginPath();
@@ -195,16 +195,16 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
     panelTexture.colorSpace = THREE.SRGBColorSpace;
 
     const materials = {
-      ground: new THREE.MeshStandardMaterial({ color: 0x4f7d3d, roughness: 0.96, metalness: 0.01 }),
-      plot: new THREE.MeshStandardMaterial({ color: 0xaebc98, roughness: 0.82, metalness: 0.01 }),
-      wall: new THREE.MeshStandardMaterial({ color: 0xf4efe7, roughness: 0.58, metalness: 0.01 }),
+      ground: new THREE.MeshStandardMaterial({ color: 0x6f7f65, roughness: 0.98, metalness: 0.01 }),
+      plot: new THREE.MeshStandardMaterial({ color: 0x9da78e, roughness: 0.88, metalness: 0.01 }),
+      wall: new THREE.MeshStandardMaterial({ color: 0xe6e1d6, roughness: 0.64, metalness: 0.01 }),
       sideWall: new THREE.MeshStandardMaterial({ color: 0xe1dbd1, roughness: 0.6, metalness: 0.01 }),
       roof: new THREE.MeshStandardMaterial({ color: 0xffffff, map: roofTexture, roughness: 0.72, metalness: 0.01 }),
-      roofEdge: new THREE.LineBasicMaterial({ color: 0x4a1f13, transparent: true, opacity: 0.7 }),
-      sidingLine: new THREE.LineBasicMaterial({ color: 0xb9b0a3, transparent: true, opacity: 0.5 }),
+      roofEdge: new THREE.LineBasicMaterial({ color: 0x2b1d17, transparent: true, opacity: 0.4 }),
+      sidingLine: new THREE.LineBasicMaterial({ color: 0xb9b0a3, transparent: true, opacity: 0.22 }),
       trim: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.46, metalness: 0.01 }),
-      deck: new THREE.MeshStandardMaterial({ color: 0xb89162, roughness: 0.76, metalness: 0.01 }),
-      railing: new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.5, metalness: 0.01 }),
+      deck: new THREE.MeshStandardMaterial({ color: 0x9d8363, roughness: 0.82, metalness: 0.01 }),
+      railing: new THREE.MeshStandardMaterial({ color: 0xe7e3db, roughness: 0.58, metalness: 0.01 }),
       glass: new THREE.MeshPhysicalMaterial({ color: 0x0f1c2e, roughness: 0.22, metalness: 0.08, transmission: 0.04, clearcoat: 0.7, clearcoatRoughness: 0.18 }),
       panel: new THREE.MeshPhysicalMaterial({ color: 0xffffff, map: panelTexture, roughness: 0.1, metalness: 0.12, clearcoat: 1, clearcoatRoughness: 0.05 }),
       panelFrame: new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.38, metalness: 0.25 }),
@@ -288,7 +288,7 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
     addMesh(new THREE.PlaneGeometry(34, 24), materials.ground, [0, -0.02, 0], [-Math.PI / 2, 0, 0]);
     const grid = new THREE.GridHelper(32, 32, 0x7dd3fc, 0x27384a);
     grid.material.transparent = true;
-    grid.material.opacity = 0.05;
+    grid.material.opacity = 0;
     grid.position.y = 0.015;
     scene.add(grid);
 
@@ -363,22 +363,6 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
     const arrayGlass = addBox([totalPanelWidth + 0.04, 0.035, totalPanelDepth + 0.03], materials.panel, [0, frameCenterY + 0.016, frameCenterZ], [pitchRad, 0, 0]);
     arrayFrame.castShadow = true;
     arrayGlass.castShadow = true;
-
-    if (model.obstacles.tree) {
-      const treeX = -length / 2 - Math.max(2.2, model.treeDistance * 0.26);
-      const treeZ = width / 2 + 1.6;
-      const trunkHeight = Math.max(2.6, model.treeHeight * 0.38);
-      addMesh(new THREE.CylinderGeometry(0.18, 0.28, trunkHeight, 12), materials.bark, [treeX, trunkHeight / 2, treeZ]);
-      const crownY = trunkHeight + 0.9;
-      [
-        [0, 0.1, 0, 1.08],
-        [-0.7, -0.05, 0.22, 0.78],
-        [0.72, 0.02, 0.05, 0.88],
-        [0.12, 0.65, -0.28, 0.72]
-      ].forEach(([dx, dy, dz, radius]) => {
-        addMesh(new THREE.IcosahedronGeometry(radius, 2), materials.foliage, [treeX + dx, crownY + dy, treeZ + dz]);
-      });
-    }
 
     createNeighbor(-length / 2 - 4.4, -width / 2 - 2.4, 0.82);
     if (model.obstacles.neighbour) {
