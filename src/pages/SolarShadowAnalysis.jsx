@@ -78,6 +78,37 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
   const panelLayout = calculatePanelLayout(model);
   const visiblePanelCount = Math.min(panelLayout.panelCount, 40);
 
+  return (
+    <div className="relative h-[640px] w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 shadow-inner">
+      <img
+        src="/solar-analysis/photorealistic-solar-house.png"
+        alt="Fotorealistisk visualisering av villa med solpaneler"
+        className="absolute inset-0 h-full w-full object-cover"
+      />
+      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/26 via-transparent to-white/8" />
+      <div className="absolute left-5 top-5 rounded-2xl border border-white/50 bg-white/82 px-4 py-3 shadow-xl backdrop-blur-md">
+        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Fotorealistisk visualisering</p>
+        <p className="mt-1 text-2xl font-black text-slate-950">{Math.max(0, solar.altitude).toFixed(1)}&deg; solhöjd</p>
+        <p className="text-xs font-medium text-slate-600">Villa · takintegrerad solcellsanläggning</p>
+      </div>
+      <div className="absolute right-5 top-5 rounded-2xl border border-white/50 bg-white/86 px-4 py-3 shadow-xl backdrop-blur-md">
+        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Anläggning</p>
+        <p className="mt-1 text-2xl font-black text-slate-950">{panelLayout.panelCount} paneler</p>
+        <p className="text-xs font-medium text-slate-600">{panelLayout.installedKw.toFixed(1)} kWp · {model.buildingLength} x {model.buildingWidth} m</p>
+      </div>
+      <div className="absolute bottom-5 left-5 right-5 flex flex-wrap gap-2">
+        {[
+          'Fotorealistisk vy',
+          'Premium offertbild',
+          `${shadeLoss.toFixed(0)}% skugga`,
+          siteData?.tile?.url ? 'Geodata kopplad' : 'Manuell platsdata'
+        ].map((item) => (
+          <span key={item} className="rounded-full border border-white/55 bg-white/82 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-700 shadow-sm backdrop-blur">{item}</span>
+        ))}
+      </div>
+    </div>
+  );
+
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return undefined;
