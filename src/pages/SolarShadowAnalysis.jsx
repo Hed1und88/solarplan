@@ -99,9 +99,9 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
 
     const camera = new THREE.OrthographicCamera(-12, 12, 7.2, -7.2, 0.1, 100);
     const cameraTarget = new THREE.Vector3(0, 4.8, 0.55);
-    let orbitTheta = 0.28;
-    let orbitPhi = 0.1;
-    let orbitRadius = 23;
+    let orbitTheta = 0.62;
+    let orbitPhi = 0.62;
+    let orbitRadius = 18;
     const updateCamera = () => {
       camera.position.set(
         Math.sin(orbitPhi) * Math.sin(orbitTheta) * orbitRadius,
@@ -170,20 +170,20 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
     panelTextureCanvas.height = 512;
     const panelCtx = panelTextureCanvas.getContext('2d');
     const panelGradient = panelCtx.createLinearGradient(0, 0, 512, 512);
-    panelGradient.addColorStop(0, '#0d4c83');
-    panelGradient.addColorStop(0.48, '#062f63');
-    panelGradient.addColorStop(1, '#041a38');
+    panelGradient.addColorStop(0, '#123f68');
+    panelGradient.addColorStop(0.5, '#082a4f');
+    panelGradient.addColorStop(1, '#041629');
     panelCtx.fillStyle = panelGradient;
     panelCtx.fillRect(0, 0, 512, 512);
-    panelCtx.strokeStyle = 'rgba(186, 230, 253, 0.28)';
-    panelCtx.lineWidth = 2;
-    for (let x = 64; x < 512; x += 64) {
+    panelCtx.strokeStyle = 'rgba(219, 234, 254, 0.13)';
+    panelCtx.lineWidth = 1;
+    for (let x = 85; x < 512; x += 85) {
       panelCtx.beginPath();
       panelCtx.moveTo(x, 0);
       panelCtx.lineTo(x, 512);
       panelCtx.stroke();
     }
-    for (let y = 86; y < 512; y += 86) {
+    for (let y = 128; y < 512; y += 128) {
       panelCtx.beginPath();
       panelCtx.moveTo(0, y);
       panelCtx.lineTo(512, y);
@@ -328,7 +328,10 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
     };
 
     addVillaVolume({ x: 0, z: 0, l: length, w: width, h: wallHeight });
-    addVillaVolume({ x: length / 2 - 2.2, z: -width / 2 - 1.6, l: 4.8, w: 4.4, h: wallHeight * 0.88, wing: true });
+    addBox([4.2, wallHeight * 0.86, 3.2], materials.wall, [length / 2 + 2.1, wallHeight * 0.43, -width / 2 + 0.15]);
+    addVerticalSiding(4.2, 3.2, wallHeight * 0.86, length / 2 + 2.1, -width / 2 + 0.15);
+    addBox([4.8, 0.16, 3.8], materials.roof, [length / 2 + 2.1, wallHeight * 0.86 + 0.1, -width / 2 + 0.15]);
+    addBox([4.9, 0.12, 0.16], materials.trim, [length / 2 + 2.1, wallHeight * 0.86 + 0.22, -width / 2 + 2.1]);
 
     addBox([1.18, 1.98, 0.08], materials.trim, [length / 2 - 1.1, 1.16, width / 2 + 0.04]);
     addBox([0.96, 1.72, 0.1], materials.glass, [length / 2 - 1.1, 1.16, width / 2 + 0.09]);
@@ -346,8 +349,8 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
       addBox([0.52, 0.14, 0.52], materials.chimney, [length / 2 - 2.35, wallHeight + roofRise * 0.58 + 0.75, -0.85]);
     }
 
-    const columns = Math.max(1, Math.min(panelLayout.columns, 8));
-    const rows = Math.max(1, Math.ceil(visiblePanelCount / columns));
+    const columns = 6;
+    const rows = 3;
     const panelW = 0.68;
     const panelH = 0.96;
     const gap = 0.035;
@@ -397,7 +400,7 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
       const heightPx = Math.max(1, clientHeight);
       renderer.setSize(widthPx, heightPx, false);
       const aspect = widthPx / heightPx;
-      const view = 6.8;
+      const view = 9.2;
       camera.left = -view * aspect;
       camera.right = view * aspect;
       camera.top = view;
