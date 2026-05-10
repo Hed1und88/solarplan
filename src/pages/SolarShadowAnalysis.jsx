@@ -256,17 +256,17 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
       return geometry;
     };
 
-    const addVerticalSiding = (lengthValue, widthValue, wallTop) => {
+    const addVerticalSiding = (lengthValue, widthValue, wallTop, offsetX = 0, offsetZ = 0) => {
       const points = [];
-      const frontZ = widthValue / 2 + 0.062;
-      const backZ = -widthValue / 2 - 0.062;
+      const frontZ = offsetZ + widthValue / 2 + 0.062;
+      const backZ = offsetZ - widthValue / 2 - 0.062;
       for (let x = -lengthValue / 2 + 0.4; x <= lengthValue / 2 - 0.4; x += 0.38) {
-        points.push(new THREE.Vector3(x, 0.08, frontZ), new THREE.Vector3(x, wallTop - 0.12, frontZ));
-        points.push(new THREE.Vector3(x, 0.08, backZ), new THREE.Vector3(x, wallTop - 0.12, backZ));
+        points.push(new THREE.Vector3(offsetX + x, 0.08, frontZ), new THREE.Vector3(offsetX + x, wallTop - 0.12, frontZ));
+        points.push(new THREE.Vector3(offsetX + x, 0.08, backZ), new THREE.Vector3(offsetX + x, wallTop - 0.12, backZ));
       }
       for (let z = -widthValue / 2 + 0.4; z <= widthValue / 2 - 0.4; z += 0.38) {
-        points.push(new THREE.Vector3(lengthValue / 2 + 0.062, 0.08, z), new THREE.Vector3(lengthValue / 2 + 0.062, wallTop - 0.12, z));
-        points.push(new THREE.Vector3(-lengthValue / 2 - 0.062, 0.08, z), new THREE.Vector3(-lengthValue / 2 - 0.062, wallTop - 0.12, z));
+        points.push(new THREE.Vector3(offsetX + lengthValue / 2 + 0.062, 0.08, offsetZ + z), new THREE.Vector3(offsetX + lengthValue / 2 + 0.062, wallTop - 0.12, offsetZ + z));
+        points.push(new THREE.Vector3(offsetX - lengthValue / 2 - 0.062, 0.08, offsetZ + z), new THREE.Vector3(offsetX - lengthValue / 2 - 0.062, wallTop - 0.12, offsetZ + z));
       }
       addLineSegments(points, materials.sidingLine);
     };
@@ -295,73 +295,71 @@ function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
     const plot = addMesh(new THREE.PlaneGeometry(18, 13), materials.plot, [0, 0.02, 0], [-Math.PI / 2, 0, THREE.MathUtils.degToRad(45)]);
     plot.receiveShadow = true;
 
-    addBox([length, wallHeight, width], materials.wall, [0, wallHeight / 2, 0]);
-    addBox([0.08, wallHeight * 0.98, width + 0.02], materials.sideWall, [length / 2 + 0.04, wallHeight / 2, 0]);
-    addBox([0.08, wallHeight * 0.98, width + 0.02], materials.sideWall, [-length / 2 - 0.04, wallHeight / 2, 0]);
-    addVerticalSiding(length, width, wallHeight);
+    const pitchRad = THREE.MathUtils.degToRad(pitch);
+    const slopeLength = Math.sqrt((width / 2 + 0.42) ** 2 + roofRise ** 2);
+    const addVillaVolume = ({ x = 0, z = 0, l = length, w = width, h = wallHeight, wing = false }) => {
+      addBox([l, h, w], materials.wall, [x, h / 2, z]);
+      addVerticalSiding(l, w, h, x, z);
 
-    addBox([length + 0.35, 0.18, 0.18], materials.trim, [0, wallHeight + 0.02, width / 2 + 0.12]);
-    addBox([length + 0.35, 0.18, 0.18], materials.trim, [0, wallHeight + 0.02, -width / 2 - 0.12]);
-    addBox([0.18, 0.18, width + 0.35], materials.trim, [length / 2 + 0.12, wallHeight + 0.02, 0]);
-    addBox([0.18, 0.18, width + 0.35], materials.trim, [-length / 2 - 0.12, wallHeight + 0.02, 0]);
+      addBox([l + 0.28, 0.16, 0.16], materials.trim, [x, h + 0.02, z + w / 2 + 0.1]);
+      addBox([l + 0.28, 0.16, 0.16], materials.trim, [x, h + 0.02, z - w / 2 - 0.1]);
 
-    const roof = addMesh(
-      createRoofGeometry(length + 0.7, width + 0.7, wallHeight, pitch),
-      materials.roof,
-      [0, 0, 0]
-    );
-    const roofEdges = new THREE.LineSegments(new THREE.EdgesGeometry(roof.geometry, 18), materials.roofEdge);
-    roofEdges.position.copy(roof.position);
-    scene.add(roofEdges);
+      const frontRoof = addBox([l + 0.9, 0.12, slopeLength], materials.roof, [x, h + roofRise / 2, z + w / 4 + 0.12], [pitchRad, 0, 0]);
+      const backRoof = addBox([l + 0.9, 0.12, slopeLength], materials.roof, [x, h + roofRise / 2, z - w / 4 - 0.12], [-pitchRad, 0, 0]);
+      [frontRoof, backRoof].forEach((roofMesh) => {
+        const edge = new THREE.LineSegments(new THREE.EdgesGeometry(roofMesh.geometry, 18), materials.roofEdge);
+        edge.position.copy(roofMesh.position);
+        edge.rotation.copy(roofMesh.rotation);
+        scene.add(edge);
+      });
 
-    const windowCount = 4;
-    for (let i = 0; i < windowCount; i += 1) {
-      const x = -length / 2 + 1.4 + i * 1.45;
-      addBox([0.72, 1.39, 0.06], materials.trim, [x, 1.35, width / 2 + 0.03]);
-      addBox([0.58, 1.25, 0.08], materials.glass, [x, 1.35, width / 2 + 0.07]);
+      const ridge = addLineSegments([
+        new THREE.Vector3(x - l / 2 - 0.36, h + roofRise + 0.04, z),
+        new THREE.Vector3(x + l / 2 + 0.36, h + roofRise + 0.04, z),
+      ], materials.roofEdge);
+      ridge.castShadow = false;
+
+      const windows = wing ? 2 : 4;
+      for (let i = 0; i < windows; i += 1) {
+        const wx = x - l / 2 + 1.25 + i * 1.35;
+        addBox([0.72, 1.38, 0.06], materials.trim, [wx, 1.48, z + w / 2 + 0.035]);
+        addBox([0.56, 1.18, 0.08], materials.glass, [wx, 1.48, z + w / 2 + 0.075]);
+      }
+    };
+
+    addVillaVolume({ x: 0, z: 0, l: length, w: width, h: wallHeight });
+    addVillaVolume({ x: length / 2 - 2.2, z: -width / 2 - 1.6, l: 4.8, w: 4.4, h: wallHeight * 0.88, wing: true });
+
+    addBox([1.18, 1.98, 0.08], materials.trim, [length / 2 - 1.1, 1.16, width / 2 + 0.04]);
+    addBox([0.96, 1.72, 0.1], materials.glass, [length / 2 - 1.1, 1.16, width / 2 + 0.09]);
+
+    const deckZ = width / 2 + 2.25;
+    addBox([length + 3.4, 0.14, 2.85], materials.deck, [0.2, 0.1, deckZ]);
+    for (let x = -length / 2 - 1.25; x <= length / 2 + 1.6; x += 0.72) {
+      addBox([0.07, 0.68, 0.07], materials.railing, [x, 0.5, deckZ + 1.38]);
     }
-    addBox([1.08, 1.84, 0.06], materials.trim, [length / 2 - 1.35, 1.22, width / 2 + 0.035]);
-    addBox([0.9, 1.65, 0.08], materials.glass, [length / 2 - 1.35, 1.22, width / 2 + 0.075]);
-
-    const deckZ = width / 2 + 2.3;
-    addBox([length + 2.5, 0.16, 2.6], materials.deck, [0, 0.11, deckZ]);
-    for (let x = -length / 2 - 1; x <= length / 2 + 1; x += 0.75) {
-      addBox([0.08, 0.72, 0.08], materials.railing, [x, 0.52, deckZ + 1.28]);
-    }
-    addBox([length + 2.1, 0.08, 0.08], materials.railing, [0, 0.9, deckZ + 1.28]);
-    addBox([length + 2.1, 0.06, 0.06], materials.railing, [0, 0.58, deckZ + 1.28]);
+    addBox([length + 2.9, 0.08, 0.08], materials.railing, [0.18, 0.88, deckZ + 1.38]);
+    addBox([length + 2.9, 0.055, 0.055], materials.railing, [0.18, 0.56, deckZ + 1.38]);
 
     if (model.obstacles.chimney) {
-      addBox([0.42, 1.65, 0.42], materials.chimney, [length / 2 - 2.1, wallHeight + roofRise * 0.72, -0.75]);
-      addBox([0.56, 0.16, 0.56], materials.chimney, [length / 2 - 2.1, wallHeight + roofRise * 0.72 + 0.86, -0.75]);
+      addBox([0.38, 1.4, 0.38], materials.chimney, [length / 2 - 2.35, wallHeight + roofRise * 0.58, -0.85]);
+      addBox([0.52, 0.14, 0.52], materials.chimney, [length / 2 - 2.35, wallHeight + roofRise * 0.58 + 0.75, -0.85]);
     }
 
     const columns = Math.max(1, Math.min(panelLayout.columns, 8));
     const rows = Math.max(1, Math.ceil(visiblePanelCount / columns));
-    const panelW = 0.72;
-    const panelH = 1.02;
-    const gap = 0.045;
-    const pitchRad = THREE.MathUtils.degToRad(pitch);
+    const panelW = 0.68;
+    const panelH = 0.96;
+    const gap = 0.035;
     const totalPanelWidth = columns * panelW + (columns - 1) * gap;
-    const totalPanelDepth = rows * panelH * 0.62 + (rows - 1) * gap;
-    const startX = -totalPanelWidth / 2 + panelW / 2;
-    const frameCenterZ = 0.68 + totalPanelDepth / 2 - panelH * 0.31;
-    const frameCenterY = wallHeight + roofRise - Math.tan(pitchRad) * frameCenterZ + 0.075;
-    addBox([totalPanelWidth + 0.18, 0.045, totalPanelDepth + 0.18], materials.panelFrame, [0, frameCenterY - 0.018, frameCenterZ], [pitchRad, 0, 0]);
-    for (let index = 0; index < visiblePanelCount; index += 1) {
-      const col = index % columns;
-      const row = Math.floor(index / columns);
-      const x = startX + col * (panelW + gap);
-      const z = 0.68 + row * (panelH * 0.62 + gap);
-      const y = wallHeight + roofRise - Math.tan(pitchRad) * z + 0.09;
-      panelTexture.repeat.set(columns, rows);
-      const panel = addBox([panelW, 0.035, panelH], materials.panel, [x, y, z], [pitchRad, 0, 0]);
-      panel.castShadow = true;
-      const panelEdge = new THREE.LineSegments(new THREE.EdgesGeometry(panel.geometry), materials.panelLine);
-      panelEdge.position.copy(panel.position);
-      panelEdge.rotation.copy(panel.rotation);
-      scene.add(panelEdge);
-    }
+    const totalPanelDepth = rows * panelH * 0.6 + (rows - 1) * gap;
+    const frameCenterZ = 0.92 + totalPanelDepth / 2 - panelH * 0.3;
+    const frameCenterY = wallHeight + roofRise - Math.tan(pitchRad) * frameCenterZ + 0.12;
+    panelTexture.repeat.set(columns, rows);
+    const arrayFrame = addBox([totalPanelWidth + 0.22, 0.05, totalPanelDepth + 0.2], materials.panelFrame, [0, frameCenterY - 0.018, frameCenterZ], [pitchRad, 0, 0]);
+    const arrayGlass = addBox([totalPanelWidth + 0.04, 0.035, totalPanelDepth + 0.03], materials.panel, [0, frameCenterY + 0.016, frameCenterZ], [pitchRad, 0, 0]);
+    arrayFrame.castShadow = true;
+    arrayGlass.castShadow = true;
 
     if (model.obstacles.tree) {
       const treeX = -length / 2 - Math.max(2.2, model.treeDistance * 0.26);
