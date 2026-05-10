@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import * as THREE from 'three';
+import { useMemo, useRef, useState } from 'react';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Sun, Save, RotateCcw, Download, Home, CloudSun, TreePine, Compass, Zap, ScanLine, Activity, MapPin, Mountain, Loader2, CheckCircle2, AlertTriangle } from 'lucide-react';
 import {
@@ -25,6 +24,8 @@ const initial = {
   buildingLength: 12,
   buildingWidth: 8,
   buildingHeight: 4.2,
+  fasciaHeight: 4.2,
+  nockHeight: 6.3,
   roofType: 'sadeltak',
   roofPitch: 27,
   roofAzimuth: 180,
@@ -73,438 +74,161 @@ function Stat({ icon: Icon, title, value, text }) {
   );
 }
 
-function ParametricHouse3D({ model, solar, shadeLoss, siteData }) {
-  const mountRef = useRef(null);
+function ParametricHouse3D({ model, solar, shadeLoss, siteData, onModelChange }) {
+  const svgRef = useRef(null);
+  const [activeHandle, setActiveHandle] = useState(null);
   const panelLayout = calculatePanelLayout(model);
-  const visiblePanelCount = Math.min(panelLayout.panelCount, 40);
+  const length = Number(model.buildingLength) || 12;
+  const width = Number(model.buildingWidth) || 8;
+  const nockHeight = Number(model.nockHeight || model.buildingHeight + 2.1);
+  const fasciaHeight = Number(model.fasciaHeight || model.buildingHeight || 4.2);
+  const roofRise = Math.max(0.2, nockHeight - fasciaHeight);
+
+  const plan = { x: 96, y: 94, w: 360, h: 230 };
+  const elev = { x: 548, y: 104, w: 260, h: 220 };
+  const maxLength = 24;
+  const maxWidth = 16;
+  const maxHeight = 10;
+  const planW = clamp((length / maxLength) * plan.w, 110, plan.w);
+  const planH = clamp((width / maxWidth) * plan.h, 76, plan.h);
+  const planX = plan.x + (plan.w - planW) / 2;
+  const planY = plan.y + (plan.h - planH) / 2;
+  const ridgeX = planX + planW / 2;
+
+  const eaveY = elev.y + elev.h - clamp((fasciaHeight / maxHeight) * elev.h, 58, elev.h - 24);
+  const ridgeY = elev.y + elev.h - clamp((nockHeight / maxHeight) * elev.h, 78, elev.h - 12);
+  const baseY = elev.y + elev.h;
+  const roofPitch = Math.round(Math.atan(roofRise / Math.max(0.1, width / 2)) * 180 / Math.PI);
+
+  const updateModel = (patch) => {
+    const next = { ...model, ...patch };
+    const nextFascia = Number(next.fasciaHeight || next.buildingHeight || fasciaHeight);
+    const nextNock = Math.max(nextFascia + 0.2, Number(next.nockHeight || nockHeight));
+    const nextWidth = Number(next.buildingWidth || width);
+    const nextPitch = Math.round(Math.atan((nextNock - nextFascia) / Math.max(0.1, nextWidth / 2)) * 180 / Math.PI);
+    onModelChange?.({ ...next, nockHeight: nextNock, fasciaHeight: nextFascia, buildingHeight: nextFascia, roofPitch: clamp(nextPitch, 1, 60) });
+  };
+
+  const svgPoint = (event) => {
+    const svg = svgRef.current;
+    const rect = svg.getBoundingClientRect();
+    return {
+      x: ((event.clientX - rect.left) / rect.width) * 900,
+      y: ((event.clientY - rect.top) / rect.height) * 520,
+    };
+  };
+
+  const applyDrag = (event, handle = activeHandle) => {
+    if (!handle) return;
+    const point = svgPoint(event);
+    if (handle === 'length') {
+      const newLength = clamp(((point.x - planX) / plan.w) * maxLength, 4, maxLength);
+      updateModel({ buildingLength: Number(newLength.toFixed(1)) });
+    }
+    if (handle === 'width') {
+      const newWidth = clamp(((point.y - planY) / plan.h) * maxWidth, 3, maxWidth);
+      updateModel({ buildingWidth: Number(newWidth.toFixed(1)) });
+    }
+    if (handle === 'ridge') {
+      const newNock = clamp(((baseY - point.y) / elev.h) * maxHeight, fasciaHeight + 0.3, maxHeight);
+      updateModel({ nockHeight: Number(newNock.toFixed(1)) });
+    }
+    if (handle === 'fascia') {
+      const newFascia = clamp(((baseY - point.y) / elev.h) * maxHeight, 2.2, nockHeight - 0.3);
+      updateModel({ fasciaHeight: Number(newFascia.toFixed(1)), buildingHeight: Number(newFascia.toFixed(1)) });
+    }
+  };
+
+  const startDrag = (event, handle) => {
+    event.preventDefault();
+    setActiveHandle(handle);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    applyDrag(event, handle);
+  };
+
+  const endDrag = () => setActiveHandle(null);
 
   return (
-    <div className="relative h-[640px] w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 shadow-inner">
-      <img
-        src="/solar-analysis/photorealistic-solar-house.png"
-        alt="Fotorealistisk visualisering av villa med solpaneler"
-        className="absolute inset-0 h-full w-full object-cover"
-      />
-      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/26 via-transparent to-white/8" />
-      <div className="absolute left-5 top-5 rounded-2xl border border-white/50 bg-white/82 px-4 py-3 shadow-xl backdrop-blur-md">
-        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Fotorealistisk visualisering</p>
-        <p className="mt-1 text-2xl font-black text-slate-950">{Math.max(0, solar.altitude).toFixed(1)}&deg; solhöjd</p>
-        <p className="text-xs font-medium text-slate-600">Villa · takintegrerad solcellsanläggning</p>
-      </div>
-      <div className="absolute right-5 top-5 rounded-2xl border border-white/50 bg-white/86 px-4 py-3 shadow-xl backdrop-blur-md">
-        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Anläggning</p>
-        <p className="mt-1 text-2xl font-black text-slate-950">{panelLayout.panelCount} paneler</p>
-        <p className="text-xs font-medium text-slate-600">{panelLayout.installedKw.toFixed(1)} kWp · {model.buildingLength} x {model.buildingWidth} m</p>
-      </div>
-      <div className="absolute bottom-5 left-5 right-5 flex flex-wrap gap-2">
-        {[
-          'Fotorealistisk vy',
-          'Premium offertbild',
-          `${shadeLoss.toFixed(0)}% skugga`,
-          siteData?.tile?.url ? 'Geodata kopplad' : 'Manuell platsdata'
-        ].map((item) => (
-          <span key={item} className="rounded-full border border-white/55 bg-white/82 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-700 shadow-sm backdrop-blur">{item}</span>
-        ))}
-      </div>
-    </div>
-  );
+    <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-inner">
+      <svg
+        ref={svgRef}
+        viewBox="0 0 900 520"
+        className="h-[520px] w-full select-none touch-none bg-gradient-to-b from-slate-50 to-white"
+        onPointerMove={applyDrag}
+        onPointerUp={endDrag}
+        onPointerLeave={endDrag}
+        role="img"
+        aria-label="Parametrisk husmodell med dragbara linjer for bredd, langd, nockhojd och vindskivehojd"
+      >
+        <defs>
+          <linearGradient id="roofPreview" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0" stopColor="#8b4a34" />
+            <stop offset="1" stopColor="#5a2f24" />
+          </linearGradient>
+          <linearGradient id="panelPreview" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0" stopColor="#0f3454" />
+            <stop offset="1" stopColor="#020817" />
+          </linearGradient>
+          <pattern id="facadeLines" width="10" height="10" patternUnits="userSpaceOnUse">
+            <path d="M0 0V10" stroke="#d4cec3" strokeWidth="1" opacity="0.55" />
+          </pattern>
+        </defs>
 
-  useEffect(() => {
-    const mount = mountRef.current;
-    if (!mount) return undefined;
+        <rect x="28" y="28" width="844" height="464" rx="24" fill="#f8fafc" stroke="#dbe3ee" />
+        <text x="56" y="66" fill="#0f172a" fontSize="18" fontWeight="800">Bygg huset med mått och dragbara linjer</text>
+        <text x="56" y="90" fill="#64748b" fontSize="12">Dra höger linje för längd, nedre linje för bredd, nockpunkt och vindskivehöjd i gaveln.</text>
 
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xf4f8fb);
-    scene.fog = new THREE.Fog(0xf4f8fb, 34, 62);
+        <g>
+          <text x={plan.x} y={plan.y - 18} fill="#334155" fontSize="13" fontWeight="800">Planvy</text>
+          <rect x={plan.x} y={plan.y} width={plan.w} height={plan.h} rx="14" fill="#eef3f8" stroke="#cbd5e1" />
+          <rect x={planX} y={planY} width={planW} height={planH} rx="6" fill="#f4efe7" stroke="#334155" strokeWidth="2" />
+          <rect x={planX} y={planY} width={planW} height={planH} fill="url(#facadeLines)" opacity="0.55" />
+          <path d={`M ${planX} ${planY} L ${ridgeX} ${planY - planH * 0.18} L ${planX + planW} ${planY} L ${planX + planW} ${planY + planH} L ${ridgeX} ${planY + planH + planH * 0.18} L ${planX} ${planY + planH} Z`} fill="url(#roofPreview)" opacity="0.9" stroke="#4a2a20" strokeWidth="2" />
+          <line x1={ridgeX} y1={planY - planH * 0.18} x2={ridgeX} y2={planY + planH + planH * 0.18} stroke="#fff7ed" strokeWidth="3" opacity="0.75" />
+          <rect x={ridgeX - planW * 0.22} y={planY + planH * 0.28} width={planW * 0.44} height={planH * 0.24} rx="3" fill="url(#panelPreview)" stroke="#111827" strokeWidth="3" />
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.08;
-    renderer.domElement.style.cursor = 'grab';
-    renderer.domElement.style.touchAction = 'none';
-    mount.appendChild(renderer.domElement);
+          <line x1={planX + planW} y1={planY} x2={planX + planW} y2={planY + planH} stroke="#f59e0b" strokeWidth="5" cursor="ew-resize" onPointerDown={(event) => startDrag(event, 'length')} />
+          <circle cx={planX + planW} cy={planY + planH / 2} r="11" fill="#f59e0b" stroke="white" strokeWidth="3" cursor="ew-resize" onPointerDown={(event) => startDrag(event, 'length')} />
+          <line x1={planX} y1={planY + planH} x2={planX + planW} y2={planY + planH} stroke="#0ea5e9" strokeWidth="5" cursor="ns-resize" onPointerDown={(event) => startDrag(event, 'width')} />
+          <circle cx={planX + planW / 2} cy={planY + planH} r="11" fill="#0ea5e9" stroke="white" strokeWidth="3" cursor="ns-resize" onPointerDown={(event) => startDrag(event, 'width')} />
+          <text x={planX + planW + 18} y={planY + planH / 2 + 5} fill="#92400e" fontSize="12" fontWeight="800">{length.toFixed(1)} m</text>
+          <text x={planX + planW / 2 - 22} y={planY + planH + 28} fill="#075985" fontSize="12" fontWeight="800">{width.toFixed(1)} m</text>
+        </g>
 
-    const camera = new THREE.OrthographicCamera(-12, 12, 7.2, -7.2, 0.1, 100);
-    const cameraTarget = new THREE.Vector3(0, 4.8, 0.55);
-    let orbitTheta = 0.62;
-    let orbitPhi = 0.62;
-    let orbitRadius = 18;
-    const updateCamera = () => {
-      camera.position.set(
-        Math.sin(orbitPhi) * Math.sin(orbitTheta) * orbitRadius,
-        Math.cos(orbitPhi) * orbitRadius,
-        Math.sin(orbitPhi) * Math.cos(orbitTheta) * orbitRadius
-      );
-      camera.lookAt(cameraTarget);
-    };
-    updateCamera();
+        <g>
+          <text x={elev.x} y={elev.y - 18} fill="#334155" fontSize="13" fontWeight="800">Gavel / höjder</text>
+          <rect x={elev.x} y={elev.y} width={elev.w} height={elev.h} rx="14" fill="#eef3f8" stroke="#cbd5e1" />
+          <path d={`M ${elev.x + 36} ${baseY} L ${elev.x + 36} ${eaveY} L ${elev.x + elev.w / 2} ${ridgeY} L ${elev.x + elev.w - 36} ${eaveY} L ${elev.x + elev.w - 36} ${baseY} Z`} fill="#f4efe7" stroke="#334155" strokeWidth="2" />
+          <path d={`M ${elev.x + 36} ${eaveY} L ${elev.x + elev.w / 2} ${ridgeY} L ${elev.x + elev.w - 36} ${eaveY}`} fill="none" stroke="url(#roofPreview)" strokeWidth="16" strokeLinecap="round" strokeLinejoin="round" />
+          <line x1={elev.x + elev.w / 2} y1={ridgeY} x2={elev.x + elev.w / 2} y2={baseY} stroke="#94a3b8" strokeDasharray="5 5" />
+          <line x1={elev.x + 36} y1={eaveY} x2={elev.x + elev.w - 36} y2={eaveY} stroke="#0ea5e9" strokeWidth="5" cursor="ns-resize" onPointerDown={(event) => startDrag(event, 'fascia')} />
+          <circle cx={elev.x + elev.w / 2} cy={ridgeY} r="12" fill="#f59e0b" stroke="white" strokeWidth="3" cursor="ns-resize" onPointerDown={(event) => startDrag(event, 'ridge')} />
+          <circle cx={elev.x + elev.w - 36} cy={eaveY} r="11" fill="#0ea5e9" stroke="white" strokeWidth="3" cursor="ns-resize" onPointerDown={(event) => startDrag(event, 'fascia')} />
+          <text x={elev.x + elev.w / 2 + 16} y={ridgeY + 4} fill="#92400e" fontSize="12" fontWeight="800">Nock {nockHeight.toFixed(1)} m</text>
+          <text x={elev.x + elev.w - 20} y={eaveY - 12} fill="#075985" fontSize="12" fontWeight="800">Vindskiva {fasciaHeight.toFixed(1)} m</text>
+          <text x={elev.x + 40} y={baseY + 30} fill="#475569" fontSize="12" fontWeight="700">Taklutning {roofPitch}°</text>
+        </g>
 
-    const hemi = new THREE.HemisphereLight(0xffffff, 0xb7c9b4, 2.3);
-    scene.add(hemi);
-
-    const sunVector = new THREE.Vector3(
-      solar.sunVector?.x || 0.45,
-      Math.max(0.22, solar.sunVector?.y || 0.55),
-      solar.sunVector?.z || 0.72
-    ).normalize();
-    const key = new THREE.DirectionalLight(0xfff3cf, 4.2);
-    key.position.copy(sunVector).multiplyScalar(22);
-    key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048);
-    key.shadow.camera.near = 1;
-    key.shadow.camera.far = 60;
-    key.shadow.camera.left = -18;
-    key.shadow.camera.right = 18;
-    key.shadow.camera.top = 18;
-    key.shadow.camera.bottom = -18;
-    key.shadow.bias = -0.00035;
-    scene.add(key);
-
-    const rim = new THREE.DirectionalLight(0xb7ddff, 1.1);
-    rim.position.set(-9, 7, -8);
-    scene.add(rim);
-
-    const roofTextureCanvas = document.createElement('canvas');
-    roofTextureCanvas.width = 512;
-    roofTextureCanvas.height = 512;
-    const roofCtx = roofTextureCanvas.getContext('2d');
-    roofCtx.fillStyle = '#5b3a2f';
-    roofCtx.fillRect(0, 0, 512, 512);
-    roofCtx.strokeStyle = 'rgba(245, 222, 201, 0.12)';
-    roofCtx.lineWidth = 1;
-    for (let y = 18; y < 512; y += 34) {
-      roofCtx.beginPath();
-      roofCtx.moveTo(0, y);
-      roofCtx.lineTo(512, y);
-      roofCtx.stroke();
-    }
-    roofCtx.strokeStyle = 'rgba(31, 18, 13, 0.14)';
-    roofCtx.lineWidth = 1;
-    for (let x = 0; x < 512; x += 42) {
-      roofCtx.beginPath();
-      roofCtx.moveTo(x, 0);
-      roofCtx.lineTo(x + 22, 512);
-      roofCtx.stroke();
-    }
-    const roofTexture = new THREE.CanvasTexture(roofTextureCanvas);
-    roofTexture.wrapS = THREE.RepeatWrapping;
-    roofTexture.wrapT = THREE.RepeatWrapping;
-    roofTexture.repeat.set(3.2, 1.6);
-    roofTexture.colorSpace = THREE.SRGBColorSpace;
-
-    const panelTextureCanvas = document.createElement('canvas');
-    panelTextureCanvas.width = 512;
-    panelTextureCanvas.height = 512;
-    const panelCtx = panelTextureCanvas.getContext('2d');
-    const panelGradient = panelCtx.createLinearGradient(0, 0, 512, 512);
-    panelGradient.addColorStop(0, '#102d46');
-    panelGradient.addColorStop(0.5, '#071c33');
-    panelGradient.addColorStop(1, '#020b18');
-    panelCtx.fillStyle = panelGradient;
-    panelCtx.fillRect(0, 0, 512, 512);
-    panelCtx.strokeStyle = 'rgba(219, 234, 254, 0.07)';
-    panelCtx.lineWidth = 1;
-    for (let x = 85; x < 512; x += 85) {
-      panelCtx.beginPath();
-      panelCtx.moveTo(x, 0);
-      panelCtx.lineTo(x, 512);
-      panelCtx.stroke();
-    }
-    for (let y = 128; y < 512; y += 128) {
-      panelCtx.beginPath();
-      panelCtx.moveTo(0, y);
-      panelCtx.lineTo(512, y);
-      panelCtx.stroke();
-    }
-    const panelTexture = new THREE.CanvasTexture(panelTextureCanvas);
-    panelTexture.wrapS = THREE.RepeatWrapping;
-    panelTexture.wrapT = THREE.RepeatWrapping;
-    panelTexture.colorSpace = THREE.SRGBColorSpace;
-
-    const materials = {
-      ground: new THREE.MeshStandardMaterial({ color: 0x6f7f65, roughness: 0.98, metalness: 0.01 }),
-      plot: new THREE.MeshStandardMaterial({ color: 0x9da78e, roughness: 0.88, metalness: 0.01 }),
-      wall: new THREE.MeshStandardMaterial({ color: 0xe6e1d6, roughness: 0.64, metalness: 0.01 }),
-      sideWall: new THREE.MeshStandardMaterial({ color: 0xe1dbd1, roughness: 0.6, metalness: 0.01 }),
-      roof: new THREE.MeshStandardMaterial({ color: 0xffffff, map: roofTexture, roughness: 0.72, metalness: 0.01 }),
-      roofEdge: new THREE.LineBasicMaterial({ color: 0x2b1d17, transparent: true, opacity: 0.4 }),
-      sidingLine: new THREE.LineBasicMaterial({ color: 0xb9b0a3, transparent: true, opacity: 0.22 }),
-      trim: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.46, metalness: 0.01 }),
-      deck: new THREE.MeshStandardMaterial({ color: 0x9d8363, roughness: 0.82, metalness: 0.01 }),
-      railing: new THREE.MeshStandardMaterial({ color: 0xe7e3db, roughness: 0.58, metalness: 0.01 }),
-      glass: new THREE.MeshPhysicalMaterial({ color: 0x0f1c2e, roughness: 0.22, metalness: 0.08, transmission: 0.04, clearcoat: 0.7, clearcoatRoughness: 0.18 }),
-      panel: new THREE.MeshPhysicalMaterial({ color: 0xffffff, map: panelTexture, roughness: 0.1, metalness: 0.12, clearcoat: 1, clearcoatRoughness: 0.05 }),
-      panelFrame: new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.38, metalness: 0.25 }),
-      panelLine: new THREE.LineBasicMaterial({ color: 0xdbeafe, transparent: true, opacity: 0.22 }),
-      shadow: new THREE.MeshBasicMaterial({ color: 0x1e293b, transparent: true, opacity: clamp(shadeLoss / 100, 0.10, 0.36), depthWrite: false }),
-      neighbor: new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.7, metalness: 0.02 }),
-      neighborRoof: new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.62, metalness: 0.03 }),
-      bark: new THREE.MeshStandardMaterial({ color: 0x6a4523, roughness: 0.85 }),
-      foliage: new THREE.MeshStandardMaterial({ color: 0x146437, roughness: 0.72 }),
-      chimney: new THREE.MeshStandardMaterial({ color: 0x883413, roughness: 0.78 })
-    };
-
-    const addMesh = (geometry, material, position, rotation = [0, 0, 0], scale = [1, 1, 1]) => {
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.set(...position);
-      mesh.rotation.set(...rotation);
-      mesh.scale.set(...scale);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      scene.add(mesh);
-      return mesh;
-    };
-
-    const addBox = (size, material, position, rotation) => addMesh(new THREE.BoxGeometry(size[0], size[1], size[2]), material, position, rotation);
-
-    const addLineSegments = (points, material) => {
-      const geometry = new THREE.BufferGeometry().setFromPoints(points);
-      const lines = new THREE.LineSegments(geometry, material);
-      scene.add(lines);
-      return lines;
-    };
-
-    const createRoofGeometry = (length, width, wallHeight, pitchDeg) => {
-      const rise = Math.tan(THREE.MathUtils.degToRad(pitchDeg)) * (width / 2);
-      const x = length / 2;
-      const z = width / 2;
-      const h = wallHeight;
-      const vertices = new Float32Array([
-        -x, h, -z, x, h, -z, x, h + rise, 0, -x, h + rise, 0,
-        -x, h + rise, 0, x, h + rise, 0, x, h, z, -x, h, z,
-        -x, h, -z, -x, h + rise, 0, -x, h, z,
-        x, h, -z, x, h, z, x, h + rise, 0
-      ]);
-      const indices = [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7, 8, 9, 10, 11, 12, 13];
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-      geometry.setIndex(indices);
-      geometry.computeVertexNormals();
-      return geometry;
-    };
-
-    const addVerticalSiding = (lengthValue, widthValue, wallTop, offsetX = 0, offsetZ = 0) => {
-      const points = [];
-      const frontZ = offsetZ + widthValue / 2 + 0.062;
-      const backZ = offsetZ - widthValue / 2 - 0.062;
-      for (let x = -lengthValue / 2 + 0.4; x <= lengthValue / 2 - 0.4; x += 0.38) {
-        points.push(new THREE.Vector3(offsetX + x, 0.08, frontZ), new THREE.Vector3(offsetX + x, wallTop - 0.12, frontZ));
-        points.push(new THREE.Vector3(offsetX + x, 0.08, backZ), new THREE.Vector3(offsetX + x, wallTop - 0.12, backZ));
-      }
-      for (let z = -widthValue / 2 + 0.4; z <= widthValue / 2 - 0.4; z += 0.38) {
-        points.push(new THREE.Vector3(offsetX + lengthValue / 2 + 0.062, 0.08, offsetZ + z), new THREE.Vector3(offsetX + lengthValue / 2 + 0.062, wallTop - 0.12, offsetZ + z));
-        points.push(new THREE.Vector3(offsetX - lengthValue / 2 - 0.062, 0.08, offsetZ + z), new THREE.Vector3(offsetX - lengthValue / 2 - 0.062, wallTop - 0.12, offsetZ + z));
-      }
-      addLineSegments(points, materials.sidingLine);
-    };
-
-    const createNeighbor = (x, z, scale = 1) => {
-      const base = addBox([4.2 * scale, 2.1 * scale, 2.9 * scale], materials.neighbor, [x, 1.05 * scale, z]);
-      base.castShadow = true;
-      const roof = addMesh(createRoofGeometry(4.7 * scale, 3.3 * scale, 2.1 * scale, 24), materials.neighborRoof, [x, 0, z]);
-      roof.rotation.y = z > 0 ? -0.08 : 0.12;
-      base.rotation.y = roof.rotation.y;
-    };
-
-    const width = Math.max(5, model.buildingWidth);
-    const length = Math.max(7, model.buildingLength);
-    const wallHeight = Math.max(3.2, model.buildingHeight);
-    const pitch = model.roofType === 'platt' ? 3 : Math.max(8, model.roofPitch);
-    const roofRise = Math.tan(THREE.MathUtils.degToRad(pitch)) * (width / 2);
-
-    addMesh(new THREE.PlaneGeometry(34, 24), materials.ground, [0, -0.02, 0], [-Math.PI / 2, 0, 0]);
-    const grid = new THREE.GridHelper(32, 32, 0x7dd3fc, 0x27384a);
-    grid.material.transparent = true;
-    grid.material.opacity = 0;
-    grid.position.y = 0.015;
-    scene.add(grid);
-
-    const plot = addMesh(new THREE.PlaneGeometry(18, 13), materials.plot, [0, 0.02, 0], [-Math.PI / 2, 0, THREE.MathUtils.degToRad(45)]);
-    plot.receiveShadow = true;
-
-    const pitchRad = THREE.MathUtils.degToRad(pitch);
-    const slopeLength = Math.sqrt((width / 2 + 0.42) ** 2 + roofRise ** 2);
-    const addVillaVolume = ({ x = 0, z = 0, l = length, w = width, h = wallHeight, wing = false }) => {
-      addBox([l, h, w], materials.wall, [x, h / 2, z]);
-      addVerticalSiding(l, w, h, x, z);
-
-      addBox([l + 0.28, 0.16, 0.16], materials.trim, [x, h + 0.02, z + w / 2 + 0.1]);
-      addBox([l + 0.28, 0.16, 0.16], materials.trim, [x, h + 0.02, z - w / 2 - 0.1]);
-
-      const frontRoof = addBox([l + 0.9, 0.12, slopeLength], materials.roof, [x, h + roofRise / 2, z + w / 4 + 0.12], [pitchRad, 0, 0]);
-      const backRoof = addBox([l + 0.9, 0.12, slopeLength], materials.roof, [x, h + roofRise / 2, z - w / 4 - 0.12], [-pitchRad, 0, 0]);
-      [frontRoof, backRoof].forEach((roofMesh) => {
-        const edge = new THREE.LineSegments(new THREE.EdgesGeometry(roofMesh.geometry, 18), materials.roofEdge);
-        edge.position.copy(roofMesh.position);
-        edge.rotation.copy(roofMesh.rotation);
-        scene.add(edge);
-      });
-
-      const ridge = addLineSegments([
-        new THREE.Vector3(x - l / 2 - 0.36, h + roofRise + 0.04, z),
-        new THREE.Vector3(x + l / 2 + 0.36, h + roofRise + 0.04, z),
-      ], materials.roofEdge);
-      ridge.castShadow = false;
-
-      const windows = wing ? 2 : 4;
-      for (let i = 0; i < windows; i += 1) {
-        const wx = x - l / 2 + 1.25 + i * 1.35;
-        addBox([0.72, 1.38, 0.06], materials.trim, [wx, 1.48, z + w / 2 + 0.035]);
-        addBox([0.56, 1.18, 0.08], materials.glass, [wx, 1.48, z + w / 2 + 0.075]);
-      }
-    };
-
-    addVillaVolume({ x: 0, z: 0, l: length, w: width, h: wallHeight });
-    addBox([4.2, wallHeight * 0.86, 3.2], materials.wall, [length / 2 + 2.1, wallHeight * 0.43, -width / 2 + 0.15]);
-    addVerticalSiding(4.2, 3.2, wallHeight * 0.86, length / 2 + 2.1, -width / 2 + 0.15);
-    addBox([4.8, 0.16, 3.8], materials.roof, [length / 2 + 2.1, wallHeight * 0.86 + 0.1, -width / 2 + 0.15]);
-    addBox([4.9, 0.12, 0.16], materials.trim, [length / 2 + 2.1, wallHeight * 0.86 + 0.22, -width / 2 + 2.1]);
-
-    addBox([1.18, 1.98, 0.08], materials.trim, [length / 2 - 1.1, 1.16, width / 2 + 0.04]);
-    addBox([0.96, 1.72, 0.1], materials.glass, [length / 2 - 1.1, 1.16, width / 2 + 0.09]);
-
-    const deckZ = width / 2 + 2.25;
-    addBox([length + 3.4, 0.14, 2.85], materials.deck, [0.2, 0.1, deckZ]);
-    for (let x = -length / 2 - 1.25; x <= length / 2 + 1.6; x += 0.72) {
-      addBox([0.07, 0.68, 0.07], materials.railing, [x, 0.5, deckZ + 1.38]);
-    }
-    addBox([length + 2.9, 0.08, 0.08], materials.railing, [0.18, 0.88, deckZ + 1.38]);
-    addBox([length + 2.9, 0.055, 0.055], materials.railing, [0.18, 0.56, deckZ + 1.38]);
-
-    if (model.obstacles.chimney) {
-      addBox([0.38, 1.4, 0.38], materials.chimney, [length / 2 - 2.35, wallHeight + roofRise * 0.58, -0.85]);
-      addBox([0.52, 0.14, 0.52], materials.chimney, [length / 2 - 2.35, wallHeight + roofRise * 0.58 + 0.75, -0.85]);
-    }
-
-    const columns = 6;
-    const rows = 3;
-    const panelW = 0.68;
-    const panelH = 0.96;
-    const gap = 0.035;
-    const totalPanelWidth = columns * panelW + (columns - 1) * gap;
-    const totalPanelDepth = rows * panelH * 0.6 + (rows - 1) * gap;
-    const frameCenterZ = 0.92 + totalPanelDepth / 2 - panelH * 0.3;
-    const frameCenterY = wallHeight + roofRise - Math.tan(pitchRad) * frameCenterZ + 0.12;
-    panelTexture.repeat.set(columns, rows);
-    const arrayFrame = addBox([totalPanelWidth + 0.22, 0.05, totalPanelDepth + 0.2], materials.panelFrame, [0, frameCenterY - 0.018, frameCenterZ], [pitchRad, 0, 0]);
-    const arrayGlass = addBox([totalPanelWidth + 0.04, 0.035, totalPanelDepth + 0.03], materials.panel, [0, frameCenterY + 0.016, frameCenterZ], [pitchRad, 0, 0]);
-    arrayFrame.castShadow = true;
-    arrayGlass.castShadow = true;
-
-    createNeighbor(-length / 2 - 4.4, -width / 2 - 2.4, 0.82);
-    if (model.obstacles.neighbour) {
-      createNeighbor(length / 2 + Math.max(3.6, model.neighbourDistance * 0.3), -width / 2 - 0.5, 1.05);
-    } else {
-      createNeighbor(length / 2 + 4.9, -width / 2 - 1.4, 0.68);
-    }
-
-    const shadowLong = 6.5 + clamp(shadeLoss / 10, 0, 5);
-    const houseShadow = addMesh(new THREE.PlaneGeometry(length + 2.2, shadowLong), materials.shadow, [3.4, 0.045, width / 2 + 3.6], [-Math.PI / 2, 0, -0.55]);
-    houseShadow.receiveShadow = false;
-    if (model.obstacles.tree) {
-      addMesh(new THREE.CircleGeometry(2.25, 48), materials.shadow, [-length / 2 - 1.8, 0.05, width / 2 + 4.8], [-Math.PI / 2, 0, -0.35]);
-    }
-
-    const resize = () => {
-      const { clientWidth, clientHeight } = mount;
-      const widthPx = Math.max(1, clientWidth);
-      const heightPx = Math.max(1, clientHeight);
-      renderer.setSize(widthPx, heightPx, false);
-      const aspect = widthPx / heightPx;
-      const view = 9.2;
-      camera.left = -view * aspect;
-      camera.right = view * aspect;
-      camera.top = view;
-      camera.bottom = -view;
-      camera.updateProjectionMatrix();
-    };
-
-    const pointer = { active: false, x: 0, y: 0 };
-    const onPointerDown = (event) => {
-      pointer.active = true;
-      pointer.x = event.clientX;
-      pointer.y = event.clientY;
-      renderer.domElement.setPointerCapture?.(event.pointerId);
-      renderer.domElement.style.cursor = 'grabbing';
-    };
-    const onPointerMove = (event) => {
-      if (!pointer.active) return;
-      const dx = event.clientX - pointer.x;
-      const dy = event.clientY - pointer.y;
-      pointer.x = event.clientX;
-      pointer.y = event.clientY;
-      orbitTheta -= dx * 0.008;
-      orbitPhi = clamp(orbitPhi + dy * 0.006, 0.12, 1.28);
-      updateCamera();
-    };
-    const onPointerUp = (event) => {
-      pointer.active = false;
-      renderer.domElement.releasePointerCapture?.(event.pointerId);
-      renderer.domElement.style.cursor = 'grab';
-    };
-    const onWheel = (event) => {
-      event.preventDefault();
-      orbitRadius = clamp(orbitRadius + event.deltaY * 0.018, 14, 31);
-      updateCamera();
-    };
-
-    const animate = () => {
-      frameId = window.requestAnimationFrame(animate);
-      renderer.render(scene, camera);
-    };
-
-    let frameId = 0;
-    resize();
-    renderer.domElement.addEventListener('pointerdown', onPointerDown);
-    renderer.domElement.addEventListener('pointermove', onPointerMove);
-    renderer.domElement.addEventListener('pointerup', onPointerUp);
-    renderer.domElement.addEventListener('pointercancel', onPointerUp);
-    renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
-    animate();
-    window.addEventListener('resize', resize);
-
-    return () => {
-      window.cancelAnimationFrame(frameId);
-      window.removeEventListener('resize', resize);
-      renderer.domElement.removeEventListener('pointerdown', onPointerDown);
-      renderer.domElement.removeEventListener('pointermove', onPointerMove);
-      renderer.domElement.removeEventListener('pointerup', onPointerUp);
-      renderer.domElement.removeEventListener('pointercancel', onPointerUp);
-      renderer.domElement.removeEventListener('wheel', onWheel);
-      renderer.dispose();
-      roofTexture.dispose();
-      panelTexture.dispose();
-      scene.traverse((object) => {
-        if (object.geometry) object.geometry.dispose();
-      });
-      Object.values(materials).forEach((material) => material.dispose());
-      if (renderer.domElement.parentElement === mount) mount.removeChild(renderer.domElement);
-    };
-  }, [model, panelLayout.columns, panelLayout.panelCount, shadeLoss, solar]);
-
-  return (
-    <div className="relative h-[640px] w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-inner">
-      <div ref={mountRef} className="absolute inset-0" aria-label="WebGL-baserad BIM-vy for 3D-solanalys" />
-      <div className="pointer-events-none absolute bottom-5 left-5 right-5 flex flex-wrap gap-2">
-        {[
-          `${Math.max(0, solar.altitude).toFixed(1)}° solhöjd`,
-          `${panelLayout.panelCount} paneler`,
-          'Dra och rotera',
-          'Scrolla för zoom',
-          siteData?.tile?.url ? 'Geodata kopplad' : 'Manuell platsdata'
-        ].map((item) => (
-          <span key={item} className="rounded-full border border-slate-200 bg-white/82 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-700 shadow-sm backdrop-blur">{item}</span>
-        ))}
-      </div>
+        <g transform="translate(56 414)">
+          {[
+            ['Längd', `${length.toFixed(1)} m`],
+            ['Bredd', `${width.toFixed(1)} m`],
+            ['Nockhöjd', `${nockHeight.toFixed(1)} m`],
+            ['Vindskivehöjd', `${fasciaHeight.toFixed(1)} m`],
+            ['Paneler', `${panelLayout.panelCount} st`],
+          ].map(([label, value], index) => (
+            <g key={label} transform={`translate(${index * 158} 0)`}>
+              <rect width="142" height="58" rx="14" fill="white" stroke="#dbe3ee" />
+              <text x="14" y="22" fill="#64748b" fontSize="10" fontWeight="800" letterSpacing="1.2">{label.toUpperCase()}</text>
+              <text x="14" y="44" fill="#0f172a" fontSize="18" fontWeight="900">{value}</text>
+            </g>
+          ))}
+        </g>
+      </svg>
     </div>
   );
 }
-
-function Technical3DModel({ model, solar, shadeLoss, siteData }) {
+function Technical3DModel({ model, solar, shadeLoss, siteData, onModelChange }) {
   const panelLayout = calculatePanelLayout(model);
   return (
     <div className={`${card} overflow-hidden`}>
@@ -516,7 +240,7 @@ function Technical3DModel({ model, solar, shadeLoss, siteData }) {
         <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">Solhöjd {Math.max(0, solar.altitude).toFixed(1)}° · Skugga {shadeLoss.toFixed(0)}%</div>
       </div>
       <div className="bg-slate-50 p-3 sm:p-5">
-        <ParametricHouse3D model={model} solar={solar} shadeLoss={shadeLoss} siteData={siteData} />
+        <ParametricHouse3D model={model} solar={solar} shadeLoss={shadeLoss} siteData={siteData} onModelChange={onModelChange} />
         <div className="mt-4 grid gap-2 text-xs text-slate-600 sm:grid-cols-4">
           <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"><b className="text-slate-950">Byggnad</b><br />{model.buildingLength} x {model.buildingWidth} m</div>
           <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"><b className="text-slate-950">Tak</b><br />{model.roofType} · {model.roofPitch}°</div>
@@ -593,8 +317,21 @@ export default function SolarShadowAnalysis() {
     URL.revokeObjectURL(url);
   };
 
+  const setBuildingDimension = (key, value) => {
+    setModel((current) => {
+      const next = { ...current, [key]: value };
+      if (key === 'fasciaHeight') next.buildingHeight = value;
+      const fascia = Number(next.fasciaHeight || next.buildingHeight || 4.2);
+      const nock = Math.max(fascia + 0.2, Number(next.nockHeight || fascia + 2));
+      const widthM = Math.max(0.1, Number(next.buildingWidth || 8));
+      const pitch = Math.round(Math.atan((nock - fascia) / (widthM / 2)) * 180 / Math.PI);
+      return { ...next, fasciaHeight: fascia, nockHeight: nock, buildingHeight: fascia, roofPitch: clamp(pitch, 1, 60) };
+    });
+  };
+
   const buildingFields = [
-    ['buildingLength', 'Längd', 'm', 0.1], ['buildingWidth', 'Bredd', 'm', 0.1], ['buildingHeight', 'Vägghöjd', 'm', 0.1], ['roofPitch', 'Taklutning', '°', 1],
+    ['buildingLength', 'Längd', 'm', 0.1], ['buildingWidth', 'Bredd', 'm', 0.1],
+    ['nockHeight', 'Nockhöjd', 'm', 0.1], ['fasciaHeight', 'Vindskivehöjd', 'm', 0.1],
     ['roofAzimuth', 'Takazimut', '°', 1], ['panelPowerW', 'Paneleffekt', 'W', 5], ['panelRows', 'Panelrader', 'st', 1], ['panelColumns', 'Panelkolumner', 'st', 1]
   ];
   const weatherFields = [
@@ -665,7 +402,7 @@ export default function SolarShadowAnalysis() {
                 </select>
               </label>
               <div className="grid grid-cols-2 gap-3">
-                {buildingFields.map(([key, label, suffix, step]) => <NumberInput key={key} label={label} value={model[key]} onChange={(value) => set(key, value)} suffix={suffix} step={step} />)}
+                {buildingFields.map(([key, label, suffix, step]) => <NumberInput key={key} label={label} value={model[key]} onChange={(value) => setBuildingDimension(key, value)} suffix={suffix} step={step} />)}
               </div>
               <div className="mt-4 rounded-2xl bg-slate-50 p-3 text-xs text-slate-600">
                 <b>Takyta:</b> {panelLayout.roofAreas.totalRoofArea.toFixed(1)} m² · <b>Användbar:</b> {panelLayout.roofAreas.usableRoofArea.toFixed(1)} m² · <b>Panelarea:</b> {panelLayout.requiredArea.toFixed(1)} m²
@@ -686,7 +423,7 @@ export default function SolarShadowAnalysis() {
           </div>
 
           <div className="space-y-6">
-            <Technical3DModel model={model} solar={solar} shadeLoss={shadeLoss} siteData={siteData} />
+            <Technical3DModel model={model} solar={solar} shadeLoss={shadeLoss} siteData={siteData} onModelChange={setModel} />
 
             <div className={`${card} p-4`}>
               <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
