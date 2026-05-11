@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
   Sun, Zap, TrendingUp, CloudSun, Loader2, RefreshCw, AlertCircle,
-  Upload, Battery, BarChart3, FileSpreadsheet, X, Info
+  Upload, Battery, BarChart3, FileSpreadsheet, X, Info, Save
 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import {
@@ -73,6 +73,7 @@ export default function SolarDataPanel({ project, onUpdate }) {
   const [location, setLocation] = useState(() => {
     try { const d = JSON.parse(project.solar_data || 'null'); return d?.location || null; } catch { return null; }
   });
+  const [saving, setSaving] = useState(false);
 
   // Consumption upload
   const [consumptionMonthly, setConsumptionMonthly] = useState(null); // array of 12
@@ -116,6 +117,15 @@ export default function SolarDataPanel({ project, onUpdate }) {
       }
     } catch (e) { setError(e.message || 'Något gick fel'); }
     finally { setLoading(false); }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await onUpdate?.({ solar_data: JSON.stringify({ pvgis: pvgisData, forecast: forecastData, location, peakPower: estimatedKwp }) });
+    } finally {
+      setSaving(false);
+    }
   };
 
   useEffect(() => { if (project.address && panelCount > 0) fetchData(); }, []);
@@ -194,10 +204,16 @@ export default function SolarDataPanel({ project, onUpdate }) {
               </div>
             )}
           </div>
-          <Button onClick={fetchData} disabled={loading} size="sm" className="gap-2">
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-            {loading ? 'Hämtar...' : pvgisData || forecastData ? 'Uppdatera' : 'Hämta soldata'}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={fetchData} disabled={loading} size="sm" variant="outline" className="gap-2">
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              {loading ? 'Hämtar...' : pvgisData || forecastData ? 'Uppdatera' : 'Hämta soldata'}
+            </Button>
+            <Button onClick={handleSave} disabled={saving || (!pvgisData && !forecastData)} size="sm" className="gap-2">
+              <Save className="w-4 h-4" />
+              {saving ? 'Sparar...' : 'Spara'}
+            </Button>
+          </div>
         </CardHeader>
         {error && (
           <CardContent>

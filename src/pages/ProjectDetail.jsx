@@ -5,7 +5,7 @@ import { useParams, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, Sun, Cable, Battery, ShoppingCart, BarChart2, Wrench, GitBranch } from 'lucide-react';
+import { ArrowLeft, Sun, Cable, Battery, ShoppingCart, BarChart2, Wrench, GitBranch, Save } from 'lucide-react';
 import SolarDataPanel from '@/components/project/SolarDataPanel';
 import ProjectPDFExport from '@/components/project/ProjectPDFExport';
 import StringMarkingTab from '@/components/project/StringMarkingTab';
@@ -38,6 +38,10 @@ export default function ProjectDetail() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['project', id] }),
   });
 
+  const saveProject = async (data = {}) => {
+    await updateMutation.mutateAsync(data);
+  };
+
   if (isLoading) {
     return (
       <div className="p-6 lg:p-10 flex items-center justify-center min-h-[50vh]">
@@ -69,6 +73,10 @@ export default function ProjectDetail() {
           {project.customer_name && <p className="text-muted-foreground mt-1">{project.customer_name} {project.address ? `• ${project.address}` : ''}</p>}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <Button onClick={() => saveProject({ notes: project.notes || '' })} disabled={updateMutation.isPending} className="gap-2">
+            <Save className="w-4 h-4" />
+            {updateMutation.isPending ? 'Sparar...' : 'Spara'}
+          </Button>
           {project.status === 'projektering' && (
             <Button onClick={() => updateMutation.mutate({ status: 'offert' })} className="gap-2 bg-purple-600 hover:bg-purple-700 text-white">
               Skicka som offert
@@ -90,12 +98,12 @@ export default function ProjectDetail() {
         </TabsList>
 
         <TabsContent value="panels" className="space-y-4">
-          <SolarRoofPlanner project={project} onUpdate={updateMutation.mutateAsync} />
+          <SolarRoofPlanner project={project} onUpdate={saveProject} />
         </TabsContent>
         <TabsContent value="strings">
           <StringMarkingTab
             project={project}
-            onUpdate={updateMutation.mutateAsync}
+            onUpdate={saveProject}
             selectedProduct={(() => {
               try {
                 const d = JSON.parse(project.panel_layout_data || '{}');
@@ -107,13 +115,13 @@ export default function ProjectDetail() {
             })()}
           />
         </TabsContent>
-        <TabsContent value="battery"><BatteryTab project={project} onUpdate={updateMutation.mutateAsync} /></TabsContent>
-        <TabsContent value="products"><ProductSelectionTab project={project} onUpdate={updateMutation.mutateAsync} /></TabsContent>
-        <TabsContent value="solar"><SolarDataPanel project={project} onUpdate={updateMutation.mutateAsync} /></TabsContent>
-        <TabsContent value="singleline"><SingleLineSchemaTab project={project} onUpdate={updateMutation.mutateAsync} /></TabsContent>
+        <TabsContent value="battery"><BatteryTab project={project} onUpdate={saveProject} /></TabsContent>
+        <TabsContent value="products"><ProductSelectionTab project={project} onUpdate={saveProject} /></TabsContent>
+        <TabsContent value="solar"><SolarDataPanel project={project} onUpdate={saveProject} /></TabsContent>
+        <TabsContent value="singleline"><SingleLineSchemaTab project={project} onUpdate={saveProject} /></TabsContent>
         <TabsContent value="mounting" className="space-y-4">
-          <SolarRoofPlanner project={project} onUpdate={updateMutation.mutateAsync} />
-          <MountingSystemCalculator project={project} onUpdate={updateMutation.mutateAsync} />
+          <SolarRoofPlanner project={project} onUpdate={saveProject} />
+          <MountingSystemCalculator project={project} onUpdate={saveProject} />
         </TabsContent>
       </Tabs>
     </div>

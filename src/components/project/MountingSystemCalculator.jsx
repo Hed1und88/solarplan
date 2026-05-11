@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Wind, Snowflake, AlertTriangle, CheckCircle2, Ruler } from 'lucide-react';
+import { Wind, Snowflake, AlertTriangle, CheckCircle2, Ruler, Save } from 'lucide-react';
 import MountingDrawing from './MountingDrawing';
 
 const SYSTEMS = {
@@ -293,7 +293,7 @@ export default function MountingSystemCalculator({ project, onUpdate }) {
               disabled={!snowZone || !windZone}
               className="gap-2 w-full sm:w-auto"
             >
-              Beräkna laster
+              <Save className="w-4 h-4" /> Beräkna och spara laster
             </Button>
           </CardContent>
         </Card>
