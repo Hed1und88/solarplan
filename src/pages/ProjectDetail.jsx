@@ -46,9 +46,9 @@ export default function ProjectDetail() {
     },
     onSuccess: (updatedProject, data) => {
       queryClient.setQueryData(['project', id], (current) => ({
+        ...(updatedProject || {}),
         ...(current || {}),
         ...data,
-        ...(updatedProject || {}),
       }));
     },
   });

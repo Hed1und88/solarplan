@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,34 @@ const genId = () => Math.floor(Date.now() + Math.random() * 99999);
 const toNumber = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const productLabel = (product) => [product?.brand, product?.model].filter(Boolean).join(' ') || product?.name || product?.model || 'Standardpanel';
+const plannerStorageKey = (projectId) => `solarplan:project:${projectId}:solar_roof_planner_data`;
+const hasPanelGroups = (data) => data?.roofs?.some((roof) => (roof.panelGroups || []).length);
+
+function readStoredPlanner(project) {
+  const projectData = (() => {
+    try { return JSON.parse(project?.solar_roof_planner_data || 'null'); } catch { return null; }
+  })();
+
+  let localData = null;
+  if (typeof window !== 'undefined' && project?.id) {
+    try {
+      localData = JSON.parse(window.localStorage.getItem(plannerStorageKey(project.id)) || 'null');
+    } catch {}
+  }
+
+  if (hasPanelGroups(localData) && !hasPanelGroups(projectData)) return localData;
+  if (projectData?.roofs?.length) return projectData;
+  if (localData?.roofs?.length) return localData;
+
+  return null;
+}
+
+function writeStoredPlanner(projectId, payload) {
+  if (typeof window === 'undefined' || !projectId) return;
+  try {
+    window.localStorage.setItem(plannerStorageKey(projectId), JSON.stringify(payload));
+  } catch {}
+}
 
 function panelProductForRoof(roof, products) {
   return products.find((product) => product.id === roof?.panelProductId) || roof?.panelProductSnapshot || DEFAULT_PANEL;
@@ -294,16 +322,16 @@ function ObstacleForm({ onSave, onClose }) {
 }
 
 export default function SolarRoofPlanner({ project, onUpdate }) {
+  const pendingSaveRef = useRef(null);
+  const savingRef = useRef(false);
   const { data: products = [] } = useQuery({
     queryKey: ['products-panels-roof-planner'],
     queryFn: () => base44.entities.Product.filter({ category: 'solpanel' }),
   });
   const panelProducts = products.filter((product) => product.is_active !== false);
   const [roofs, setRoofs] = useState(() => {
-    try {
-      const data = JSON.parse(project?.solar_roof_planner_data || 'null');
-      if (data?.roofs?.length) return data.roofs;
-    } catch {}
+    const stored = readStoredPlanner(project);
+    if (stored?.roofs?.length) return stored.roofs;
     return [{ ...BASE_ROOF, id: genId(), widthM: Number(project?.roof_width_m) || 8, roofFallM: Number(project?.roof_height_m) || 6 }];
   });
   const [selectedRoofId, setSelectedRoofId] = useState(roofs[0]?.id || 1);
@@ -316,11 +344,26 @@ export default function SolarRoofPlanner({ project, onUpdate }) {
   const totals = calc(roofs, panelProducts);
   const selectedGroupWarnings = (selectedRoof?.panelGroups || []).map((group) => ({ group, size: groupPhysicalSize(group, selectedRoof, panelProducts) })).filter(({ group, size }) => size.w + toNumber(group.xM) > toNumber(selectedRoof.widthM) || size.h + toNumber(group.yM) > toNumber(selectedRoof.roofFallM));
 
+  const flushSave = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    try {
+      while (pendingSaveRef.current) {
+        const payload = pendingSaveRef.current;
+        pendingSaveRef.current = null;
+        await onUpdate?.({ solar_roof_planner_data: JSON.stringify(payload) });
+      }
+    } finally {
+      savingRef.current = false;
+    }
+  };
+
   const save = (nextRoofs) => {
     setRoofs(nextRoofs);
-    onUpdate?.({
-      solar_roof_planner_data: JSON.stringify({ version: 7, scaleType: 'meter', railMode: 'per-panel', roofs: nextRoofs }),
-    });
+    const payload = { version: 7, scaleType: 'meter', railMode: 'per-panel', roofs: nextRoofs };
+    writeStoredPlanner(project?.id, payload);
+    pendingSaveRef.current = payload;
+    flushSave();
   };
   const updateRoof = (roofId, updater) => save(roofs.map((roof) => roof.id === roofId ? updater(roof) : roof));
   const updateSelectedRoofProduct = (productId) => {

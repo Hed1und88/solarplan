@@ -22,6 +22,17 @@ function json(raw, fallback) {
   try { return JSON.parse(raw || ''); } catch { return fallback; }
 }
 
+const plannerStorageKey = (projectId) => `solarplan:project:${projectId}:solar_roof_planner_data`;
+
+function readPlannerBackup(project) {
+  if (typeof window === 'undefined' || !project?.id) return null;
+  try {
+    return JSON.parse(window.localStorage.getItem(plannerStorageKey(project.id)) || 'null');
+  } catch {
+    return null;
+  }
+}
+
 function panelSize(orientation, product) {
   const w = pos(product?.width_mm, 0) / 1000;
   const h = pos(product?.height_mm, 0) / 1000;
@@ -45,6 +56,11 @@ function parseLayout(project) {
   const planner = json(project?.solar_roof_planner_data, null);
   if (Array.isArray(planner?.roofs) && planner.roofs.some(r => (r.panelGroups || []).length)) {
     return { source: 'solar_roof_planner_data', roofs: planner.roofs, legacy: [] };
+  }
+
+  const backup = readPlannerBackup(project);
+  if (Array.isArray(backup?.roofs) && backup.roofs.some(r => (r.panelGroups || []).length)) {
+    return { source: 'solar_roof_planner_data_backup', roofs: backup.roofs, legacy: [] };
   }
 
   const old = json(project?.panel_layout_data, null);
