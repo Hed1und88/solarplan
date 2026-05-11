@@ -35,7 +35,22 @@ export default function ProjectDetail() {
 
   const updateMutation = useMutation({
     mutationFn: (data) => base44.entities.Project.update(id, data),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['project', id] }),
+    onMutate: async (data) => {
+      await queryClient.cancelQueries({ queryKey: ['project', id] });
+      const previousProject = queryClient.getQueryData(['project', id]);
+      queryClient.setQueryData(['project', id], (current) => current ? { ...current, ...data } : current);
+      return { previousProject };
+    },
+    onError: (_error, _data, context) => {
+      if (context?.previousProject) queryClient.setQueryData(['project', id], context.previousProject);
+    },
+    onSuccess: (updatedProject, data) => {
+      queryClient.setQueryData(['project', id], (current) => ({
+        ...(current || {}),
+        ...data,
+        ...(updatedProject || {}),
+      }));
+    },
   });
 
   const saveProject = async (data = {}) => {
