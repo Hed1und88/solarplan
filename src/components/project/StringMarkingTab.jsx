@@ -29,6 +29,10 @@ function panelSize(orientation, product) {
   return String(orientation || '').toLowerCase().includes('ligg') ? { w: base.h, h: base.w } : base;
 }
 
+function roofPanelProduct(roof, products, fallback) {
+  return products.find(product => product.id === roof?.panelProductId) || roof?.panelProductSnapshot || fallback;
+}
+
 function roofPoly(x, y, w, h, shape) {
   if (shape === 'Trapets vänster') return `${x + w * .18},${y} ${x + w},${y} ${x + w},${y + h} ${x},${y + h}`;
   if (shape === 'Trapets höger') return `${x},${y} ${x + w * .82},${y} ${x + w},${y + h} ${x},${y + h}`;
@@ -56,7 +60,7 @@ function parseLayout(project) {
   return { source: null, roofs: [], legacy: [] };
 }
 
-function buildMap(layout, panelProduct) {
+function buildMap(layout, products, fallbackPanelProduct) {
   const pad = 60;
   const gap = 85;
   const panelGap = .035 * SCALE;
@@ -89,7 +93,7 @@ function buildMap(layout, panelProduct) {
     (roof.panelGroups || []).forEach((group, groupIndex) => {
       const groupId = `${roofId}-${group.id || groupIndex}`;
       const groupName = group.name || `Panelgrupp ${groupIndex + 1}`;
-      const s = panelSize(group.orientation, panelProduct);
+      const s = panelSize(group.orientation, roofPanelProduct(roof, products, fallbackPanelProduct));
       const pw = s.w * SCALE;
       const ph = s.h * SCALE;
       const sx = r.x + pos(group.xM) * SCALE;
@@ -283,7 +287,7 @@ export default function StringMarkingTab({ project, onUpdate, selectedProduct: s
   const panelProduct = panels.find(p => p.id === panelId) || selectedProductProp || null;
   const invProduct = inverters.find(p => p.id === invId) || null;
   const inverter = normInv(invProduct);
-  const map = useMemo(() => buildMap(layout, panelProduct), [layout, panelProduct]);
+  const map = useMemo(() => buildMap(layout, panels, panelProduct), [layout, panels, panelProduct]);
   const active = strings.find(x => x.id === activeId) || strings[0];
   const currentNodes = draft.length ? draft : active?.nodes || [];
   const activePanelCount = countPanels(currentNodes);
