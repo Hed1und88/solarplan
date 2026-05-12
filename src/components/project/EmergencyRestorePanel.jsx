@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { AlertTriangle, RotateCcw, Search, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -86,14 +86,6 @@ export default function EmergencyRestorePanel({ project, onRestore }) {
   const [found, setFound] = useState(null);
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
-
-  const hasExistingIssue = useMemo(() => {
-    const p = countPanelPlanner(project?.solar_roof_planner_data || project?.panel_layout_data);
-    const s = countStringLayout(project?.string_layout_data);
-    return p.panels === 0 || s.panels === 0;
-  }, [project?.solar_roof_planner_data, project?.panel_layout_data, project?.string_layout_data]);
-
-  if (!hasExistingIssue && !found) return null;
 
   const scan = () => {
     const result = findBackups(project);
