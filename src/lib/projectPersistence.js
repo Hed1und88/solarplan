@@ -1,5 +1,68 @@
 const PROJECT_BACKUP_PREFIX = 'solarplan:project-backup:';
 
+function safeParseJson(raw, fallback = null) {
+  try { return JSON.parse(raw || ''); } catch { return fallback; }
+}
+
+function readLocalJson(key) {
+  if (typeof window === 'undefined' || !key) return null;
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function countPanelsInSolarRoof(raw) {
+  const data = typeof raw === 'string' ? safeParseJson(raw, null) : raw;
+  if (!data || !Array.isArray(data.roofs)) return 0;
+  return data.roofs.reduce((sum, roof) => sum + (roof.panelGroups || []).reduce((groupSum, group) => {
+    const rows = Number(group.rows || 0) || 0;
+    const cols = Number(group.cols || 0) || 0;
+    return groupSum + Math.max(0, Math.round(rows * cols));
+  }, 0), 0);
+}
+
+function countRoofs(raw) {
+  const data = typeof raw === 'string' ? safeParseJson(raw, null) : raw;
+  return Array.isArray(data?.roofs) ? data.roofs.length : 0;
+}
+
+function panelPlannerScore(raw) {
+  const data = typeof raw === 'string' ? safeParseJson(raw, null) : raw;
+  if (!data || !Array.isArray(data.roofs)) return -1;
+  const roofs = countRoofs(data);
+  const panels = countPanelsInSolarRoof(data);
+  const movedPanels = data.roofs.reduce((sum, roof) => sum + (roof.panelGroups || []).reduce((groupSum, group) => groupSum + Object.keys(group.panelOverrides || {}).length, 0), 0);
+  const time = new Date(data.savedAt || data.updatedAt || data._local_panel_backup_at || 0).getTime() || 0;
+  return roofs * 100000 + panels * 100 + movedPanels * 10 + Math.floor(time / 1000000000);
+}
+
+function countPanelsFromString(item) {
+  const nodeCount = Array.isArray(item?.nodes) ? new Set(item.nodes.map(node => node.panelId)).size : 0;
+  return nodeCount || Number(item?.panel_count || 0) || 0;
+}
+
+function stringLayoutScore(raw) {
+  const data = typeof raw === 'string' ? safeParseJson(raw, null) : raw;
+  if (!data || !Array.isArray(data.strings)) return -1;
+  const stringsWithData = data.strings.filter(item => item?.panelGroupId || item?.pvInput || item?.mppt || countPanelsFromString(item) > 0);
+  const panels = stringsWithData.reduce((sum, item) => sum + countPanelsFromString(item), 0);
+  const inverters = Array.isArray(data.inverterConfigs) ? data.inverterConfigs.filter(cfg => cfg.productId).length : 0;
+  const time = new Date(data.savedAt || data._local_string_backup_at || 0).getTime() || 0;
+  return stringsWithData.length * 100000 + panels * 100 + inverters * 25 + Math.floor(time / 1000000000);
+}
+
+function chooseBestRaw(candidates, scorer) {
+  const scored = candidates
+    .filter(value => value !== undefined && value !== null && value !== '')
+    .map(value => ({ value, score: scorer(value) }))
+    .filter(item => item.score >= 0)
+    .sort((a, b) => b.score - a.score);
+  return scored[0]?.value;
+}
+
 export function projectBackupKey(projectId) {
   return `${PROJECT_BACKUP_PREFIX}${projectId}`;
 }
@@ -27,14 +90,36 @@ export function writeProjectBackup(project) {
 export function mergeProjectWithBackup(project) {
   if (!project?.id) return project || null;
   const backup = readProjectBackup(project.id);
-  if (!backup) return project;
+  const standalonePanelBackup = readLocalJson(`solarplan:project:${project.id}:solar_roof_planner_data`);
+  const standaloneStringBackup = readLocalJson(`solarplan:project:${project.id}:string_layout_data`);
+
+  if (!backup && !standalonePanelBackup && !standaloneStringBackup) return project;
 
   const projectTime = new Date(project.updated_date || project.updated_at || project.modified_date || 0).getTime() || 0;
-  const backupTime = new Date(backup._local_backup_at || backup.updated_date || backup.updated_at || 0).getTime() || 0;
+  const backupTime = new Date(backup?._local_backup_at || backup?.updated_date || backup?.updated_at || 0).getTime() || 0;
+  const merged = backupTime > projectTime ? { ...project, ...(backup || {}), id: project.id } : { ...(backup || {}), ...project, id: project.id };
 
-  // If the server project is older than the local working copy, keep the local fields visible.
-  if (backupTime > projectTime) return { ...project, ...backup, id: project.id };
-  return { ...backup, ...project, id: project.id };
+  const bestPanel = chooseBestRaw([
+    project.solar_roof_planner_data,
+    backup?.solar_roof_planner_data,
+    standalonePanelBackup,
+    project.panel_layout_data,
+    backup?.panel_layout_data,
+  ], panelPlannerScore);
+  if (bestPanel) {
+    const panelString = typeof bestPanel === 'string' ? bestPanel : JSON.stringify(bestPanel);
+    merged.solar_roof_planner_data = panelString;
+    merged.panel_layout_data = panelString;
+  }
+
+  const bestString = chooseBestRaw([
+    project.string_layout_data,
+    backup?.string_layout_data,
+    standaloneStringBackup,
+  ], stringLayoutScore);
+  if (bestString) merged.string_layout_data = typeof bestString === 'string' ? bestString : JSON.stringify(bestString);
+
+  return merged;
 }
 
 export async function fetchProjectById(base44, projectId) {
@@ -61,14 +146,14 @@ export async function saveProjectPatch(base44, currentProject, patch) {
 
   const updated = await base44.entities.Project.update(currentProject.id, patch);
   const fresh = await fetchProjectById(base44, currentProject.id).catch(() => null);
-  const merged = {
+  const merged = mergeProjectWithBackup({
     ...optimisticProject,
     ...(updated || {}),
     ...(fresh || {}),
     ...patch,
     id: currentProject.id,
     _last_save_ok_at: new Date().toISOString(),
-  };
+  });
   writeProjectBackup(merged);
   return merged;
 }
