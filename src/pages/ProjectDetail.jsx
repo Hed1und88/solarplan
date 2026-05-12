@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowLeft, Sun, Cable, Battery, ShoppingCart, BarChart2, Wrench, GitBranch, Save } from 'lucide-react';
 import SolarDataPanel from '@/components/project/SolarDataPanel';
 import ProjectPDFExport from '@/components/project/ProjectPDFExport';
-import StringMarkingTabV5 from '@/components/project/StringMarkingTabV5';
+import StringMarkingTabV6 from '@/components/project/StringMarkingTabV6';
 import BatteryTab from '@/components/project/BatteryTab';
 import ProductSelectionTab from '@/components/project/ProductSelectionTab.jsx';
 import MountingSystemCalculator from '@/components/project/MountingSystemCalculator';
@@ -99,7 +99,7 @@ export default function ProjectDetail() {
         <TabsTrigger value="mounting" className="gap-1.5 text-xs sm:text-sm"><Wrench className="w-4 h-4" /> <span className="hidden sm:inline">Montage</span></TabsTrigger>
       </TabsList>
       <TabsContent value="panels"><SolarRoofPlannerV2 project={project} onUpdate={saveProject} /></TabsContent>
-      <TabsContent value="strings"><StringMarkingTabV5 project={project} onUpdate={saveProject} selectedProduct={selectedPanelProduct} /></TabsContent>
+      <TabsContent value="strings"><StringMarkingTabV6 project={project} onUpdate={saveProject} selectedProduct={selectedPanelProduct} /></TabsContent>
       <TabsContent value="battery"><BatteryTab project={project} onUpdate={saveProject} /></TabsContent>
       <TabsContent value="products"><ProductSelectionTab project={project} onUpdate={saveProject} /></TabsContent>
       <TabsContent value="solar"><SolarDataPanel project={project} onUpdate={saveProject} /></TabsContent>
