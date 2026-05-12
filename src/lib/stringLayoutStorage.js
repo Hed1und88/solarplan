@@ -22,34 +22,67 @@ export function readStringLayoutBackup(projectId) {
   return readLocalJson(stringLayoutBackupKey(projectId));
 }
 
-export function writeStringLayoutBackup(projectId, payload) {
-  if (typeof window === 'undefined' || !projectId || !payload) return;
-  try {
-    window.localStorage.setItem(stringLayoutBackupKey(projectId), JSON.stringify({
-      ...payload,
-      _local_string_backup_at: new Date().toISOString(),
-    }));
-  } catch {}
-}
-
 function countPanelsFromString(item) {
   const nodeCount = Array.isArray(item?.nodes) ? new Set(item.nodes.map(node => node.panelId)).size : 0;
   return nodeCount || Number(item?.panel_count || 0) || 0;
 }
 
+function stringHasRealData(item) {
+  return Boolean(
+    item?.panelGroupId ||
+    item?.pvInput ||
+    item?.inverterConfigId ||
+    item?.panelProductId ||
+    countPanelsFromString(item) > 0 ||
+    (Array.isArray(item?.nodes) && item.nodes.length > 0)
+  );
+}
+
 export function scoreStringLayout(layout) {
-  if (!layout || !Array.isArray(layout.strings)) return { score: -1, stringCount: 0, panelCount: 0, time: 0, hasNodes: 0 };
-  const stringsWithData = layout.strings.filter(item => item?.panelGroupId || item?.pvInput || item?.mppt || countPanelsFromString(item) > 0);
+  if (!layout || !Array.isArray(layout.strings)) return { score: -1, stringCount: 0, panelCount: 0, time: 0, hasNodes: 0, inverterCount: 0 };
+  const stringsWithData = layout.strings.filter(stringHasRealData);
   const panelCount = stringsWithData.reduce((sum, item) => sum + countPanelsFromString(item), 0);
   const hasNodes = stringsWithData.reduce((sum, item) => sum + (Array.isArray(item.nodes) && item.nodes.length ? 1 : 0), 0);
+  const inverterCount = Array.isArray(layout.inverterConfigs) ? layout.inverterConfigs.filter(cfg => cfg.productId).length : 0;
   const time = new Date(layout._local_string_backup_at || layout.savedAt || layout.updated_date || 0).getTime() || 0;
   return {
-    score: stringsWithData.length * 100000 + panelCount * 100 + hasNodes * 10 + Math.floor(time / 1000000000),
+    score: panelCount * 100000 + stringsWithData.length * 1000 + inverterCount * 100 + hasNodes * 10 + Math.floor(time / 1000000000),
     stringCount: stringsWithData.length,
     panelCount,
     hasNodes,
+    inverterCount,
     time,
   };
+}
+
+function sortLayoutsByContent(candidates) {
+  return candidates
+    .filter(layout => layout && Array.isArray(layout.strings))
+    .sort((a, b) => {
+      const sa = scoreStringLayout(a);
+      const sb = scoreStringLayout(b);
+      if (sb.panelCount !== sa.panelCount) return sb.panelCount - sa.panelCount;
+      if (sb.stringCount !== sa.stringCount) return sb.stringCount - sa.stringCount;
+      if (sb.inverterCount !== sa.inverterCount) return sb.inverterCount - sa.inverterCount;
+      if (sb.hasNodes !== sa.hasNodes) return sb.hasNodes - sa.hasNodes;
+      return sb.time - sa.time;
+    });
+}
+
+export function writeStringLayoutBackup(projectId, payload) {
+  if (typeof window === 'undefined' || !projectId || !payload) return;
+  try {
+    const key = stringLayoutBackupKey(projectId);
+    const existing = readLocalJson(key);
+    const next = { ...payload, _local_string_backup_at: new Date().toISOString() };
+    const existingScore = scoreStringLayout(existing);
+    const nextScore = scoreStringLayout(next);
+
+    // Never overwrite a richer local sling-backup with an empty/poorer layout.
+    if (existingScore.score > nextScore.score && existingScore.panelCount > nextScore.panelCount) return;
+
+    window.localStorage.setItem(key, JSON.stringify(next));
+  } catch {}
 }
 
 export function readBestStringLayout(project) {
@@ -68,16 +101,7 @@ export function readBestStringLayout(project) {
   const candidates = [server, projectBackup, standalone].filter(layout => layout && Array.isArray(layout.strings));
   if (!candidates.length) return server || standalone || projectBackup || null;
 
-  candidates.sort((a, b) => {
-    const sa = scoreStringLayout(a);
-    const sb = scoreStringLayout(b);
-    if (sb.stringCount !== sa.stringCount) return sb.stringCount - sa.stringCount;
-    if (sb.panelCount !== sa.panelCount) return sb.panelCount - sa.panelCount;
-    if (sb.hasNodes !== sa.hasNodes) return sb.hasNodes - sa.hasNodes;
-    return sb.time - sa.time;
-  });
-
-  return candidates[0];
+  return sortLayoutsByContent(candidates)[0];
 }
 
 function compactProductSnapshot(snapshot) {
@@ -137,8 +161,6 @@ export function compactStringLayoutForServer(layout) {
         pvInput: item.pvInput || '',
       };
 
-      // Keep manual point-by-point drawings. For normal panelgrupp-based strings,
-      // nodes are intentionally omitted from server storage to avoid Base44 size limits.
       if (!item.panelGroupId && Array.isArray(item.nodes) && item.nodes.length) compact.nodes = item.nodes;
       return compact;
     }),
