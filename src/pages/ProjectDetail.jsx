@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowLeft, Sun, Cable, Battery, ShoppingCart, BarChart2, Wrench, GitBranch, Save } from 'lucide-react';
 import SolarDataPanel from '@/components/project/SolarDataPanel';
 import ProjectPDFExport from '@/components/project/ProjectPDFExport';
+import ProjectInfoEditor from '@/components/project/ProjectInfoEditor';
 import StringMarkingTabV7 from '@/components/project/StringMarkingTabV7';
 import InverterFullSummary from '@/components/project/InverterFullSummary';
 import BatteryTab from '@/components/project/BatteryTab';
@@ -88,6 +89,8 @@ export default function ProjectDetail() {
         <ProjectPDFExport project={project} products={products} />
       </div>
     </div>
+
+    <ProjectInfoEditor project={project} onUpdate={saveProject} isSaving={updateMutation.isPending} />
 
     <Tabs defaultValue="panels" className="space-y-4">
       <TabsList className="grid grid-cols-7 w-full max-w-3xl">
