@@ -36,7 +36,7 @@ function panelPlannerScore(raw) {
   const panels = countPanelsInSolarRoof(data);
   const movedPanels = data.roofs.reduce((sum, roof) => sum + (roof.panelGroups || []).reduce((groupSum, group) => groupSum + Object.keys(group.panelOverrides || {}).length, 0), 0);
   const time = new Date(data.savedAt || data.updatedAt || data._local_panel_backup_at || 0).getTime() || 0;
-  return roofs * 100000 + panels * 100 + movedPanels * 10 + Math.floor(time / 1000000000);
+  return panels * 100000 + roofs * 1000 + movedPanels * 10 + Math.floor(time / 1000000000);
 }
 
 function countPanelsFromString(item) {
@@ -44,14 +44,26 @@ function countPanelsFromString(item) {
   return nodeCount || Number(item?.panel_count || 0) || 0;
 }
 
+function stringHasRealData(item) {
+  return Boolean(
+    item?.panelGroupId ||
+    item?.pvInput ||
+    item?.inverterConfigId ||
+    item?.panelProductId ||
+    countPanelsFromString(item) > 0 ||
+    (Array.isArray(item?.nodes) && item.nodes.length > 0)
+  );
+}
+
 function stringLayoutScore(raw) {
   const data = typeof raw === 'string' ? safeParseJson(raw, null) : raw;
   if (!data || !Array.isArray(data.strings)) return -1;
-  const stringsWithData = data.strings.filter(item => item?.panelGroupId || item?.pvInput || item?.mppt || countPanelsFromString(item) > 0);
+  const stringsWithData = data.strings.filter(stringHasRealData);
   const panels = stringsWithData.reduce((sum, item) => sum + countPanelsFromString(item), 0);
   const inverters = Array.isArray(data.inverterConfigs) ? data.inverterConfigs.filter(cfg => cfg.productId).length : 0;
+  const hasNodes = stringsWithData.reduce((sum, item) => sum + (Array.isArray(item.nodes) && item.nodes.length ? 1 : 0), 0);
   const time = new Date(data.savedAt || data._local_string_backup_at || 0).getTime() || 0;
-  return stringsWithData.length * 100000 + panels * 100 + inverters * 25 + Math.floor(time / 1000000000);
+  return panels * 100000 + stringsWithData.length * 1000 + inverters * 100 + hasNodes * 10 + Math.floor(time / 1000000000);
 }
 
 function chooseBestRaw(candidates, scorer) {
@@ -80,10 +92,22 @@ export function readProjectBackup(projectId) {
 export function writeProjectBackup(project) {
   if (typeof window === 'undefined' || !project?.id) return;
   try {
-    window.localStorage.setItem(projectBackupKey(project.id), JSON.stringify({
-      ...project,
-      _local_backup_at: new Date().toISOString(),
-    }));
+    const key = projectBackupKey(project.id);
+    const existing = readLocalJson(key);
+    const next = { ...project, _local_backup_at: new Date().toISOString() };
+
+    const existingPanelScore = panelPlannerScore(existing?.solar_roof_planner_data || existing?.panel_layout_data);
+    const nextPanelScore = panelPlannerScore(next?.solar_roof_planner_data || next?.panel_layout_data);
+    if (existingPanelScore > nextPanelScore) {
+      next.solar_roof_planner_data = existing.solar_roof_planner_data || existing.panel_layout_data;
+      next.panel_layout_data = existing.panel_layout_data || existing.solar_roof_planner_data;
+    }
+
+    const existingStringScore = stringLayoutScore(existing?.string_layout_data);
+    const nextStringScore = stringLayoutScore(next?.string_layout_data);
+    if (existingStringScore > nextStringScore) next.string_layout_data = existing.string_layout_data;
+
+    window.localStorage.setItem(key, JSON.stringify(next));
   } catch {}
 }
 
