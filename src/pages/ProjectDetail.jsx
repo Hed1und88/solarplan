@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ArrowLeft, Sun, Cable, Battery, ShoppingCart, BarChart2, Wrench, GitBranch, Save } from 'lucide-react';
-import SolarDataPanel from '@/components/project/SolarDataPanel';
+import SolarDataPanelV2 from '@/components/project/SolarDataPanelV2';
 import ProjectPDFExport from '@/components/project/ProjectPDFExport';
 import ProjectInfoEditor from '@/components/project/ProjectInfoEditor';
 import StringMarkingTabV7 from '@/components/project/StringMarkingTabV7';
@@ -106,7 +106,7 @@ export default function ProjectDetail() {
       <TabsContent value="strings" className="space-y-4"><StringMarkingTabV7 project={project} onUpdate={saveProject} selectedProduct={selectedPanelProduct} /><InverterFullSummary project={project} products={products} /></TabsContent>
       <TabsContent value="battery"><BatteryTab project={project} onUpdate={saveProject} /></TabsContent>
       <TabsContent value="products"><ProductSelectionTab project={project} onUpdate={saveProject} /></TabsContent>
-      <TabsContent value="solar"><SolarDataPanel project={project} onUpdate={saveProject} /></TabsContent>
+      <TabsContent value="solar"><SolarDataPanelV2 project={project} onUpdate={saveProject} /></TabsContent>
       <TabsContent value="singleline"><SingleLineSchemaTab project={project} onUpdate={saveProject} /></TabsContent>
       <TabsContent value="mounting" className="space-y-4"><SolarRoofPlannerV2 project={project} onUpdate={saveProject} /><MountingSystemCalculator project={project} onUpdate={saveProject} /></TabsContent>
     </Tabs>
