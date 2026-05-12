@@ -11,11 +11,11 @@ import ProjectPDFExport from '@/components/project/ProjectPDFExport';
 import ProjectInfoEditor from '@/components/project/ProjectInfoEditor';
 import StringMarkingTabV7 from '@/components/project/StringMarkingTabV7';
 import InverterFullSummary from '@/components/project/InverterFullSummary';
+import AutoSingleLineSchemaTab from '@/components/project/AutoSingleLineSchemaTab';
 import BatteryTab from '@/components/project/BatteryTab';
 import ProductSelectionTab from '@/components/project/ProductSelectionTab.jsx';
 import MountingSystemCalculator from '@/components/project/MountingSystemCalculator';
 import SolarRoofPlannerV2 from '@/components/project/SolarRoofPlannerV2';
-import SingleLineSchemaTab from '@/components/project/SingleLineSchemaTab';
 import { fetchProjectById, mergeProjectWithBackup, saveProjectPatch, writeProjectBackup } from '@/lib/projectPersistence';
 
 const statusLabels = { planering: 'Planering', projektering: 'Projektering', offert: 'Offert', installation: 'Installation', klart: 'Klart' };
@@ -107,7 +107,7 @@ export default function ProjectDetail() {
       <TabsContent value="battery"><BatteryTab project={project} onUpdate={saveProject} /></TabsContent>
       <TabsContent value="products"><ProductSelectionTab project={project} onUpdate={saveProject} /></TabsContent>
       <TabsContent value="solar"><SolarDataPanelV2 project={project} onUpdate={saveProject} /></TabsContent>
-      <TabsContent value="singleline"><SingleLineSchemaTab project={project} onUpdate={saveProject} /></TabsContent>
+      <TabsContent value="singleline"><AutoSingleLineSchemaTab project={project} onUpdate={saveProject} products={products} /></TabsContent>
       <TabsContent value="mounting" className="space-y-4"><SolarRoofPlannerV2 project={project} onUpdate={saveProject} /><MountingSystemCalculator project={project} onUpdate={saveProject} /></TabsContent>
     </Tabs>
   </div>;
