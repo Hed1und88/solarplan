@@ -9,6 +9,7 @@ import { ArrowLeft, Sun, Cable, Battery, ShoppingCart, BarChart2, Wrench, GitBra
 import SolarDataPanelV2 from '@/components/project/SolarDataPanelV2';
 import ProjectPDFExport from '@/components/project/ProjectPDFExport';
 import ProjectInfoEditor from '@/components/project/ProjectInfoEditor';
+import EmergencyRestorePanel from '@/components/project/EmergencyRestorePanel';
 import StringMarkingTabV7 from '@/components/project/StringMarkingTabV7';
 import InverterFullSummary from '@/components/project/InverterFullSummary';
 import AutoSingleLineSchemaTab from '@/components/project/AutoSingleLineSchemaTab';
@@ -91,6 +92,7 @@ export default function ProjectDetail() {
     </div>
 
     <ProjectInfoEditor project={project} onUpdate={saveProject} isSaving={updateMutation.isPending} />
+    <EmergencyRestorePanel project={project} onRestore={saveProject} />
 
     <Tabs defaultValue="panels" className="space-y-4">
       <TabsList className="grid grid-cols-7 w-full max-w-3xl">
