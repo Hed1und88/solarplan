@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link } from 'react-router-dom';
@@ -9,7 +9,7 @@ import { ArrowLeft, Sun, Cable, Battery, ShoppingCart, BarChart2, Wrench, GitBra
 import SolarDataPanelV2 from '@/components/project/SolarDataPanelV2';
 import ProjectPDFExport from '@/components/project/ProjectPDFExport';
 import ProjectInfoEditor from '@/components/project/ProjectInfoEditor';
-import StringMarkingTabV7 from '@/components/project/StringMarkingTabV7';
+import StringMarkingTabV8 from '@/components/project/StringMarkingTabV8';
 import InverterFullSummary from '@/components/project/InverterFullSummary';
 import AutoSingleLineSchemaTab from '@/components/project/AutoSingleLineSchemaTab';
 import BatteryTab from '@/components/project/BatteryTab';
@@ -17,6 +17,7 @@ import ProductSelectionTab from '@/components/project/ProductSelectionTab.jsx';
 import MountingSystemCalculator from '@/components/project/MountingSystemCalculator';
 import SolarRoofPlannerV2 from '@/components/project/SolarRoofPlannerV2';
 import { fetchProjectById, mergeProjectWithBackup, saveProjectPatch, writeProjectBackup } from '@/lib/projectPersistence';
+import { readBestStringLayout } from '@/lib/stringLayoutStorage';
 
 const statusLabels = { planering: 'Planering', projektering: 'Projektering', offert: 'Offert', installation: 'Installation', klart: 'Klart' };
 const statusColors = { planering: 'bg-blue-100 text-blue-700', projektering: 'bg-amber-100 text-amber-700', offert: 'bg-purple-100 text-purple-700', installation: 'bg-orange-100 text-orange-700', klart: 'bg-green-100 text-green-700' };
@@ -63,6 +64,12 @@ export default function ProjectDetail() {
   const saveProject = data => updateMutation.mutateAsync(data || {});
   const project = workingProject || mergeProjectWithBackup(serverProject);
 
+  const projectWithBestStringLayout = useMemo(() => {
+    const best = readBestStringLayout(project);
+    if (!best) return project;
+    return { ...project, string_layout_data: JSON.stringify(best) };
+  }, [project?.id, project?.string_layout_data, project?._local_backup_at, project?._last_save_ok_at]);
+
   const selectedPanelProduct = (() => {
     try {
       const planner = JSON.parse(project?.solar_roof_planner_data || '{}');
@@ -103,11 +110,11 @@ export default function ProjectDetail() {
         <TabsTrigger value="mounting" className="gap-1.5 text-xs sm:text-sm"><Wrench className="w-4 h-4" /> <span className="hidden sm:inline">Montage</span></TabsTrigger>
       </TabsList>
       <TabsContent value="panels"><SolarRoofPlannerV2 project={project} onUpdate={saveProject} /></TabsContent>
-      <TabsContent value="strings" className="space-y-4"><StringMarkingTabV7 project={project} onUpdate={saveProject} selectedProduct={selectedPanelProduct} /><InverterFullSummary project={project} products={products} /></TabsContent>
+      <TabsContent value="strings" className="space-y-4"><StringMarkingTabV8 project={projectWithBestStringLayout} onUpdate={saveProject} selectedProduct={selectedPanelProduct} /><InverterFullSummary project={projectWithBestStringLayout} products={products} /></TabsContent>
       <TabsContent value="battery"><BatteryTab project={project} onUpdate={saveProject} /></TabsContent>
       <TabsContent value="products"><ProductSelectionTab project={project} onUpdate={saveProject} /></TabsContent>
       <TabsContent value="solar"><SolarDataPanelV2 project={project} onUpdate={saveProject} /></TabsContent>
-      <TabsContent value="singleline"><AutoSingleLineSchemaTab project={project} onUpdate={saveProject} products={products} /></TabsContent>
+      <TabsContent value="singleline"><AutoSingleLineSchemaTab project={projectWithBestStringLayout} onUpdate={saveProject} products={products} /></TabsContent>
       <TabsContent value="mounting" className="space-y-4"><SolarRoofPlannerV2 project={project} onUpdate={saveProject} /><MountingSystemCalculator project={project} onUpdate={saveProject} /></TabsContent>
     </Tabs>
   </div>;
