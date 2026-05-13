@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,9 +10,22 @@ import ProductVisual from '@/components/products/ProductVisual';
 const categoryLabels = { solpanel: 'Solpanel', batteri: 'Batteri', vaxelriktare: 'Växelriktare', optimerare: 'Optimerare', kabel: 'Kabel', montagesystem: 'Montagesystem', ovrigt: 'Övrigt' };
 const categoryOrder = ['solpanel', 'vaxelriktare', 'batteri', 'optimerare', 'montagesystem', 'kabel', 'ovrigt'];
 
+function normalizeSelectedProducts(items) {
+  return Array.isArray(items) ? items.map(item => ({
+    product_id: item.product_id,
+    product_name: item.product_name,
+    quantity: Number(item.quantity) || 1,
+    unit_price: Number(item.unit_price) || 0,
+  })).filter(item => item.product_id) : [];
+}
+
 export default function ProductSelectionTab({ project, onUpdate }) {
-  const [selectedProducts, setSelectedProducts] = useState(project.selected_products || []);
+  const [selectedProducts, setSelectedProducts] = useState(() => normalizeSelectedProducts(project.selected_products));
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setSelectedProducts(normalizeSelectedProducts(project.selected_products));
+  }, [project?.id, project?.selected_products]);
 
   const { data: products = [] } = useQuery({
     queryKey: ['products'],
@@ -23,14 +36,14 @@ export default function ProductSelectionTab({ project, onUpdate }) {
     const existing = selectedProducts.find(sp => sp.product_id === product.id);
     if (existing) {
       setSelectedProducts(prev => prev.map(sp =>
-        sp.product_id === product.id ? { ...sp, quantity: sp.quantity + 1 } : sp
+        sp.product_id === product.id ? { ...sp, quantity: sp.quantity + 1, unit_price: Number(product.price) || sp.unit_price || 0, product_name: product.name } : sp
       ));
     } else {
       setSelectedProducts(prev => [...prev, {
         product_id: product.id,
         product_name: product.name,
         quantity: 1,
-        unit_price: product.price,
+        unit_price: Number(product.price) || 0,
       }]);
     }
   };
@@ -47,7 +60,7 @@ export default function ProductSelectionTab({ project, onUpdate }) {
     setSelectedProducts(prev => prev.filter(sp => sp.product_id !== productId));
   };
 
-  const totalCost = selectedProducts.reduce((sum, sp) => sum + sp.unit_price * sp.quantity, 0);
+  const totalCost = selectedProducts.reduce((sum, sp) => sum + (Number(sp.unit_price) || 0) * (Number(sp.quantity) || 0), 0);
   const groupedProducts = categoryOrder
     .map(category => ({
       category,
@@ -67,7 +80,6 @@ export default function ProductSelectionTab({ project, onUpdate }) {
 
   return (
     <div className="space-y-4">
-      {/* Selected products */}
       <Card className="border-0 shadow-sm">
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-lg">Valda produkter</CardTitle>
@@ -112,7 +124,6 @@ export default function ProductSelectionTab({ project, onUpdate }) {
         </CardContent>
       </Card>
 
-      {/* Available products */}
       <Card className="border-0 shadow-sm">
         <CardHeader>
           <CardTitle className="text-lg">Produktsortiment</CardTitle>
