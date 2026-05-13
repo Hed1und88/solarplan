@@ -1,5 +1,33 @@
 const PROJECT_BACKUP_PREFIX = 'solarplan:project-backup:';
 
+const PROJECT_SERVER_FIELDS = new Set([
+  'name',
+  'customer_name',
+  'address',
+  'status',
+  'roof_width_m',
+  'roof_height_m',
+  'roof_image_url',
+  'panel_layout_data',
+  'existing_installation_image_url',
+  'string_layout_data',
+  'battery_image_url',
+  'battery_layout_data',
+  'mounting_data',
+  'solar_data',
+  'selected_products',
+  'total_cost',
+  'notes',
+]);
+
+const JSON_STRING_FIELDS = new Set([
+  'panel_layout_data',
+  'string_layout_data',
+  'battery_layout_data',
+  'mounting_data',
+  'solar_data',
+]);
+
 function safeParseJson(raw, fallback = null) {
   try { return JSON.parse(raw || ''); } catch { return fallback; }
 }
@@ -12,6 +40,30 @@ function readLocalJson(key) {
   } catch {
     return null;
   }
+}
+
+function normalizeJsonStringField(value) {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return value;
+  return typeof value === 'string' ? value : JSON.stringify(value);
+}
+
+function normalizeProjectPatchForServer(patch = {}) {
+  const normalized = { ...(patch || {}) };
+
+  // Project schema has panel_layout_data, while the UI works with solar_roof_planner_data.
+  // Store the same payload in panel_layout_data so panel planning survives a real server save.
+  if (normalized.solar_roof_planner_data !== undefined && normalized.panel_layout_data === undefined) {
+    normalized.panel_layout_data = normalized.solar_roof_planner_data;
+  }
+
+  const serverPatch = {};
+  Object.entries(normalized).forEach(([key, value]) => {
+    if (!PROJECT_SERVER_FIELDS.has(key) || value === undefined) return;
+    serverPatch[key] = JSON_STRING_FIELDS.has(key) ? normalizeJsonStringField(value) : value;
+  });
+
+  return serverPatch;
 }
 
 function countPanelsInSolarRoof(raw) {
@@ -160,21 +212,29 @@ export async function fetchProjectById(base44, projectId) {
 
 export async function saveProjectPatch(base44, currentProject, patch) {
   if (!currentProject?.id) throw new Error('Projekt-id saknas. Kan inte spara.');
+
+  const serverPatch = normalizeProjectPatchForServer(patch);
   const optimisticProject = {
     ...currentProject,
-    ...patch,
+    ...(patch || {}),
+    ...serverPatch,
     updated_date: new Date().toISOString(),
   };
 
   writeProjectBackup(optimisticProject);
 
-  const updated = await base44.entities.Project.update(currentProject.id, patch);
+  let updated = null;
+  if (Object.keys(serverPatch).length > 0) {
+    updated = await base44.entities.Project.update(currentProject.id, serverPatch);
+  }
+
   const fresh = await fetchProjectById(base44, currentProject.id).catch(() => null);
   const merged = mergeProjectWithBackup({
     ...optimisticProject,
     ...(updated || {}),
     ...(fresh || {}),
-    ...patch,
+    ...(patch || {}),
+    ...serverPatch,
     id: currentProject.id,
     _last_save_ok_at: new Date().toISOString(),
   });
