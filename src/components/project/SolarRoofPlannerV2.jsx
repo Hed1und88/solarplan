@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
@@ -32,10 +32,13 @@ const baseRoof = () => ({
 });
 
 function parseProjectLayout(project) {
-  try {
-    const data = JSON.parse(project?.solar_roof_planner_data || 'null');
-    if (Array.isArray(data?.roofs) && data.roofs.length) return data.roofs;
-  } catch {}
+  const rawCandidates = [project?.solar_roof_planner_data, project?.panel_layout_data];
+  for (const raw of rawCandidates) {
+    try {
+      const data = JSON.parse(raw || 'null');
+      if (Array.isArray(data?.roofs) && data.roofs.length) return data.roofs;
+    } catch {}
+  }
 
   if (typeof window !== 'undefined' && project?.id) {
     try {
@@ -241,6 +244,14 @@ export default function SolarRoofPlannerV2({ project, onUpdate }) {
   const [selectedItem, setSelectedItem] = useState(null);
   const [dragMode, setDragMode] = useState('panel');
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const nextRoofs = parseProjectLayout(project);
+    setRoofs(nextRoofs);
+    setSelectedRoofId(current => nextRoofs.some(roof => String(roof.id) === String(current)) ? current : nextRoofs[0]?.id || '');
+    setSelectedItem(null);
+  }, [project?.id, project?.solar_roof_planner_data, project?.panel_layout_data, project?.roof_width_m, project?.roof_height_m]);
+
   const selectedRoof = roofs.find(roof => String(roof.id) === String(selectedRoofId)) || roofs[0];
   const total = useMemo(() => totals(roofs, panelProducts), [roofs, panelProducts]);
   const warnings = useMemo(() => roofs.flatMap(roof => (roof.panelGroups || []).map(group => ({ roof, group, size: groupSize(group, roof, panelProducts) })).filter(({ roof, group, size }) => n(group.xM) + size.w > n(roof.widthM) || n(group.yM) + size.h > n(roof.roofFallM))), [roofs, panelProducts]);
@@ -316,14 +327,14 @@ export default function SolarRoofPlannerV2({ project, onUpdate }) {
 
   const save = async () => {
     setSaving(true);
-    const payload = { version: 9, scaleType: 'meter', railMode: 'per-panel', roofs };
+    const payload = { version: 9, scaleType: 'meter', railMode: 'per-panel', roofs, savedAt: new Date().toISOString() };
     try {
       if (typeof window !== 'undefined' && project?.id) window.localStorage.setItem(`solarplan:project:${project.id}:solar_roof_planner_data`, JSON.stringify(payload));
       await onUpdate?.({
         solar_roof_planner_data: JSON.stringify(payload),
         roof_width_m: roofs[0]?.widthM || '',
         roof_height_m: roofs[0]?.roofFallM || '',
-        panel_layout_data: JSON.stringify({ version: 9, source: 'solar_roof_planner_data', roofs }),
+        panel_layout_data: JSON.stringify(payload),
       });
     } finally {
       setSaving(false);
