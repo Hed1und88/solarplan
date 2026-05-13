@@ -22,6 +22,35 @@ import { fetchProjectById, mergeProjectWithBackup, saveProjectPatch, writeProjec
 const statusLabels = { planering: 'Planering', projektering: 'Projektering', offert: 'Offert', installation: 'Installation', klart: 'Klart' };
 const statusColors = { planering: 'bg-blue-100 text-blue-700', projektering: 'bg-amber-100 text-amber-700', offert: 'bg-purple-100 text-purple-700', installation: 'bg-orange-100 text-orange-700', klart: 'bg-green-100 text-green-700' };
 
+const PROJECT_SAVE_FIELDS = [
+  'name',
+  'customer_name',
+  'address',
+  'status',
+  'roof_width_m',
+  'roof_height_m',
+  'roof_image_url',
+  'panel_layout_data',
+  'solar_roof_planner_data',
+  'existing_installation_image_url',
+  'string_layout_data',
+  'battery_image_url',
+  'battery_layout_data',
+  'mounting_data',
+  'solar_data',
+  'selected_products',
+  'total_cost',
+  'notes',
+];
+
+function buildFullProjectSavePatch(project) {
+  if (!project) return {};
+  return PROJECT_SAVE_FIELDS.reduce((patch, field) => {
+    if (project[field] !== undefined) patch[field] = project[field];
+    return patch;
+  }, {});
+}
+
 export default function ProjectDetail() {
   const { id } = useParams();
   const queryClient = useQueryClient();
@@ -36,7 +65,7 @@ export default function ProjectDetail() {
     const merged = mergeProjectWithBackup(serverProject);
     setWorkingProject(merged);
     writeProjectBackup(merged);
-  }, [serverProject?.id, serverProject?.updated_date, serverProject?.updated_at, serverProject?.solar_roof_planner_data, serverProject?.string_layout_data, serverProject?.battery_layout_data]);
+  }, [serverProject?.id, serverProject?.updated_date, serverProject?.updated_at, serverProject?.panel_layout_data, serverProject?.string_layout_data, serverProject?.battery_layout_data, serverProject?.mounting_data, serverProject?.solar_data, serverProject?.selected_products, serverProject?.total_cost, serverProject?.notes]);
 
   const updateMutation = useMutation({
     mutationFn: data => saveProjectPatch(base44, workingProject || serverProject, data),
@@ -63,10 +92,11 @@ export default function ProjectDetail() {
 
   const saveProject = data => updateMutation.mutateAsync(data || {});
   const project = workingProject || mergeProjectWithBackup(serverProject);
+  const saveEntireProject = () => saveProject(buildFullProjectSavePatch(project));
 
   const selectedPanelProduct = (() => {
     try {
-      const planner = JSON.parse(project?.solar_roof_planner_data || '{}');
+      const planner = JSON.parse(project?.solar_roof_planner_data || project?.panel_layout_data || '{}');
       const pid = planner?.roofs?.find(roof => roof.panelProductId)?.panelProductId;
       if (pid) return products.find(p => p.id === pid) || null;
     } catch {}
@@ -85,7 +115,7 @@ export default function ProjectDetail() {
         {saveMessage && <p className="mt-2 text-xs text-muted-foreground">{saveMessage}</p>}
       </div>
       <div className="flex items-center gap-2 flex-wrap">
-        <Button onClick={() => saveProject({ notes: project.notes || '' })} disabled={updateMutation.isPending} className="gap-2"><Save className="w-4 h-4" />{updateMutation.isPending ? 'Sparar...' : 'Spara projekt'}</Button>
+        <Button onClick={saveEntireProject} disabled={updateMutation.isPending} className="gap-2"><Save className="w-4 h-4" />{updateMutation.isPending ? 'Sparar...' : 'Spara allt'}</Button>
         {project.status === 'projektering' && <Button onClick={() => updateMutation.mutate({ status: 'offert' })} className="gap-2 bg-purple-600 hover:bg-purple-700 text-white">Skicka som offert</Button>}
         <ProjectPDFExport project={project} products={products} />
       </div>
