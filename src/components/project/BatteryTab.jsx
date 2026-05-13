@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,13 +8,25 @@ import { Badge } from '@/components/ui/badge';
 import { Plus, Trash2, Save, Battery } from 'lucide-react';
 import ImageCanvas from './ImageCanvas';
 
+function parseBatteryLayout(raw) {
+  try {
+    const parsed = JSON.parse(raw || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 export default function BatteryTab({ project, onUpdate }) {
   const [imageUrl, setImageUrl] = useState(project.battery_image_url || '');
-  const [batteries, setBatteries] = useState(() => {
-    try { return JSON.parse(project.battery_layout_data || '[]'); } catch { return []; }
-  });
+  const [batteries, setBatteries] = useState(() => parseBatteryLayout(project.battery_layout_data));
   const [selectedBattery, setSelectedBattery] = useState('');
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setImageUrl(project.battery_image_url || '');
+    setBatteries(parseBatteryLayout(project.battery_layout_data));
+  }, [project?.id, project?.battery_image_url, project?.battery_layout_data]);
 
   const { data: products = [] } = useQuery({
     queryKey: ['products-batteries'],
