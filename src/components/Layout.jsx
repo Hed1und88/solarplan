@@ -2,12 +2,12 @@ import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, FolderOpen, Package, Settings, ChevronLeft, Sun } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const ROOT_ROUTES = ['/', '/projects', '/products', '/settings', '/solar-shadow'];
+const ROOT_ROUTES = ['/', '/projects', '/products', '/settings', '/solar-shadow', '/solarplan-3d-projektering'];
 
 const navItems = [
   { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { path: '/projects', icon: FolderOpen, label: 'Projekt' },
-  { path: '/solar-shadow', icon: Sun, label: '3D Solanalys' },
+  { path: '/solarplan-3d-projektering', icon: Sun, label: '3D Projektering' },
   { path: '/products', icon: Package, label: 'Produkter' },
   { path: '/settings', icon: Settings, label: 'Inställningar' },
 ];

@@ -34,6 +34,7 @@ const AuthenticatedApp = () => {
         <Route path="/solar-shadow" element={<SolarShadowAnalysis />} />
         <Route path="/solanalys" element={<SolarShadowAnalysis />} />
         <Route path="/3d-solanalys" element={<SolarShadowAnalysis />} />
+        <Route path="/solarplan-3d-projektering" element={<SolarShadowAnalysis />} />
         <Route path="/products" element={<Products />} />
         <Route path="/settings" element={<Settings />} />
       </Route>

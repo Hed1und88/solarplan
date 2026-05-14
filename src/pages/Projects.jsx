@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
-import { Plus, Sun, MapPin, User, Calendar, ArrowRight } from 'lucide-react';
+import { Plus, Sun, MapPin, User, ArrowRight } from 'lucide-react';
 import NewProjectModal from '@/components/projects/NewProjectModal';
 
 const statusConfig = {

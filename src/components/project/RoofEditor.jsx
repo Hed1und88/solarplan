@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { X, Minus, Plus, RotateCcw, Trash2, ZoomIn, RotateCw, Info } from 'lucide-react';
+import { X, Trash2, Info } from 'lucide-react';
 
 // ── Solar panel SVG ──────────────────────────────────────────────────────────
 function SolarPanelSVG({ isSelected }) {

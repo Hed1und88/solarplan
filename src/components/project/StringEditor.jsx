@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Upload, Loader2, Trash2, Info, Palette } from 'lucide-react';
+import { Upload, Loader2, Trash2, Info } from 'lucide-react';
 
 const STRING_COLORS = [
   { label: 'Röd', value: '#ef4444' },

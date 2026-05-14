@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { AlertTriangle, CheckCircle2, Cpu, Loader2, PanelTop, RefreshCw, Sun, CloudRain, Zap, Info } from 'lucide-react';
 
 const WEATHER_FACTORS = {

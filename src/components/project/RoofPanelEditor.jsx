@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Upload, Camera, Trash2, Loader2, ZoomIn, ZoomOut, RotateCcw, Info } from 'lucide-react';
+import { Upload, Trash2, Loader2, Info } from 'lucide-react';
 
 export default function RoofPanelEditor({ project, onUpdate }) {
   const [uploading, setUploading] = useState(false);
