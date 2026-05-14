@@ -47,10 +47,7 @@ const readStoredProject = () => {
 
 const writeStoredProject = (project) => {
   if (!canUseBrowserStorage() || !project) return;
-  const updated = {
-    ...project,
-    updatedAt: new Date().toISOString(),
-  };
+  const updated = { ...project, updatedAt: new Date().toISOString() };
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 1, project: updated }));
 };
 
@@ -65,31 +62,14 @@ const readAddressFromVisibleForm = () => {
 
 const fetchJson = async (url, options = {}) => {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), options.timeoutMs || 15000);
+  const timeout = window.setTimeout(() => controller.abort(), options.timeoutMs || 12000);
   try {
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: options.headers || {},
-      signal: controller.signal,
-    });
+    const response = await fetch(url, { method: 'GET', signal: controller.signal });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     return await response.json();
   } finally {
     window.clearTimeout(timeout);
   }
-};
-
-const fetchJsonViaAllOrigins = async (targetUrl) => fetchJson(
-  `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
-  { timeoutMs: 20000 }
-);
-
-const normalizeAspectForPVGIS = (azimuthDeg = 180) => {
-  const normalized = ((Number(azimuthDeg) % 360) + 360) % 360;
-  let aspect = normalized - 180;
-  if (aspect > 180) aspect -= 360;
-  if (aspect < -180) aspect += 360;
-  return round(aspect, 0);
 };
 
 export const createDefaultLocationData = (overrides = {}) => ({
@@ -102,7 +82,7 @@ export const createDefaultLocationData = (overrides = {}) => ({
     geocoding: { status: 'manual', message: 'Manuell / Ej ansluten', ...(overrides.sources?.geocoding || {}) },
     map: { status: 'manual', message: 'Manuell / Ej ansluten', ...(overrides.sources?.map || {}) },
     elevation: { status: 'manual', message: 'Ej ansluten', ...(overrides.sources?.elevation || {}) },
-    solarIrradiance: { status: 'manual', message: 'Manuell / Ej ansluten', ...(overrides.sources?.solarIrradiance || {}) },
+    solarIrradiance: { status: 'manual', message: 'Indikativ fallback / Ej PVGIS', ...(overrides.sources?.solarIrradiance || {}) },
     weather: { status: 'manual', message: 'Manuell / Ej ansluten', ...(overrides.sources?.weather || {}) },
     climateLoad: { status: 'manual', message: 'Manuell kontroll krävs', ...(overrides.sources?.climateLoad || {}) },
   },
@@ -126,20 +106,6 @@ export const createDefaultLocationData = (overrides = {}) => ({
   },
 });
 
-const monthlyFromPvgis = (pvgis, peakPower = 1) => {
-  const monthlyRows = pvgis?.outputs?.monthly?.fixed || [];
-  return monthlyRows.map((row) => {
-    const monthlyKwh = safeNumber(row?.E_m, 0) || 0;
-    return round(monthlyKwh / Math.max(0.1, peakPower), 1);
-  });
-};
-
-const annualFromPvgis = (pvgis, peakPower = 1) => {
-  const total = safeNumber(pvgis?.outputs?.totals?.fixed?.E_y, null)
-    ?? (pvgis?.outputs?.monthly?.fixed || []).reduce((sum, row) => sum + (safeNumber(row?.E_m, 0) || 0), 0);
-  return total ? round(total / Math.max(0.1, peakPower), 0) : null;
-};
-
 export const manualStatus = (label) => statusRow(label);
 
 export const geocodeAddress = async (address) => {
@@ -154,12 +120,12 @@ export const geocodeAddress = async (address) => {
       countrycodes: 'se',
       q: query,
     });
-    const data = await fetchJson(`https://nominatim.openstreetmap.org/search?${params.toString()}`, { timeoutMs: 12000 });
+    const data = await fetchJson(`https://nominatim.openstreetmap.org/search?${params.toString()}`);
     const first = Array.isArray(data) ? data[0] : null;
     const latitude = safeNumber(first?.lat, null);
     const longitude = safeNumber(first?.lon, null);
     if (latitude === null || longitude === null) {
-      return result(false, 'geocoding', null, 'Adress kunde inte geokodas automatiskt. Kontrollera adressen eller ange koordinater manuellt.');
+      return result(false, 'geocoding', null, 'Adress kunde inte geokodas automatiskt. Kontrollera adressen.');
     }
     return result(true, 'nominatim-geocoding', {
       latitude,
@@ -168,43 +134,39 @@ export const geocodeAddress = async (address) => {
       raw: first,
     }, 'Adress/geokodning ansluten.');
   } catch (error) {
-    return result(false, 'geocoding', { error: String(error?.message || error) }, 'Adress kunde inte geokodas automatiskt. Kontrollera adressen eller ange koordinater manuellt.');
+    return result(false, 'geocoding', { error: String(error?.message || error) }, 'Adress kunde inte geokodas automatiskt. Kontrollera adressen.');
   }
 };
 
-export const fetchPVGISData = async ({ latitude, longitude, installedKwp = 1, roofPitchDeg = 30, azimuthDeg = 180 }) => {
+const calculateIndicativeSpecificYield = ({ latitude, roofPitchDeg = 30, azimuthDeg = 180 }) => {
+  const lat = safeNumber(latitude, 59);
+  const pitch = safeNumber(roofPitchDeg, 30);
+  const azimuth = ((safeNumber(azimuthDeg, 180) % 360) + 360) % 360;
+
+  const latitudeFactor = Math.max(0.78, Math.min(1.06, 1 - ((lat - 55) * 0.025)));
+  const pitchFactor = Math.max(0.86, 1 - (Math.abs(pitch - 35) * 0.006));
+  const southDeviation = Math.min(Math.abs(azimuth - 180), 360 - Math.abs(azimuth - 180));
+  const azimuthFactor = Math.max(0.72, 1 - (southDeviation * 0.0017));
+  const baseSwedenYield = 980;
+
+  return Math.max(650, Math.min(1050, round(baseSwedenYield * latitudeFactor * pitchFactor * azimuthFactor, 0)));
+};
+
+const monthlyDistribution = [0.02, 0.04, 0.08, 0.11, 0.13, 0.14, 0.14, 0.12, 0.09, 0.06, 0.04, 0.03];
+
+export const fetchPVGISData = async ({ latitude, roofPitchDeg = 30, azimuthDeg = 180 }) => {
   const lat = safeNumber(latitude, null);
-  const lon = safeNumber(longitude, null);
-  if (lat === null || lon === null) return result(false, 'pvgis', null, 'PVGIS kräver latitud och longitud.');
+  if (lat === null) return result(false, 'solar-fallback', null, 'Solberäkning kräver latitud.');
 
-  const peakPower = Math.max(0.1, safeNumber(installedKwp, 1) || 1);
-  const params = new URLSearchParams({
-    lat: String(round(lat, 6)),
-    lon: String(round(lon, 6)),
-    peakpower: String(peakPower),
-    loss: '14',
-    angle: String(Math.max(0, safeNumber(roofPitchDeg, 30) || 30)),
-    aspect: String(normalizeAspectForPVGIS(azimuthDeg)),
-    outputformat: 'json',
-    browser: '0',
-  });
-  const targetUrl = `https://re.jrc.ec.europa.eu/api/v5_3/PVcalc?${params.toString()}`;
-
-  try {
-    const data = await fetchJsonViaAllOrigins(targetUrl);
-    const annualKwhPerKwp = annualFromPvgis(data, peakPower);
-    const monthlyKwhPerKwp = monthlyFromPvgis(data, peakPower);
-    if (!annualKwhPerKwp) {
-      return result(false, 'pvgis', { raw: data }, 'PVGIS svarade men produktionen kunde inte tolkas. Manuell standard behålls.');
-    }
-    return result(true, 'pvgis-cors-proxy', {
-      annualKwhPerKwp,
-      monthlyKwhPerKwp,
-      raw: data,
-    }, `Solinstrålning ansluten via PVGIS: ${annualKwhPerKwp} kWh/kWp/år.`);
-  } catch (error) {
-    return result(false, 'pvgis', { error: String(error?.message || error) }, 'PVGIS kunde inte hämtas via webbläsarfallback. Manuell standard 900 kWh/kWp/år behålls.');
-  }
+  const annualKwhPerKwp = calculateIndicativeSpecificYield({ latitude: lat, roofPitchDeg, azimuthDeg });
+  return result(true, 'indicative-solar-fallback', {
+    annualKwhPerKwp,
+    monthlyKwhPerKwp: monthlyDistribution.map((share) => round(annualKwhPerKwp * share, 1)),
+    raw: {
+      source: 'SolarPlan indikativ svensk fallback',
+      note: 'PVGIS direktanrop är avstängt i frontend eftersom Base44-preview/proxy blockerar externa CORS-anrop.',
+    },
+  }, `Solinstrålning beräknad indikativt: ${annualKwhPerKwp} kWh/kWp/år.`, 'connected');
 };
 
 export const fetchSMHIWeather = async ({ latitude, longitude }) => {
@@ -219,13 +181,13 @@ export const fetchSMHIWeather = async ({ latitude, longitude }) => {
       current: 'temperature_2m,cloud_cover,precipitation',
       timezone: 'Europe/Stockholm',
     });
-    const data = await fetchJson(`https://api.open-meteo.com/v1/forecast?${params.toString()}`, { timeoutMs: 12000 });
+    const data = await fetchJson(`https://api.open-meteo.com/v1/forecast?${params.toString()}`);
     return result(true, 'open-meteo-weather', {
       temperatureC: safeNumber(data?.current?.temperature_2m, null),
       cloudCoverPercent: safeNumber(data?.current?.cloud_cover, null),
       precipitation: safeNumber(data?.current?.precipitation, null),
       raw: data,
-    }, 'Väderdata ansluten via webbläsarsäker fallback.');
+    }, 'Väderdata ansluten via väderfallback.');
   } catch (error) {
     return result(false, 'weather', { error: String(error?.message || error) }, 'Väderdata kunde inte hämtas. Väderfält får hanteras manuellt.');
   }
@@ -245,11 +207,7 @@ export const buildLocationDataFromResults = ({ previous = {}, address = '', manu
   return createDefaultLocationData({
     ...base,
     status: successCount >= 3 ? 'success' : successCount > 0 ? 'partial' : 'error',
-    message: successCount >= 3
-      ? 'Platsdata hämtad. Kontrollera statusraderna.'
-      : successCount > 0
-        ? 'Platsdata delvis hämtad. Kontrollera statusraderna.'
-        : 'Platsdata kunde inte hämtas automatiskt. Kontrollera adressen eller ange koordinater manuellt.',
+    message: successCount >= 3 ? 'Platsdata hämtad. Kontrollera statusraderna.' : successCount > 0 ? 'Platsdata delvis hämtad. Kontrollera statusraderna.' : 'Platsdata kunde inte hämtas automatiskt. Kontrollera adressen.',
     latitude,
     longitude,
     geocodedAddress,
@@ -264,8 +222,8 @@ export const buildLocationDataFromResults = ({ previous = {}, address = '', manu
       },
       elevation: { status: 'manual', message: 'Ej ansluten' },
       solarIrradiance: {
-        status: pvgis?.ok ? 'connected' : 'error',
-        message: pvgis?.ok ? 'Ansluten via PVGIS' : 'Fel / Manuell',
+        status: pvgis?.ok ? 'connected' : 'manual',
+        message: pvgis?.ok ? 'Indikativ fallback / Ej PVGIS' : 'Manuell',
       },
       weather: {
         status: smhi?.ok ? 'connected' : 'manual',
@@ -291,21 +249,13 @@ export const fetchLiveSiteData = async ({ address, latitude, longitude, installe
   const manualLatitude = safeNumber(latitude, null);
   const manualLongitude = safeNumber(longitude, null);
   const geocoding = manualLatitude !== null && manualLongitude !== null
-    ? result(true, 'manual-coordinates', {
-      latitude: manualLatitude,
-      longitude: manualLongitude,
-      geocodedAddress: address || `${manualLatitude}, ${manualLongitude}`,
-    }, 'Manuella koordinater används.')
+    ? result(true, 'manual-coordinates', { latitude: manualLatitude, longitude: manualLongitude, geocodedAddress: address || `${manualLatitude}, ${manualLongitude}` }, 'Manuella koordinater används.')
     : await geocodeAddress(address);
 
   const lat = safeNumber(geocoding?.data?.latitude, manualLatitude);
   const lon = safeNumber(geocoding?.data?.longitude, manualLongitude);
-  const pvgis = lat !== null && lon !== null
-    ? await fetchPVGISData({ latitude: lat, longitude: lon, installedKwp, roofPitchDeg, azimuthDeg })
-    : result(false, 'pvgis', null, 'PVGIS hoppades över eftersom koordinater saknas.');
-  const smhi = lat !== null && lon !== null
-    ? await fetchSMHIWeather({ latitude: lat, longitude: lon })
-    : result(false, 'weather', null, 'Väderdata hoppades över eftersom koordinater saknas.');
+  const pvgis = lat !== null ? await fetchPVGISData({ latitude: lat, installedKwp, roofPitchDeg, azimuthDeg }) : result(false, 'solar-fallback', null, 'Solberäkning hoppades över eftersom koordinater saknas.');
+  const smhi = lat !== null && lon !== null ? await fetchSMHIWeather({ latitude: lat, longitude: lon }) : result(false, 'weather', null, 'Väderdata hoppades över eftersom koordinater saknas.');
 
   return buildLocationDataFromResults({ previous, address, manualLatitude, manualLongitude, geocoding, pvgis, smhi });
 };
@@ -377,50 +327,15 @@ export const getManualSiteDataNotice = () => {
       window.setTimeout(() => window.location.reload(), 250);
     });
 
-  return 'Hämtar platsdata utan Base44 solarData för att undvika serverfelet. Sidan uppdateras automatiskt.';
+  return 'Hämtar platsdata. PVGIS direktanrop är avstängt eftersom Base44-preview blockerar CORS. Sidan uppdateras automatiskt.';
 };
 
-export const manualGeocodingAdapter = {
-  name: 'Nominatim geocoding',
-  getStatus: () => statusRow('Adress/geokodning'),
-  geocodeAddress,
-};
-
-export const manualMapImageryAdapter = {
-  name: 'Coordinate map placeholder',
-  getStatus: () => statusRow('Karta/flygbild', 'manual', 'Karta förberedd / Flygbild ej ansluten'),
-  async getImagery(site) {
-    return result(true, 'map-placeholder', { site, imageryUrl: null }, 'Karta kan visas med koordinater. Flygbild/ortofoto är inte ansluten ännu.', 'manual');
-  },
-};
-
-export const manualElevationAdapter = {
-  name: 'Manual elevation',
-  getStatus: () => statusRow('Höjddata', 'manual', 'Ej ansluten'),
-  async getElevation(site) {
-    return result(true, 'manual-elevation', { site, elevationM: null }, 'Höjddata är inte ansluten ännu.', 'manual');
-  },
-};
-
-export const manualSolarIrradianceAdapter = {
-  name: 'PVGIS via browser-safe fallback',
-  getStatus: () => statusRow('Solinstrålning'),
-  getProductionEstimate: fetchPVGISData,
-};
-
-export const manualWeatherAdapter = {
-  name: 'Weather fallback',
-  getStatus: () => statusRow('Väderdata'),
-  getWeatherScenario: fetchSMHIWeather,
-};
-
-export const manualClimateLoadAdapter = {
-  name: 'Boverket/EKS manual climate load',
-  getStatus: () => statusRow('Snö/vindlast', 'manual', 'Manuell kontroll krävs'),
-  async getClimateLoadData(site) {
-    return result(true, 'boverket-eks-manual', { site, snowLoad: null, windLoad: null }, 'Snö- och vindlast ska verifieras manuellt mot Boverket/EKS.', 'manual');
-  },
-};
+export const manualGeocodingAdapter = { name: 'Nominatim geocoding', getStatus: () => statusRow('Adress/geokodning'), geocodeAddress };
+export const manualMapImageryAdapter = { name: 'Coordinate map placeholder', getStatus: () => statusRow('Karta/flygbild', 'manual', 'Karta förberedd / Flygbild ej ansluten'), async getImagery(site) { return result(true, 'map-placeholder', { site, imageryUrl: null }, 'Karta kan visas med koordinater. Flygbild/ortofoto är inte ansluten ännu.', 'manual'); } };
+export const manualElevationAdapter = { name: 'Manual elevation', getStatus: () => statusRow('Höjddata', 'manual', 'Ej ansluten'), async getElevation(site) { return result(true, 'manual-elevation', { site, elevationM: null }, 'Höjddata är inte ansluten ännu.', 'manual'); } };
+export const manualSolarIrradianceAdapter = { name: 'Indicative solar fallback', getStatus: () => statusRow('Solinstrålning'), getProductionEstimate: fetchPVGISData };
+export const manualWeatherAdapter = { name: 'Weather fallback', getStatus: () => statusRow('Väderdata'), getWeatherScenario: fetchSMHIWeather };
+export const manualClimateLoadAdapter = { name: 'Boverket/EKS manual climate load', getStatus: () => statusRow('Snö/vindlast', 'manual', 'Manuell kontroll krävs'), async getClimateLoadData(site) { return result(true, 'boverket-eks-manual', { site, snowLoad: null, windLoad: null }, 'Snö- och vindlast ska verifieras manuellt mot Boverket/EKS.', 'manual'); } };
 
 export const siteDataAdapters = {
   geocoding: manualGeocodingAdapter,
