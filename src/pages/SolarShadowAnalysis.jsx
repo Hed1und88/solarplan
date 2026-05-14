@@ -1,6 +1,5 @@
-import SolarPlan3DProjektering from '@/components/project/SolarPlan3DProjektering';
+import SolarPlan3DLiveSiteDataShell from '@/components/project/SolarPlan3DLiveSiteDataShell';
 
 export default function SolarShadowAnalysis() {
-  return <SolarPlan3DProjektering />;
+  return <SolarPlan3DLiveSiteDataShell />;
 }
-
