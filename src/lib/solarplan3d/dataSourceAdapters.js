@@ -152,6 +152,14 @@ const calculateIndicativeSpecificYield = ({ latitude, roofPitchDeg = 30, azimuth
   return Math.max(650, Math.min(1050, round(baseSwedenYield * latitudeFactor * pitchFactor * azimuthFactor, 0)));
 };
 
+const estimateAmbientTemperature = ({ latitude, month = new Date().getMonth() + 1 }) => {
+  const lat = safeNumber(latitude, 59);
+  const baseMonthlyTemps = [-3, -2, 2, 7, 12, 16, 18, 17, 12, 7, 3, -1];
+  const northAdjustment = Math.max(-6, Math.min(3, (59 - lat) * 0.7));
+  const index = Math.max(0, Math.min(11, Number(month) - 1));
+  return round(baseMonthlyTemps[index] + northAdjustment, 1);
+};
+
 const monthlyDistribution = [0.02, 0.04, 0.08, 0.11, 0.13, 0.14, 0.14, 0.12, 0.09, 0.06, 0.04, 0.03];
 
 export const fetchPVGISData = async ({ latitude, roofPitchDeg = 30, azimuthDeg = 180 }) => {
@@ -164,33 +172,25 @@ export const fetchPVGISData = async ({ latitude, roofPitchDeg = 30, azimuthDeg =
     monthlyKwhPerKwp: monthlyDistribution.map((share) => round(annualKwhPerKwp * share, 1)),
     raw: {
       source: 'SolarPlan indikativ svensk fallback',
-      note: 'PVGIS direktanrop är avstängt i frontend eftersom Base44-preview/proxy blockerar externa CORS-anrop.',
+      note: 'Externa PVGIS-anrop är avstängda i frontend. Anslut riktig PVGIS via stabil Base44-serverfunktion/proxy senare.',
     },
   }, `Solinstrålning beräknad indikativt: ${annualKwhPerKwp} kWh/kWp/år.`, 'connected');
 };
 
-export const fetchSMHIWeather = async ({ latitude, longitude }) => {
+export const fetchSMHIWeather = async ({ latitude }) => {
   const lat = safeNumber(latitude, null);
-  const lon = safeNumber(longitude, null);
-  if (lat === null || lon === null) return result(false, 'weather', null, 'Väderdata kräver latitud och longitud.');
+  if (lat === null) return result(false, 'weather-fallback', null, 'Väderfallback kräver latitud.');
 
-  try {
-    const params = new URLSearchParams({
-      latitude: String(round(lat, 6)),
-      longitude: String(round(lon, 6)),
-      current: 'temperature_2m,cloud_cover,precipitation',
-      timezone: 'Europe/Stockholm',
-    });
-    const data = await fetchJson(`https://api.open-meteo.com/v1/forecast?${params.toString()}`);
-    return result(true, 'open-meteo-weather', {
-      temperatureC: safeNumber(data?.current?.temperature_2m, null),
-      cloudCoverPercent: safeNumber(data?.current?.cloud_cover, null),
-      precipitation: safeNumber(data?.current?.precipitation, null),
-      raw: data,
-    }, 'Väderdata ansluten via väderfallback.');
-  } catch (error) {
-    return result(false, 'weather', { error: String(error?.message || error) }, 'Väderdata kunde inte hämtas. Väderfält får hanteras manuellt.');
-  }
+  const temperatureC = estimateAmbientTemperature({ latitude: lat });
+  return result(true, 'indicative-weather-fallback', {
+    temperatureC,
+    cloudCoverPercent: null,
+    precipitation: null,
+    raw: {
+      source: 'SolarPlan indikativ väderfallback',
+      note: 'Externa väderanrop är avstängda i 3D-projektering för att undvika CORS/serverfel i Base44-preview.',
+    },
+  }, 'Väderdata beräknad indikativt utan externt anrop.', 'connected');
 };
 
 export const getClimateLoadManualStatus = () => result(true, 'boverket-eks-manual', {
@@ -227,7 +227,7 @@ export const buildLocationDataFromResults = ({ previous = {}, address = '', manu
       },
       weather: {
         status: smhi?.ok ? 'connected' : 'manual',
-        message: smhi?.ok ? 'Ansluten via väderfallback' : 'Manuell / Ej ansluten',
+        message: smhi?.ok ? 'Indikativ fallback / Ej externt väder' : 'Manuell / Ej ansluten',
       },
       climateLoad: { status: 'manual', message: 'Manuell kontroll krävs' },
     },
@@ -255,7 +255,7 @@ export const fetchLiveSiteData = async ({ address, latitude, longitude, installe
   const lat = safeNumber(geocoding?.data?.latitude, manualLatitude);
   const lon = safeNumber(geocoding?.data?.longitude, manualLongitude);
   const pvgis = lat !== null ? await fetchPVGISData({ latitude: lat, installedKwp, roofPitchDeg, azimuthDeg }) : result(false, 'solar-fallback', null, 'Solberäkning hoppades över eftersom koordinater saknas.');
-  const smhi = lat !== null && lon !== null ? await fetchSMHIWeather({ latitude: lat, longitude: lon }) : result(false, 'weather', null, 'Väderdata hoppades över eftersom koordinater saknas.');
+  const smhi = lat !== null ? await fetchSMHIWeather({ latitude: lat, longitude: lon }) : result(false, 'weather', null, 'Väderdata hoppades över eftersom koordinater saknas.');
 
   return buildLocationDataFromResults({ previous, address, manualLatitude, manualLongitude, geocoding, pvgis, smhi });
 };
@@ -327,7 +327,7 @@ export const getManualSiteDataNotice = () => {
       window.setTimeout(() => window.location.reload(), 250);
     });
 
-  return 'Hämtar platsdata. PVGIS direktanrop är avstängt eftersom Base44-preview blockerar CORS. Sidan uppdateras automatiskt.';
+  return 'Hämtar platsdata. Externa PVGIS/SMHI-anrop är avstängda i frontend för att undvika CORS/serverfel. Sidan uppdateras automatiskt.';
 };
 
 export const manualGeocodingAdapter = { name: 'Nominatim geocoding', getStatus: () => statusRow('Adress/geokodning'), geocodeAddress };
