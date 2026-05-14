@@ -1,3 +1,5 @@
+import { createDefaultLocationData } from './dataSourceAdapters';
+
 const now = () => new Date().toISOString();
 
 export const SOLARPLAN_3D_STORAGE_VERSION = 1;
@@ -87,6 +89,7 @@ export const createSolarProject3D = (overrides = {}) => {
     updatedAt: overrides.updatedAt || timestamp,
     building,
     roofSurfaces,
+    locationData: createDefaultLocationData(overrides.locationData || {}),
     obstacles: overrides.obstacles || [],
     panelModel: {
       id: 'panel-standard',
@@ -233,6 +236,7 @@ export const normalizeSolarProject3D = (project) => {
     ...project,
     building: project.building || {},
     roofSurfaces: Array.isArray(project.roofSurfaces) ? project.roofSurfaces : undefined,
+    locationData: project.locationData || {},
     obstacles: Array.isArray(project.obstacles) ? project.obstacles : undefined,
     panelModel: project.panelModel || {},
     panelGroups: Array.isArray(project.panelGroups) ? project.panelGroups : undefined,
