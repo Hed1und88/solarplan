@@ -1,3 +1,5 @@
+const STORAGE_KEY = 'solarplan:solarplan-3d-projektering:latest';
+
 const safeNumber = (value, fallback = null) => {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
@@ -17,6 +19,39 @@ const statusRow = (label, status = 'manual', message = 'Manuell / Ej ansluten') 
   statusText: message,
   message,
 });
+
+const canUseBrowserStorage = () => typeof window !== 'undefined' && Boolean(window.localStorage);
+
+const readStoredProject = () => {
+  if (!canUseBrowserStorage()) return null;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed.project || parsed;
+  } catch (error) {
+    console.warn('Could not read stored SolarPlan 3D project', error);
+    return null;
+  }
+};
+
+const writeStoredProject = (project) => {
+  if (!canUseBrowserStorage() || !project) return;
+  const updated = {
+    ...project,
+    updatedAt: new Date().toISOString(),
+  };
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 1, project: updated }));
+};
+
+const readAddressFromVisibleForm = () => {
+  if (typeof document === 'undefined') return '';
+  const inputs = Array.from(document.querySelectorAll('input'));
+  const candidate = inputs
+    .map((input) => String(input.value || '').trim())
+    .find((value) => /\d/.test(value) && /[a-zåäö]/i.test(value) && !value.toLowerCase().includes('nytt 3d-projekt'));
+  return candidate || '';
+};
 
 export const createDefaultLocationData = (overrides = {}) => ({
   status: overrides.status || 'idle',
@@ -87,11 +122,6 @@ const normalizeAspectForPVGIS = (azimuthDeg = 180) => {
 
 export const manualStatus = (label) => statusRow(label);
 
-/**
- * Geocode an address using OpenStreetMap Nominatim's public search endpoint.
- * This uses no API key. If the browser or provider blocks the request, callers
- * must fall back to manual latitude/longitude entry.
- */
 export const geocodeAddress = async (address) => {
   const query = String(address || '').trim();
   if (!query) {
@@ -126,10 +156,6 @@ export const geocodeAddress = async (address) => {
   }
 };
 
-/**
- * Fetch PVGIS production data for 1 kWp at the supplied coordinate.
- * PVGIS does not require an API key for this endpoint.
- */
 export const fetchPVGISData = async ({ latitude, longitude, installedKwp = 1, roofPitchDeg = 30, azimuthDeg = 180 }) => {
   const lat = safeNumber(latitude, null);
   const lon = safeNumber(longitude, null);
@@ -171,9 +197,6 @@ export const fetchPVGISData = async ({ latitude, longitude, installedKwp = 1, ro
   }
 };
 
-/**
- * Fetch an indicative weather forecast from SMHI's open PMP endpoint.
- */
 export const fetchSMHIWeather = async ({ latitude, longitude }) => {
   const lat = safeNumber(latitude, null);
   const lon = safeNumber(longitude, null);
@@ -299,8 +322,44 @@ export const fetchLiveSiteData = async ({ address, latitude, longitude, installe
   return buildLocationDataFromResults({ previous, address, manualLatitude, manualLongitude, geocoding, pvgis, smhi });
 };
 
+const fetchAndPersistFromStoredProject = async () => {
+  const stored = readStoredProject() || {};
+  const address = stored.address || readAddressFromVisibleForm();
+  const currentLocation = createDefaultLocationData(stored.locationData || {});
+
+  const nextLocationData = await fetchLiveSiteData({
+    address,
+    latitude: currentLocation.latitude,
+    longitude: currentLocation.longitude,
+    installedKwp: stored.productionEstimate?.installedKwp || 1,
+    roofPitchDeg: stored.building?.roofPitchDeg || 30,
+    azimuthDeg: stored.building?.azimuthDeg || 180,
+    previous: currentLocation,
+  });
+
+  const nextProject = {
+    ...stored,
+    address: address || stored.address || '',
+    locationData: nextLocationData,
+    productionEstimate: {
+      ...(stored.productionEstimate || {}),
+      specificYieldKwhPerKwpYear: nextLocationData.pvgis?.annualKwhPerKwp || stored.productionEstimate?.specificYieldKwhPerKwpYear || 900,
+      pvgisSpecificYieldKwhPerKwpYear: nextLocationData.pvgis?.annualKwhPerKwp || null,
+      pvgisMonthlyKwhPerKwp: nextLocationData.pvgis?.monthlyKwhPerKwp || [],
+    },
+    weatherScenario: {
+      ...(stored.weatherScenario || {}),
+      ambientTempC: nextLocationData.smhi?.temperatureC ?? stored.weatherScenario?.ambientTempC ?? 20,
+    },
+  };
+
+  writeStoredProject(nextProject);
+  return nextLocationData;
+};
+
 export const getSiteDataAdapterStatuses = (locationData = null) => {
-  const data = locationData ? createDefaultLocationData(locationData) : createDefaultLocationData();
+  const stored = !locationData ? readStoredProject() : null;
+  const data = createDefaultLocationData(locationData || stored?.locationData || {});
   return [
     statusRow('Adress/geokodning', data.sources.geocoding.status, data.sources.geocoding.message),
     statusRow('Karta/flygbild', data.sources.map.status, data.sources.map.message),
@@ -311,7 +370,30 @@ export const getSiteDataAdapterStatuses = (locationData = null) => {
   ];
 };
 
-export const getManualSiteDataNotice = () => 'Automatisk platsdata är nu ansluten för geokodning, PVGIS och SMHI där externa anrop tillåts. Snö/vindlast kräver manuell kontroll mot Boverket/EKS.';
+export const getManualSiteDataNotice = () => {
+  if (typeof window === 'undefined') {
+    return 'Platsdata kan bara hämtas i webbläsaren.';
+  }
+
+  fetchAndPersistFromStoredProject()
+    .then((locationData) => {
+      window.localStorage.setItem('solarplan:solarplan-3d-projektering:last-location-message', locationData.message || 'Platsdata hämtad.');
+      window.setTimeout(() => window.location.reload(), 250);
+    })
+    .catch((error) => {
+      const stored = readStoredProject() || {};
+      const errorLocationData = createDefaultLocationData({
+        ...(stored.locationData || {}),
+        status: 'error',
+        message: `Platsdata kunde inte hämtas automatiskt: ${error?.message || error}`,
+      });
+      writeStoredProject({ ...stored, locationData: errorLocationData });
+      window.localStorage.setItem('solarplan:solarplan-3d-projektering:last-location-message', errorLocationData.message);
+      window.setTimeout(() => window.location.reload(), 250);
+    });
+
+  return 'Hämtar platsdata från geokodning, PVGIS och SMHI... Sidan uppdateras automatiskt.';
+};
 
 export const manualGeocodingAdapter = {
   name: 'Open geocoding / manual fallback',
