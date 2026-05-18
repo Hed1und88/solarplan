@@ -16,6 +16,95 @@ const round = (value, digits = 1) => {
 
 const normalizeDeg = (value) => ((numberOr(value, 0) % 360) + 360) % 360;
 
+export const createGeo3DLayerModel = ({ locationData = {}, overrides = {} } = {}) => {
+  const footprint = locationData?.buildingFootprint || null;
+  const hasFootprint = Array.isArray(footprint?.points) && footprint.points.length >= 3;
+  const terrain = locationData?.terrain || null;
+  const hasTerrain = Array.isArray(terrain?.points) && terrain.points.length > 0;
+
+  return {
+    mode: overrides.mode || 'roof_and_ground_mount',
+    map: {
+      provider: overrides.map?.provider || 'unconfigured',
+      imageryStatus: overrides.map?.imageryStatus || 'missing_provider',
+      orthophotoStatus: overrides.map?.orthophotoStatus || 'missing_provider',
+      latitude: numberOr(locationData?.latitude, null),
+      longitude: numberOr(locationData?.longitude, null),
+      zoom: overrides.map?.zoom || 19,
+      ...(overrides.map || {}),
+    },
+    dataLayers: {
+      buildingFootprint: {
+        status: hasFootprint ? 'ready' : 'missing',
+        source: footprint?.source || '',
+        points: hasFootprint ? footprint.points : [],
+        suggestedBuilding: footprint?.suggestedBuilding || null,
+      },
+      terrainModel: {
+        status: hasTerrain ? 'ready' : 'missing',
+        source: terrain?.source || '',
+        points: hasTerrain ? terrain.points : [],
+      },
+      surfaceModel: {
+        status: overrides.dataLayers?.surfaceModel?.status || 'missing',
+        source: overrides.dataLayers?.surfaceModel?.source || '',
+        objects: overrides.dataLayers?.surfaceModel?.objects || [],
+      },
+      propertyBoundary: {
+        status: overrides.dataLayers?.propertyBoundary?.status || 'missing',
+        source: overrides.dataLayers?.propertyBoundary?.source || '',
+        points: overrides.dataLayers?.propertyBoundary?.points || [],
+      },
+    },
+    roofDesigner: {
+      mode: hasFootprint ? 'from_footprint' : 'manual_draw_or_dimensions',
+      roofPolygons: overrides.roofDesigner?.roofPolygons || [],
+      ridgeLines: overrides.roofDesigner?.ridgeLines || [],
+      manualDrawingRequired: !hasFootprint,
+    },
+    groundDesigner: {
+      mode: hasTerrain ? 'from_terrain' : 'manual_ground_area',
+      groundAreas: overrides.groundDesigner?.groundAreas || [],
+      profileLines: overrides.groundDesigner?.profileLines || [],
+      manualDrawingRequired: !hasTerrain,
+    },
+    readiness: {
+      canRenderDraft3D: true,
+      canRenderVerifiedRoof3D: hasFootprint,
+      canRenderVerifiedGroundMount: hasTerrain,
+      missing: [
+        !hasFootprint ? 'building_footprint_or_drawn_roof_polygon' : null,
+        !hasTerrain ? 'terrain_model_for_ground_mount' : null,
+        overrides.map?.imageryStatus === 'ready' ? null : 'licensed_imagery_provider',
+      ].filter(Boolean),
+    },
+  };
+};
+
+export const createGroundMountModel = (overrides = {}) => ({
+  enabled: Boolean(overrides.enabled),
+  name: overrides.name || 'Markställning 1',
+  areaPolygon: Array.isArray(overrides.areaPolygon) ? overrides.areaPolygon : [],
+  placementMode: overrides.placementMode || 'manual_polygon',
+  tiltDeg: numberOr(overrides.tiltDeg, 30),
+  azimuthDeg: normalizeDeg(overrides.azimuthDeg ?? 180),
+  rowSpacingM: numberOr(overrides.rowSpacingM, 6),
+  tableWidthM: numberOr(overrides.tableWidthM, 6),
+  tableDepthM: numberOr(overrides.tableDepthM, 2.3),
+  rows: Array.isArray(overrides.rows) ? overrides.rows : [],
+  terrain: {
+    source: overrides.terrain?.source || '',
+    averageSlopeDeg: numberOr(overrides.terrain?.averageSlopeDeg, 0),
+    maxSlopeDeg: numberOr(overrides.terrain?.maxSlopeDeg, 0),
+    elevationProfile: Array.isArray(overrides.terrain?.elevationProfile) ? overrides.terrain.elevationProfile : [],
+  },
+  constraints: {
+    minBoundaryDistanceM: numberOr(overrides.constraints?.minBoundaryDistanceM, 1),
+    minRowDistanceM: numberOr(overrides.constraints?.minRowDistanceM, 4),
+    avoidShadingObjects: overrides.constraints?.avoidShadingObjects ?? true,
+  },
+});
+
 export const deriveRoofSurfacesFromBuilding = (building = {}) => {
   const lengthM = Math.max(1, numberOr(building.lengthM, 12));
   const widthM = Math.max(1, numberOr(building.widthM, 8));
@@ -77,6 +166,7 @@ export const createSolarProject3D = (overrides = {}) => {
     ...(overrides.building || {}),
   };
   const roofSurfaces = overrides.roofSurfaces || deriveRoofSurfacesFromBuilding(building);
+  const locationData = createDefaultLocationData(overrides.locationData || {});
 
   return {
     id,
@@ -89,7 +179,9 @@ export const createSolarProject3D = (overrides = {}) => {
     updatedAt: overrides.updatedAt || timestamp,
     building,
     roofSurfaces,
-    locationData: createDefaultLocationData(overrides.locationData || {}),
+    locationData,
+    geo3D: createGeo3DLayerModel({ locationData, overrides: overrides.geo3D || {} }),
+    groundMount: createGroundMountModel(overrides.groundMount || {}),
     obstacles: overrides.obstacles || [],
     panelModel: {
       id: 'panel-standard',
@@ -237,6 +329,8 @@ export const normalizeSolarProject3D = (project) => {
     building: project.building || {},
     roofSurfaces: Array.isArray(project.roofSurfaces) ? project.roofSurfaces : undefined,
     locationData: project.locationData || {},
+    geo3D: project.geo3D || {},
+    groundMount: project.groundMount || {},
     obstacles: Array.isArray(project.obstacles) ? project.obstacles : undefined,
     panelModel: project.panelModel || {},
     panelGroups: Array.isArray(project.panelGroups) ? project.panelGroups : undefined,
