@@ -2,7 +2,6 @@
 import { useMemo } from 'react';
 
 const STORAGE_KEY = 'solarplan:solarplan-3d-projektering:latest';
-const TILE_SIZE = 256;
 const VIEW_W = 780;
 const VIEW_H = 560;
 
@@ -18,34 +17,6 @@ function readStoredProject() {
   } catch {
     return null;
   }
-}
-
-function lonLatToTile(latitude, longitude, zoom) {
-  const latRad = (latitude * Math.PI) / 180;
-  const n = 2 ** zoom;
-  const x = Math.floor(((longitude + 180) / 360) * n);
-  const y = Math.floor(((1 - Math.log(Math.tan(latRad) + (1 / Math.cos(latRad))) / Math.PI) / 2) * n);
-  return { x, y, zoom };
-}
-
-function imageryTileUrl(x, y, z) {
-  const protocol = 'https:';
-  const host = 'server.arcgisonline.com';
-  const service = 'ArcGIS/rest/services/World_Imagery/MapServer/tile';
-  return `${protocol}//${host}/${service}/${z}/${y}/${x}`;
-}
-
-function buildTileGrid(latitude, longitude, zoom = 19) {
-  const center = lonLatToTile(latitude, longitude, zoom);
-  const tiles = [];
-  for (let row = -1; row <= 1; row += 1) {
-    for (let col = -1; col <= 1; col += 1) {
-      const x = center.x + col;
-      const y = center.y + row;
-      tiles.push({ key: `${zoom}-${x}-${y}`, x, y, z: zoom, left: (col + 1) * TILE_SIZE, top: (row + 1) * TILE_SIZE, url: imageryTileUrl(x, y, zoom) });
-    }
-  }
-  return tiles;
 }
 
 function normalizeFootprint(points = []) {
@@ -143,6 +114,22 @@ function GroundMountRows({ enabled }) {
   return <g>{rows}</g>;
 }
 
+function PreviewImageryFallback({ latitude, longitude }) {
+  return (
+    <div className="absolute inset-0 overflow-hidden bg-slate-900">
+      <div className="absolute inset-[-10%] rotate-[-7deg] scale-110 opacity-95">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_35%,rgba(34,197,94,0.32),transparent_20%),radial-gradient(circle_at_70%_25%,rgba(132,204,22,0.22),transparent_18%),radial-gradient(circle_at_45%_70%,rgba(148,163,184,0.22),transparent_22%),linear-gradient(135deg,#334155,#1e293b_45%,#0f172a)]" />
+        <div className="absolute left-[8%] top-[62%] h-12 w-[95%] rotate-[-8deg] bg-slate-300/35 blur-[1px]" />
+        <div className="absolute left-[15%] top-[18%] h-[70%] w-2 rotate-[18deg] bg-slate-200/25" />
+        <div className="absolute left-[2%] top-[40%] h-[1px] w-full rotate-[6deg] bg-white/20" />
+      </div>
+      <div className="absolute left-4 top-4 rounded-md bg-slate-950/75 px-3 py-2 text-xs font-semibold text-white shadow">
+        Preview-karta · Lat {latitude.toFixed(5)} / Lon {longitude.toFixed(5)}
+      </div>
+    </div>
+  );
+}
+
 export default function Project3DBuildingPreview({ building, roofSurfaces, panelGroups = [], obstacles = [] }) {
   const storedProject = readStoredProject();
   const locationData = storedProject?.locationData || null;
@@ -151,7 +138,6 @@ export default function Project3DBuildingPreview({ building, roofSurfaces, panel
   const latitude = safeNumber(locationData?.latitude, 59.6052);
   const longitude = safeNumber(locationData?.longitude, 13.4661);
   const hasLatLon = Number.isFinite(Number(locationData?.latitude)) && Number.isFinite(Number(locationData?.longitude));
-  const tiles = useMemo(() => buildTileGrid(latitude, longitude, 19), [latitude, longitude]);
   const footprint = locationData?.buildingFootprint || null;
   const footprintPoints = normalizeFootprint(footprint?.points || []);
   const hasFootprint = Boolean(footprintPoints);
@@ -165,7 +151,7 @@ export default function Project3DBuildingPreview({ building, roofSurfaces, panel
   }, [roofSurfaces, panelGroups]);
 
   const layers = [
-    status('Flygbild / ortofoto', 'preview', 'Aktivt preview-lager via Web Mercator tiles. Byt till licensierad svensk ortofoto före produktion.'),
+    status('Flygbild / ortofoto', 'preview', 'Stabil Base44-preview utan externa tile-beroenden. Produktionsläge ska kopplas till licensierad ortofoto.'),
     status('Byggnadsfotavtryck', hasFootprint ? 'ready' : 'manual', hasFootprint ? footprint?.source || 'Hämtat fotavtryck' : 'Manuella mått nu. Nästa steg är ritad takkontur.'),
     status('DTM markmodell', geo3D?.dataLayers?.terrainModel?.status === 'ready' ? 'ready' : 'missing', 'Krävs för markställning och marklutning.'),
     status('DSM / LiDAR', geo3D?.dataLayers?.surfaceModel?.status === 'ready' ? 'ready' : 'missing', 'Krävs för träd, hinder och verklig skuggning.'),
@@ -183,11 +169,7 @@ export default function Project3DBuildingPreview({ building, roofSurfaces, panel
         </div>
 
         <div className="relative h-[620px] overflow-hidden bg-slate-950">
-          <div className="absolute left-1/2 top-1/2 h-[768px] w-[768px] -translate-x-1/2 -translate-y-1/2 rotate-[-7deg] scale-[1.18] shadow-2xl">
-            {tiles.map((tile) => <img key={tile.key} src={tile.url} alt="" draggable={false} className="absolute h-64 w-64 select-none object-cover" style={{ left: tile.left, top: tile.top }} />)}
-            <div className="absolute inset-0 bg-slate-900/10" />
-          </div>
-
+          <PreviewImageryFallback latitude={latitude} longitude={longitude} />
           <svg viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} className="absolute inset-0 z-20 h-full w-full" role="img" aria-label="SolarPlan Geo 3D projekteringsvy">
             <rect x="34" y="34" width="712" height="492" rx="12" fill="rgba(15,23,42,0.12)" stroke="rgba(125,211,252,0.75)" strokeWidth="2" />
             <text x="52" y="62" fill="#f8fafc" fontSize="14" fontWeight="700">N ↑ · {hasLatLon ? `Lat ${latitude.toFixed(6)} / Lon ${longitude.toFixed(6)}` : 'Koordinater saknas - hämta platsdata först'}</text>
@@ -201,7 +183,7 @@ export default function Project3DBuildingPreview({ building, roofSurfaces, panel
       </div>
 
       <aside className="space-y-4 rounded-xl border bg-background p-4">
-        <div><h3 className="text-base font-bold">Geo/3D lagerstatus</h3><p className="mt-1 text-sm text-muted-foreground">Funktionell Base44-vy med verkligt kartlager, takmodell, paneloverlay och datastatus.</p></div>
+        <div><h3 className="text-base font-bold">Geo/3D lagerstatus</h3><p className="mt-1 text-sm text-muted-foreground">Stabil Base44-vy med kartliknande preview, takmodell, paneloverlay och datastatus.</p></div>
         <div className="space-y-2">{layers.map((layer) => <div key={layer.label} className="rounded-lg border bg-muted/20 p-3"><div className="flex items-center justify-between gap-3"><div className="text-sm font-semibold">{layer.label}</div><StatusPill state={layer.state} /></div><div className="mt-1 text-xs text-muted-foreground">{layer.detail}</div></div>)}</div>
         <div className="grid grid-cols-2 gap-2">
           <div className="rounded-lg bg-muted p-3"><div className="text-xs text-muted-foreground">Total takyta</div><div className="text-lg font-bold">{totals.roofArea.toFixed(1)} m²</div></div>
