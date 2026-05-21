@@ -16,6 +16,85 @@ const round = (value, digits = 1) => {
 
 const normalizeDeg = (value) => ((numberOr(value, 0) % 360) + 360) % 360;
 
+const defaultPanelGroup = (roofSurfaces = []) => ({
+  id: 'panel-group-1',
+  roofSurfaceId: roofSurfaces[0]?.id || 'roof-1',
+  name: 'Panelgrupp 1',
+  orientation: 'portrait',
+  panelCount: 24,
+  rows: 3,
+  columns: 8,
+  startXM: 0.7,
+  startYM: 0.7,
+  spacingMm: 30,
+  edgeMarginMm: 300,
+  isParallelWithGroupIds: [],
+  usedAreaM2: 0,
+  panels: [],
+  panelModelId: 'panel-standard',
+});
+
+const repairPanelGroups = (panelGroups, roofSurfaces = []) => {
+  const groups = Array.isArray(panelGroups) && panelGroups.length ? panelGroups : [defaultPanelGroup(roofSurfaces)];
+  const hasVisiblePanels = groups.some((group) => numberOr(group.panelCount, 0) > 0 || (numberOr(group.rows, 0) > 0 && numberOr(group.columns, 0) > 0) || (Array.isArray(group.panels) && group.panels.length > 0));
+  if (hasVisiblePanels) return groups.map((group, index) => ({
+    ...group,
+    id: group.id || `panel-group-${index + 1}`,
+    roofSurfaceId: group.roofSurfaceId || roofSurfaces[0]?.id || 'roof-1',
+    name: group.name || `Panelgrupp ${index + 1}`,
+    orientation: group.orientation || 'portrait',
+    rows: numberOr(group.rows, 0),
+    columns: numberOr(group.columns, 0),
+    panelCount: numberOr(group.panelCount, numberOr(group.rows, 0) * numberOr(group.columns, 0)),
+    spacingMm: numberOr(group.spacingMm, 30),
+    edgeMarginMm: numberOr(group.edgeMarginMm, 300),
+    startXM: numberOr(group.startXM, 0.7),
+    startYM: numberOr(group.startYM, 0.7),
+    isParallelWithGroupIds: Array.isArray(group.isParallelWithGroupIds) ? group.isParallelWithGroupIds : [],
+    panels: Array.isArray(group.panels) ? group.panels : [],
+    panelModelId: group.panelModelId || 'panel-standard',
+  }));
+
+  return [{
+    ...groups[0],
+    ...defaultPanelGroup(roofSurfaces),
+    id: groups[0]?.id || 'panel-group-1',
+    name: groups[0]?.name || 'Panelgrupp 1',
+    roofSurfaceId: groups[0]?.roofSurfaceId || roofSurfaces[0]?.id || 'roof-1',
+  }];
+};
+
+const repairStrings = (strings, panelGroups = []) => {
+  const firstGroup = panelGroups[0];
+  const visiblePanelCount = numberOr(firstGroup?.panelCount, numberOr(firstGroup?.rows, 0) * numberOr(firstGroup?.columns, 0));
+  const defaultStringCount = Math.max(1, Math.min(visiblePanelCount || 12, 16));
+  const rows = Array.isArray(strings) && strings.length ? strings : [];
+  if (!rows.length) {
+    return [{
+      id: 'string-1',
+      mpptIndex: 1,
+      panelGroupId: firstGroup?.id || 'panel-group-1',
+      panelCount: defaultStringCount,
+      parallelGroupIds: [],
+      calculatedVocCold: 0,
+      calculatedVmpOperating: 0,
+      calculatedIsc: 0,
+      calculatedDcPowerW: 0,
+      status: 'warning',
+      messages: ['Kontrollera stränglängd mot vald växelriktare.'],
+    }];
+  }
+
+  return rows.map((item, index) => ({
+    ...item,
+    id: item.id || `string-${index + 1}`,
+    mpptIndex: numberOr(item.mpptIndex, 1),
+    panelGroupId: item.panelGroupId || firstGroup?.id || 'panel-group-1',
+    panelCount: numberOr(item.panelCount, index === 0 ? defaultStringCount : 0) || (index === 0 ? defaultStringCount : 0),
+    parallelGroupIds: Array.isArray(item.parallelGroupIds) ? item.parallelGroupIds : [],
+  }));
+};
+
 export const createGeo3DLayerModel = ({ locationData = {}, overrides = {} } = {}) => {
   const footprint = locationData?.buildingFootprint || null;
   const hasFootprint = Array.isArray(footprint?.points) && footprint.points.length >= 3;
@@ -167,6 +246,8 @@ export const createSolarProject3D = (overrides = {}) => {
   };
   const roofSurfaces = overrides.roofSurfaces || deriveRoofSurfacesFromBuilding(building);
   const locationData = createDefaultLocationData(overrides.locationData || {});
+  const panelGroups = repairPanelGroups(overrides.panelGroups, roofSurfaces);
+  const strings = repairStrings(overrides.strings, panelGroups);
 
   return {
     id,
@@ -198,25 +279,7 @@ export const createSolarProject3D = (overrides = {}) => {
       tempCoeffPmaxPercentPerC: -0.35,
       ...(overrides.panelModel || {}),
     },
-    panelGroups: overrides.panelGroups || [
-      {
-        id: 'panel-group-1',
-        roofSurfaceId: roofSurfaces[0]?.id || 'roof-1',
-        name: 'Panelgrupp 1',
-        orientation: 'portrait',
-        panelCount: 0,
-        rows: 0,
-        columns: 0,
-        startXM: 0.7,
-        startYM: 0.7,
-        spacingMm: 30,
-        edgeMarginMm: 300,
-        isParallelWithGroupIds: [],
-        usedAreaM2: 0,
-        panels: [],
-        panelModelId: 'panel-standard',
-      },
-    ],
+    panelGroups,
     inverterModel: {
       id: 'inverter-standard',
       manufacturer: 'Generic',
@@ -232,21 +295,7 @@ export const createSolarProject3D = (overrides = {}) => {
       stringsPerMppt: 2,
       ...(overrides.inverterModel || {}),
     },
-    strings: overrides.strings || [
-      {
-        id: 'string-1',
-        mpptIndex: 1,
-        panelGroupId: 'panel-group-1',
-        panelCount: 0,
-        parallelGroupIds: [],
-        calculatedVocCold: 0,
-        calculatedVmpOperating: 0,
-        calculatedIsc: 0,
-        calculatedDcPowerW: 0,
-        status: 'warning',
-        messages: ['Välj panelgrupp och antal paneler i serie.'],
-      },
-    ],
+    strings,
     stringTemperatureScenario: {
       coldTempC: -20,
       operatingTempC: 45,
