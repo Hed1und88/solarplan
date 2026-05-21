@@ -524,7 +524,7 @@ export default function AeroToolStyleSolarWorkbench() {
             <Metric label="Ekonomi" value={`${fmt(economy.annualSavingsSek)} kr/år`} tone="slate" sub={economy.paybackYears ? `${fmt(economy.paybackYears, 1)} år återbetalning` : 'kostnad saknas'} />
           </div>
 
-          <Project3DBuildingPreview building={project.building} roofSurfaces={project.roofSurfaces} panelGroups={project.panelGroups} obstacles={project.obstacles} />
+          <Project3DBuildingPreview building={project.building} roofSurfaces={project.roofSurfaces} panelGroups={project.panelGroups} obstacles={project.obstacles} panelModel={project.panelModel} />
 
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
             <RoofPlan roofSurface={roofSurface} panelGroups={project.panelGroups} obstacles={project.obstacles} activeGroupId={activeGroupId} setActiveGroupId={setActiveGroupId} />
