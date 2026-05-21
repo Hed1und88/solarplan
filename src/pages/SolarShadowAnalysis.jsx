@@ -1,5 +1,5 @@
-import SolarPlan3DProjektering from '@/components/project/SolarPlan3DProjektering';
+import AeroToolStyleSolarWorkbench from '@/components/project/AeroToolStyleSolarWorkbench';
 
 export default function SolarShadowAnalysis() {
-  return <SolarPlan3DProjektering />;
+  return <AeroToolStyleSolarWorkbench />;
 }
