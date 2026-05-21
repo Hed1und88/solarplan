@@ -12,6 +12,7 @@ import ProjectDetail from '@/pages/ProjectDetail';
 import Products from '@/pages/Products';
 import Settings from '@/pages/Settings';
 import SolarShadowAnalysis from '@/pages/SolarShadowAnalysis';
+import '@/styles/solarWorkbenchLight.css';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth, isLoadingPublicSettings, authError, navigateToLogin } = useAuth();
