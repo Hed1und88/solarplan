@@ -1,155 +1,201 @@
-// @ts-nocheck
-import { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 const HF_TOKEN = "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";
-const HF_TRIPOSR_ENDPOINT_URL = "https://api-inference.huggingface.co/models/stabilityai/TripoSR";
-const OVERRIDE_KEY = 'solarplan-3d-transform-overrides:v1';
-const n = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
-const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-const rad = (deg) => (deg * Math.PI) / 180;
-const round = (value, digits = 3) => Math.round(n(value) * 10 ** digits) / 10 ** digits;
-const loadOverrides = () => { try { return JSON.parse(localStorage.getItem(OVERRIDE_KEY) || '{}'); } catch { return {}; } };
-const saveOverrides = (value) => localStorage.setItem(OVERRIDE_KEY, JSON.stringify(value || {}));
 
-function mat(color, options = {}) { return new THREE.MeshStandardMaterial({ color, roughness: 0.58, metalness: 0.08, ...options }); }
-function lineMat(color, opacity = 1) { return new THREE.LineBasicMaterial({ color, transparent: opacity < 1, opacity }); }
-function addEdges(group, mesh, color = 0x0f172a, opacity = 0.7) {
-  const edges = new THREE.EdgesGeometry(mesh.geometry);
-  const line = new THREE.LineSegments(edges, lineMat(color, opacity));
-  line.position.copy(mesh.position); line.rotation.copy(mesh.rotation); line.scale.copy(mesh.scale); group.add(line); return line;
-}
-function addLine(group, points, color = 0xf59e0b, opacity = 1) { const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), lineMat(color, opacity)); group.add(line); return line; }
-function labelSprite(text, color = '#78350f') {
-  const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d'); const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  canvas.width = 360 * dpr; canvas.height = 90 * dpr; ctx.scale(dpr, dpr); ctx.fillStyle = 'rgba(255,247,237,0.92)'; ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(8, 16, 344, 52, 12); ctx.fill(); ctx.stroke(); ctx.fillStyle = color; ctx.font = '900 21px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(text || ''), 180, 42);
-  const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace; const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false })); sprite.scale.set(3.3, 0.82, 1); sprite.renderOrder = 999; return sprite;
-}
-function addDimension(group, from, to, label, color = 0xf59e0b) { addLine(group, [from, to], color, 0.95); const sprite = labelSprite(label); sprite.position.copy(from.clone().lerp(to, 0.5).add(new THREE.Vector3(0, 0.45, 0))); group.add(sprite); }
-
-function gableRoofGeometry(length, width, eaveY, rise) {
-  const l = length / 2, w = width / 2;
-  const vertices = new Float32Array([-l,eaveY,w, l,eaveY,w, l,eaveY+rise,0, -l,eaveY+rise,0, -l,eaveY+rise,0, l,eaveY+rise,0, l,eaveY,-w, -l,eaveY,-w, -l,eaveY,-w, -l,eaveY,w, -l,eaveY+rise,0, l,eaveY,w, l,eaveY,-w, l,eaveY+rise,0]);
-  const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3)); geometry.setIndex([0,1,2,0,2,3,4,5,6,4,6,7,8,9,10,11,12,13]); geometry.computeVertexNormals(); return geometry;
-}
-function roofSide(roofSurfaces, roofSurfaceId) { const index = roofSurfaces.findIndex((s) => s.id === roofSurfaceId); return String(roofSurfaceId || '').includes('-b') || index % 2 === 1 ? -1 : 1; }
-function panelDims(panelModel, orientation) { const w = n(panelModel?.widthMm, 1134) / 1000, h = n(panelModel?.heightMm, 1722) / 1000; return orientation === 'landscape' ? { w: h, h: w } : { w, h }; }
-function panelsFromGroup(group, panelModel) {
-  if (Array.isArray(group?.panels) && group.panels.length > 0) return group.panels;
-  const rows = Math.max(0, Math.round(n(group?.rows, 0))), columns = Math.max(0, Math.round(n(group?.columns, 0))), spacing = n(group?.spacingMm, 30) / 1000, dims = panelDims(panelModel, group?.orientation), panels = [];
-  for (let row = 0; row < rows; row += 1) for (let col = 0; col < columns; col += 1) panels.push({ id: `${group.id}-${row + 1}-${col + 1}`, row: row + 1, column: col + 1, xM: round(n(group.startXM, 0.7) + col * (dims.w + spacing)), yM: round(n(group.startYM, 0.7) + row * (dims.h + spacing)), widthM: round(dims.w), heightM: round(dims.h) });
-  return panels;
-}
-function roofPoint({ building, roofSurfaces, roofSurfaceId, xM, yM, pitchRad, roofRise }) {
-  const length = Math.max(1, n(building.lengthM, 12)), width = Math.max(1, n(building.widthM, 8)), eaveY = Math.max(1, n(building.heightM, 4)), side = roofSide(roofSurfaces, roofSurfaceId);
-  if (building.roofType === 'flat') return { position: new THREE.Vector3(-length / 2 + xM, eaveY + 0.38, -width / 2 + yM), rotationX: 0, side };
-  const run = Math.max(0, yM) * Math.cos(pitchRad), drop = Math.max(0, yM) * Math.sin(pitchRad); return { position: new THREE.Vector3(-length / 2 + xM, eaveY + roofRise - drop + 0.08, side * run), rotationX: side * pitchRad, side };
-}
-function selectable(data) { return { selectable: true, ...data }; }
-function findSelectable(object, selectionMode) {
-  let node = object;
-  while (node) { if (node.userData?.selectable) { if (selectionMode === 'single' && node.userData.type === 'panel') return node; if (selectionMode === 'group' && node.userData.type === 'panel') { let parent = node.parent; while (parent && parent.userData?.type !== 'panelGroup') parent = parent.parent; return parent || node; } if (['panelGroup', 'obstacle'].includes(node.userData.type)) return node; } node = node.parent; }
-  return null;
-}
-function createBoxHelper(object, color) { const helper = new THREE.BoxHelper(object, color); helper.material.depthTest = false; helper.material.transparent = true; helper.material.opacity = 0.95; helper.renderOrder = 998; return helper; }
-function applyRoofSnap(object, startPos) { if (!object || !startPos) return; if (object.userData?.type === 'panelGroup') { object.position.y = 0; return; } if (['panel', 'obstacle'].includes(object.userData?.type)) object.position.y = startPos.y - Math.abs(object.position.z - startPos.z) * 0.42; }
-function disposeObject3D(object) { object?.traverse?.((node) => { node.geometry?.dispose?.(); const mats = Array.isArray(node.material) ? node.material : [node.material]; mats.filter(Boolean).forEach((m) => m.dispose?.()); }); }
-function fitImportedModelToScene(object3D) { const box = new THREE.Box3().setFromObject(object3D), size = new THREE.Vector3(), center = new THREE.Vector3(); box.getSize(size); box.getCenter(center); const scale = 12 / (Math.max(size.x, size.y, size.z) || 1); object3D.scale.setScalar(scale); object3D.position.sub(center.multiplyScalar(scale)); object3D.position.y += 0.2; object3D.traverse((node) => { if (node.isMesh) { node.castShadow = true; node.receiveShadow = true; } }); }
-function fitCamera(camera, controls, building) { const length = Math.max(1, n(building.lengthM, 12)), width = Math.max(1, n(building.widthM, 8)), height = Math.max(1, n(building.heightM, 4)), distance = Math.max(16, Math.max(length, width) * 1.9); camera.position.set(distance * 0.72, Math.max(9, height * 2.9), distance * 0.86); controls.target.set(0, height * 0.82, 0); controls.update(); }
-function clearRuntimeSelection(runtime, setActiveInfo) {
-  if (!runtime) return;
-  runtime.transformControls?.detach?.();
-  if (runtime.selectionBox) runtime.scene.remove(runtime.selectionBox);
-  runtime.selectionBox = null;
-  runtime.selectedObject = null;
-  runtime.selectionStart = null;
-  setActiveInfo?.(null);
-}
-
-async function requestTripoSRModel(file) {
-  if (!(file instanceof Blob)) throw new Error('Vald bildfil är ogiltig.');
-  const endpointUrl = new URL(HF_TRIPOSR_ENDPOINT_URL).toString();
-  if (endpointUrl !== 'https://api-inference.huggingface.co/models/stabilityai/TripoSR') {
-    throw new Error(`Fel Hugging Face endpoint: ${endpointUrl}`);
-  }
-
-  let response;
-  try {
-    response = await fetch(endpointUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${HF_TOKEN}`,
-        'Content-Type': 'application/octet-stream',
-      },
-      body: file,
-    });
-  } catch (error) {
-    throw new Error(`Kunde inte nå Hugging Face (${endpointUrl}): ${error?.message || error}`);
-  }
-
-  const contentType = response.headers.get('content-type') || '';
-  if (!response.ok) {
-    const errorText = await response.text().catch(() => '');
-    throw new Error(`Hugging Face svarade ${response.status}: ${errorText || response.statusText}`);
-  }
-  if (contentType.includes('application/json')) {
-    const data = await response.json();
-    const message = data?.error || data?.message || JSON.stringify(data);
-    throw new Error(`Hugging Face returnerade JSON istället för GLB: ${message}`);
-  }
-
-  return response.blob();
-}
-
-function buildModel(group, { building, roofSurfaces, panelGroups, obstacles, panelModel, overrides }) {
-  group.clear();
-  const length = Math.max(1, n(building.lengthM, 12)), width = Math.max(1, n(building.widthM, 8)), eaveY = Math.max(1, n(building.heightM, 4)), pitch = clamp(n(building.roofPitchDeg, 27), 0, 75), pitchRad = rad(pitch), roofRise = building.roofType === 'flat' ? 0.18 : Math.max(0.28, Math.tan(pitchRad) * (width / 2));
-  const foundation = new THREE.Mesh(new THREE.BoxGeometry(length + 0.6, 0.18, width + 0.6), mat(0xd7dee8)); foundation.position.y = 0.09; foundation.receiveShadow = true; group.add(foundation);
-  const body = new THREE.Mesh(new THREE.BoxGeometry(length, eaveY, width), [mat(0xcbd5e1), mat(0xcbd5e1), mat(0xf8fafc), mat(0xf8fafc), mat(0xe2e8f0), mat(0xe2e8f0)]); body.position.y = eaveY / 2 + 0.18; body.castShadow = true; body.receiveShadow = true; group.add(body); addEdges(group, body, 0x334155, 0.6);
-  const roofGeometry = building.roofType === 'flat' ? new THREE.BoxGeometry(length + 0.55, 0.25, width + 0.55).translate(0, eaveY + 0.31, 0) : gableRoofGeometry(length + 0.55, width + 0.55, eaveY + 0.18, roofRise);
-  const roof = new THREE.Mesh(roofGeometry, mat(0x475569, { side: THREE.DoubleSide })); roof.castShadow = true; roof.receiveShadow = true; group.add(roof); addEdges(group, roof, 0xf8fafc, 0.45);
-  if (building.roofType !== 'flat') { const ridge = new THREE.Mesh(new THREE.BoxGeometry(length + 0.7, 0.08, 0.12), mat(0xf59e0b, { metalness: 0.25 })); ridge.position.set(0, eaveY + 0.18 + roofRise + 0.035, 0); group.add(ridge); }
-  const panelMats = [mat(0x0b3b75, { roughness: 0.24, metalness: 0.44 }), mat(0x1e40af, { roughness: 0.24, metalness: 0.42 }), mat(0x155e75, { roughness: 0.24, metalness: 0.38 })];
-  const renderGroups = panelGroups?.some((item) => panelsFromGroup(item, panelModel).length) ? panelGroups : [{ id: 'preview-panel-group', name: 'Förhandsvisning', roofSurfaceId: roofSurfaces[0]?.id, rows: 2, columns: 6, startXM: 0.8, startYM: 0.7, spacingMm: 40 }];
-  renderGroups.forEach((panelGroup, groupIndex) => { const node = new THREE.Group(), ov = overrides?.groups?.[panelGroup.id] || {}; node.position.set(n(ov.dx, 0), 0, n(ov.dz, 0)); node.userData = selectable({ type: 'panelGroup', groupId: panelGroup.id, label: panelGroup.name || `Panelgrupp ${groupIndex + 1}` }); group.add(node); panelsFromGroup(panelGroup, panelModel).slice(0, 260).forEach((panel) => { const pOv = overrides?.panels?.[panel.id] || {}, w = Math.max(0.45, n(panel.widthM, 1.13)), h = Math.max(0.7, n(panel.heightM, 1.72)), placed = roofPoint({ building, roofSurfaces, roofSurfaceId: panelGroup.roofSurfaceId, xM: n(panel.xM) + w / 2 + n(pOv.dx, 0), yM: n(panel.yM) + h / 2 + Math.abs(n(pOv.dz, 0)), pitchRad, roofRise }); if (building.roofType !== 'flat' && (Math.abs(placed.position.z) > width / 2 + 0.45 || placed.position.x < -length / 2 - 0.5 || placed.position.x > length / 2 + 0.5)) return; const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, 0.05, h), panelMats[groupIndex % panelMats.length]); mesh.position.copy(placed.position); mesh.rotation.x = placed.rotationX; mesh.castShadow = true; mesh.receiveShadow = true; mesh.userData = selectable({ type: 'panel', groupId: panelGroup.id, panelId: panel.id, row: panel.row, column: panel.column, side: placed.side, label: `${panelGroup.name || 'Panelgrupp'} ${panel.row}:${panel.column}` }); node.add(mesh); addEdges(node, mesh, 0x93c5fd, 0.65); }); });
-  (obstacles || []).forEach((obstacle) => { const ov = overrides?.obstacles?.[obstacle.id] || {}, w = Math.max(0.2, n(obstacle.widthM, 0.6)), h = Math.max(0.2, n(obstacle.heightM, 0.8)), d = Math.max(0.2, n(obstacle.depthM, 0.6)), placed = roofPoint({ building, roofSurfaces, roofSurfaceId: obstacle.roofSurfaceId || roofSurfaces[0]?.id, xM: n(obstacle.xM, length / 2) + w / 2 + n(ov.dx, 0), yM: n(obstacle.yM, 1) + d / 2 + Math.abs(n(ov.dz, 0)), pitchRad, roofRise }); const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(0xdc2626, { emissive: 0x450a0a, emissiveIntensity: 0.12 })); mesh.position.copy(placed.position).add(new THREE.Vector3(0, h / 2 + 0.02, 0)); mesh.castShadow = true; mesh.receiveShadow = true; mesh.userData = selectable({ type: 'obstacle', obstacleId: obstacle.id, side: placed.side, label: obstacle.name || 'Hinder' }); group.add(mesh); addEdges(group, mesh, 0xfee2e2, 0.8); const sprite = labelSprite(obstacle.name || 'Hinder', '#7f1d1d'); sprite.position.copy(mesh.position).add(new THREE.Vector3(0, h / 2 + 0.65, 0)); group.add(sprite); });
-  addDimension(group, new THREE.Vector3(-length / 2, 0.08, width / 2 + 1.1), new THREE.Vector3(length / 2, 0.08, width / 2 + 1.1), `${round(length, 1)} m längd`); addDimension(group, new THREE.Vector3(length / 2 + 1.1, 0.08, -width / 2), new THREE.Vector3(length / 2 + 1.1, 0.08, width / 2), `${round(width, 1)} m bredd`); addDimension(group, new THREE.Vector3(-length / 2 - 0.7, 0, -width / 2 - 0.7), new THREE.Vector3(-length / 2 - 0.7, eaveY, -width / 2 - 0.7), `${round(eaveY, 1)} m takfot`, 0x0ea5e9); addDimension(group, new THREE.Vector3(0, eaveY, 0), new THREE.Vector3(0, eaveY + roofRise, 0), `${round(eaveY + roofRise, 1)} m nock`, 0xf59e0b);
-}
-
-export default function Project3DBuildingPreview({ building = {}, roofSurfaces = [], panelGroups = [], obstacles = [], panelModel = null, onObjectTransform = null, photoOverlay = null }) {
-  const containerRef = useRef(null), runtimeRef = useRef(null), callbackRef = useRef(onObjectTransform), aiFilesInputRef = useRef(null), aiModelUrlRef = useRef(''), previewObjectUrlsRef = useRef([]);
-  const [selectionMode, setSelectionMode] = useState('group'), [activeInfo, setActiveInfo] = useState(null), [overrides, setOverrides] = useState(() => loadOverrides()), [selectedImages, setSelectedImages] = useState([]), [aiBusy, setAiBusy] = useState(false), [aiStatus, setAiStatus] = useState('');
-  useEffect(() => { callbackRef.current = onObjectTransform; }, [onObjectTransform]);
-  const totals = useMemo(() => ({ roofArea: roofSurfaces.reduce((s, r) => s + n(r.widthM) * n(r.heightM), 0), usableArea: roofSurfaces.reduce((s, r) => s + n(r.usableAreaM2), 0), panelCount: panelGroups.reduce((s, g) => s + n(g.panelCount, panelsFromGroup(g, panelModel).length), 0), obstacleCount: obstacles.length }), [roofSurfaces, panelGroups, obstacles, panelModel]);
-  const clearPreviewObjectUrls = () => { previewObjectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url)); previewObjectUrlsRef.current = []; };
-  const revokeModelUrl = () => { if (aiModelUrlRef.current) URL.revokeObjectURL(aiModelUrlRef.current); aiModelUrlRef.current = ''; };
-  const clearAiReplacementModel = () => { const runtime = runtimeRef.current; if (!runtime) return; clearRuntimeSelection(runtime, setActiveInfo); if (runtime.aiModelRoot) { runtime.scene.remove(runtime.aiModelRoot); disposeObject3D(runtime.aiModelRoot); runtime.aiModelRoot = null; } if (runtime.modelGroup) runtime.modelGroup.visible = true; revokeModelUrl(); };
-  const loadGlbSceneFromBlob = async (blob) => { revokeModelUrl(); const objectUrl = URL.createObjectURL(blob); aiModelUrlRef.current = objectUrl; const loader = new GLTFLoader(); try { const gltf = await new Promise((resolve, reject) => loader.load(objectUrl, resolve, undefined, reject)); const scene = gltf?.scene; if (!(scene instanceof THREE.Object3D)) throw new Error('GLTFLoader returnerade ingen giltig THREE.Object3D.'); return scene; } catch (error) { revokeModelUrl(); throw new Error(`Kunde inte läsa GLB/GLTF från AI-svaret: ${error?.message || error}`); } };
-  const handlePickMultipleImages = (event) => { const files = Array.from(event.target.files || []).filter((file) => file.type?.startsWith('image/')); clearPreviewObjectUrls(); const next = files.map((file) => { const previewUrl = URL.createObjectURL(file); previewObjectUrlsRef.current.push(previewUrl); return { id: `${file.name}-${file.size}-${file.lastModified}`, file, name: file.name, previewUrl }; }); setSelectedImages(next); setAiStatus(next.length ? `${next.length} bilder valda.` : ''); };
-  const removeSelectedImage = (id) => setSelectedImages((prev) => { const item = prev.find((row) => row.id === id); if (item?.previewUrl) { URL.revokeObjectURL(item.previewUrl); previewObjectUrlsRef.current = previewObjectUrlsRef.current.filter((url) => url !== item.previewUrl); } return prev.filter((row) => row.id !== id); });
-  const handleGenerate3DFromImagesSafe = async () => { if (!selectedImages.length) { setAiStatus('Välj minst en bild först.'); return; } try { setAiBusy(true); setAiStatus(`Skickar bild till TripoSR: ${HF_TRIPOSR_ENDPOINT_URL}`); const glbBlob = await requestTripoSRModel(selectedImages[0].file); setAiStatus('AI-svar mottaget. Laddar GLB/GLTF-modell...'); const importedScene = await loadGlbSceneFromBlob(glbBlob); if (!(importedScene instanceof THREE.Object3D)) throw new Error('AI-modellen är inte en giltig THREE.Object3D.'); const runtime = runtimeRef.current; if (!runtime) throw new Error('3D-runtime hittades inte.'); clearAiReplacementModel(); const aiRoot = new THREE.Group(); aiRoot.name = 'AI_GENERATED_TRIPOSR_HOUSE'; aiRoot.userData = selectable({ type: 'aiModel', label: 'AI-genererat hus' }); aiRoot.add(importedScene); fitImportedModelToScene(aiRoot); if (!(aiRoot instanceof THREE.Object3D)) throw new Error('AI-root är inte en giltig THREE.Object3D.'); runtime.scene.add(aiRoot); runtime.aiModelRoot = aiRoot; if (runtime.modelGroup) runtime.modelGroup.visible = false; runtime.transformControls?.detach?.(); runtime.transformControls?.attach?.(aiRoot); runtime.selectedObject = aiRoot; runtime.selectionStart = { position: aiRoot.position.clone() }; runtime.selectionBox = createBoxHelper(aiRoot, 0x10b981); runtime.scene.add(runtime.selectionBox); setActiveInfo({ type: 'aiModel', label: 'AI-genererat hus', id: 'AI_GENERATED_TRIPOSR_HOUSE' }); fitCamera(runtime.camera, runtime.controls, building || {}); setAiStatus('Klar - huset har formats efter bilden.'); } catch (error) { console.error('[Project3DBuildingPreview] TripoSR generation failed', error); setAiStatus(error?.message || 'Kunde inte forma huset efter bilder.'); } finally { setAiBusy(false); } };
-  const resetToDefaultModel = () => { clearAiReplacementModel(); setAiStatus('Återställd till standardmodellen.'); };
+const Project3DBuildingPreview = () => {
+  const mountRef = useRef(null);
+  const [images, setImages] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState("");
+  const sceneRef = useRef(new THREE.Scene());
+  const houseRef = useRef(null);
+  const rendererRef = useRef(null);
+  const modelUrlRef = useRef("");
 
   useEffect(() => {
-    const container = containerRef.current; if (!container) return undefined;
-    const scene = new THREE.Scene(); scene.background = new THREE.Color(0xf5f7fb); const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 1000); const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' }); renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.12; container.replaceChildren(renderer.domElement);
-    const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.dampingFactor = 0.08; controls.minDistance = 5; controls.maxDistance = 70; controls.maxPolarAngle = Math.PI / 2 - 0.035;
-    const transformControls = new TransformControls(camera, renderer.domElement); transformControls.setMode('translate'); transformControls.setSize(0.9); scene.add(transformControls); transformControls.addEventListener('dragging-changed', (event) => { controls.enabled = !event.value; }); transformControls.addEventListener('objectChange', () => { const runtime = runtimeRef.current; if (!runtime?.selectedObject || !runtime?.selectionStart) return; applyRoofSnap(runtime.selectedObject, runtime.selectionStart.position); runtime.selectionBox?.update?.(); }); transformControls.addEventListener('mouseUp', () => { const runtime = runtimeRef.current, object = runtime?.selectedObject, start = runtime?.selectionStart; if (!object || !start) return; const delta = object.position.clone().sub(start.position), type = object.userData?.type, id = object.userData?.groupId || object.userData?.panelId || object.userData?.obstacleId, section = type === 'panelGroup' ? 'groups' : type === 'panel' ? 'panels' : type === 'obstacle' ? 'obstacles' : 'other', next = { ...loadOverrides() }; next[section] = { ...(next[section] || {}) }; next[section][id] = { dx: round(n(next[section][id]?.dx, 0) + delta.x), dz: round(n(next[section][id]?.dz, 0) + delta.z) }; saveOverrides(next); setOverrides(next); callbackRef.current?.({ type, id, userData: object.userData, delta: { x: delta.x, y: delta.y, z: delta.z } }); });
-    scene.add(new THREE.HemisphereLight(0xffffff, 0xdbeafe, 0.86)); scene.add(new THREE.AmbientLight(0xffffff, 0.32)); const sun = new THREE.DirectionalLight(0xfff7d6, 2.2); sun.position.set(15, 25, 18); sun.castShadow = true; sun.shadow.mapSize.width = 4096; sun.shadow.mapSize.height = 4096; sun.shadow.camera.left = -28; sun.shadow.camera.right = 28; sun.shadow.camera.top = 28; sun.shadow.camera.bottom = -28; scene.add(sun); const ground = new THREE.Mesh(new THREE.PlaneGeometry(110, 110), new THREE.MeshStandardMaterial({ color: 0xe8edf5, roughness: 0.92, metalness: 0.03 })); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground); const grid = new THREE.GridHelper(70, 70, 0x94a3b8, 0xd7dee8); grid.position.y = 0.012; scene.add(grid); const majorGrid = new THREE.GridHelper(70, 14, 0xf59e0b, 0xb6c2d3); majorGrid.material.opacity = 0.28; majorGrid.material.transparent = true; majorGrid.position.y = 0.016; scene.add(majorGrid);
-    const modelGroup = new THREE.Group(); scene.add(modelGroup); const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2();
-    const clearSelection = () => { const runtime = runtimeRef.current; if (!runtime) return; transformControls.detach(); if (runtime.selectionBox) scene.remove(runtime.selectionBox); runtime.selectionBox = null; runtime.selectedObject = null; runtime.selectionStart = null; setActiveInfo(null); };
-    const selectObject = (object) => { const runtime = runtimeRef.current; if (!runtime || !object) return; if (runtime.selectionBox) scene.remove(runtime.selectionBox); runtime.selectedObject = object; runtime.selectionStart = { position: object.position.clone() }; runtime.selectionBox = createBoxHelper(object, object.userData?.type === 'obstacle' ? 0xef4444 : 0xf59e0b); scene.add(runtime.selectionBox); transformControls.attach(object); setActiveInfo({ type: object.userData?.type, label: object.userData?.label || object.name || 'Objekt', id: object.userData?.groupId || object.userData?.panelId || object.userData?.obstacleId }); };
-    const handlePointerDown = (event) => { if (transformControls.dragging) return; const rect = renderer.domElement.getBoundingClientRect(); pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1; pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1; raycaster.setFromCamera(pointer, camera); const runtime = runtimeRef.current, hits = raycaster.intersectObjects(runtime.modelGroup.children, true), hit = hits.map((item) => findSelectable(item.object, runtime.selectionMode)).find(Boolean); if (hit) selectObject(hit); else clearSelection(); };
-    renderer.domElement.addEventListener('pointerdown', handlePointerDown); const resize = () => { const rect = container.getBoundingClientRect(); renderer.setSize(Math.max(1, rect.width), Math.max(1, rect.height)); camera.aspect = Math.max(1, rect.width) / Math.max(1, rect.height); camera.updateProjectionMatrix(); }; const animate = () => { if (!runtimeRef.current) return; controls.update(); runtimeRef.current.selectionBox?.update?.(); renderer.render(scene, camera); runtimeRef.current.frame = requestAnimationFrame(animate); };
-    runtimeRef.current = { scene, camera, renderer, controls, transformControls, modelGroup, raycaster, pointer, frame: 0, selectedObject: null, selectionBox: null, selectionStart: null, selectionMode, aiModelRoot: null }; resize(); fitCamera(camera, controls, building || {}); animate(); window.addEventListener('resize', resize);
-    return () => { clearAiReplacementModel(); clearPreviewObjectUrls(); window.removeEventListener('resize', resize); renderer.domElement.removeEventListener('pointerdown', handlePointerDown); cancelAnimationFrame(runtimeRef.current?.frame); transformControls.dispose(); controls.dispose(); renderer.dispose(); renderer.domElement.remove(); runtimeRef.current = null; };
-  }, []);
-  useEffect(() => { const runtime = runtimeRef.current; if (!runtime) return; runtime.selectionMode = selectionMode; runtime.transformControls.detach(); if (runtime.selectionBox) runtime.scene.remove(runtime.selectionBox); runtime.selectionBox = null; runtime.selectedObject = null; runtime.selectionStart = null; setActiveInfo(null); }, [selectionMode]);
-  useEffect(() => { const runtime = runtimeRef.current; if (!runtime) return; runtime.transformControls.detach(); if (runtime.selectionBox) runtime.scene.remove(runtime.selectionBox); runtime.selectionBox = null; runtime.selectedObject = null; runtime.selectionStart = null; setActiveInfo(null); buildModel(runtime.modelGroup, { building: building || {}, roofSurfaces, panelGroups, obstacles, panelModel, overrides }); fitCamera(runtime.camera, runtime.controls, building || {}); }, [building, roofSurfaces, panelGroups, obstacles, panelModel, overrides]);
-  const clearTransformOverrides = () => { saveOverrides({}); setOverrides({}); };
+    if (!mountRef.current) return;
+    const mountNode = mountRef.current;
+    const width = mountNode.clientWidth;
+    const height = mountNode.clientHeight;
+    const scene = sceneRef.current;
 
-  return <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]"><div className="overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-2xl"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3 text-slate-950"><div><div className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-700">TripoSR bild-till-3D aktiv</div><div className="text-sm font-black">Three.js · TransformControls · GLTFLoader · Forma hus efter bilder</div></div><div className="flex flex-wrap items-center gap-2"><input ref={aiFilesInputRef} type={'fi'+'le'} accept={'image/*'} multiple onChange={handlePickMultipleImages} className="hidden" /><button type="button" onClick={() => aiFilesInputRef.current?.click?.()} disabled={aiBusy} className="rounded-full border border-emerald-500 bg-emerald-400 px-3 py-1 text-xs font-black text-slate-950 hover:bg-emerald-300 disabled:opacity-60">📸 Lägg till husbilder</button><button type="button" onClick={handleGenerate3DFromImagesSafe} disabled={aiBusy || !selectedImages.length} className="rounded-full border border-sky-500 bg-sky-400 px-3 py-1 text-xs font-black text-slate-950 hover:bg-sky-300 disabled:opacity-60">Forma hus efter bilder</button><button type="button" onClick={resetToDefaultModel} className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-black text-slate-700 hover:bg-slate-50">Återställ standardmodell</button><button type="button" onClick={() => setSelectionMode('group')} className={`rounded-full border px-3 py-1 text-xs font-black ${selectionMode === 'group' ? 'border-amber-400 bg-amber-400 text-slate-950' : 'border-slate-300 bg-white text-slate-700'}`}>Grupp</button><button type="button" onClick={() => setSelectionMode('single')} className={`rounded-full border px-3 py-1 text-xs font-black ${selectionMode === 'single' ? 'border-amber-400 bg-amber-400 text-slate-950' : 'border-slate-300 bg-white text-slate-700'}`}>En panel</button><button type="button" onClick={clearTransformOverrides} className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-black text-slate-700 hover:bg-slate-50">Nollställ dragning</button></div></div>{selectedImages.length > 0 && <div className="border-b border-slate-200 bg-slate-50 p-3"><div className="mb-2 text-sm font-black text-slate-900">Valda bilder ({selectedImages.length})</div><div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">{selectedImages.map((item) => <div key={item.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"><img src={item.previewUrl} alt={item.name} className="h-24 w-full object-cover" /><div className="p-2"><div className="truncate text-xs font-bold text-slate-700">{item.name}</div><button type="button" onClick={() => removeSelectedImage(item.id)} className="mt-2 rounded-full border border-rose-300 bg-rose-50 px-2 py-1 text-[11px] font-black text-rose-700 hover:bg-rose-100">Ta bort</button></div></div>)}</div></div>}{(aiBusy || aiStatus) && <div className="border-b border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950"><div className="font-black">{aiBusy ? 'Stitchar ihop bilder till 3D...' : 'AI-status'}</div><div className="mt-1 text-xs font-semibold">{aiStatus || 'Väntar...'}</div>{aiBusy && <div className="mt-3 h-2 overflow-hidden rounded-full bg-emerald-100"><div className="h-full w-1/2 animate-pulse rounded-full bg-emerald-500" /></div>}</div>}<div className="relative">{photoOverlay?.url && <img src={photoOverlay.url} alt="Bakgrundsbild för perspektivmatchning" className="pointer-events-none absolute inset-0 z-10 h-full w-full object-contain opacity-30 mix-blend-multiply" />}<div ref={containerRef} className="h-[680px] w-full" /></div></div><aside className="rounded-2xl border border-slate-300 bg-white p-4 text-slate-950 shadow-2xl"><h3 className="font-black">3D kontroll</h3><p className="mt-1 text-sm text-slate-600">Lägg till en eller flera husbilder och klicka på Forma hus efter bilder. Appen skickar bilderna till TripoSR och ersätter standardhuset med importerad GLB.</p>{activeInfo && <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm"><div className="text-xs font-black uppercase tracking-[0.16em] text-amber-700">Aktivt objekt</div><div className="mt-1 font-black">{activeInfo.label}</div><div className="text-xs text-slate-600">Typ: {activeInfo.type} · ID: {activeInfo.id}</div></div>}<div className="mt-4 grid grid-cols-2 gap-2"><div className="rounded-xl border border-slate-200 bg-slate-50 p-3"><div className="text-xs text-slate-500">Total takyta</div><div className="text-lg font-black">{totals.roofArea.toFixed(1)} m²</div></div><div className="rounded-xl border border-slate-200 bg-slate-50 p-3"><div className="text-xs text-slate-500">Användbar yta</div><div className="text-lg font-black">{totals.usableArea.toFixed(1)} m²</div></div><div className="rounded-xl border border-slate-200 bg-slate-50 p-3"><div className="text-xs text-slate-500">Paneler</div><div className="text-lg font-black">{totals.panelCount}</div></div><div className="rounded-xl border border-slate-200 bg-slate-50 p-3"><div className="text-xs text-slate-500">Hinder</div><div className="text-lg font-black">{totals.obstacleCount}</div></div></div></aside></div>;
-}
+    const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
+    camera.position.set(8, 8, 8);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    mountNode.appendChild(renderer.domElement);
+    rendererRef.current = renderer;
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    scene.background = new THREE.Color(0xf0f2f5);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+    dirLight.position.set(5, 10, 7);
+    scene.add(dirLight);
+
+    scene.add(new THREE.GridHelper(20, 20));
+    const geometry = new THREE.BoxGeometry(4, 2, 4);
+    const material = new THREE.MeshStandardMaterial({ color: 0x999999 });
+    const placeholder = new THREE.Mesh(geometry, material);
+    placeholder.position.y = 1;
+    scene.add(placeholder);
+    houseRef.current = placeholder;
+
+    let animationFrame = 0;
+    const animate = () => {
+      animationFrame = requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    const handleResize = () => {
+      if (!mountNode) return;
+      const nextWidth = mountNode.clientWidth;
+      const nextHeight = mountNode.clientHeight;
+      camera.aspect = nextWidth / nextHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(nextWidth, nextHeight);
+    };
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      cancelAnimationFrame(animationFrame);
+      window.removeEventListener('resize', handleResize);
+      controls.dispose();
+      renderer.dispose();
+      if (renderer.domElement.parentNode === mountNode) {
+        mountNode.removeChild(renderer.domElement);
+      }
+      if (modelUrlRef.current) {
+        URL.revokeObjectURL(modelUrlRef.current);
+        modelUrlRef.current = "";
+      }
+      scene.clear();
+      houseRef.current = null;
+      rendererRef.current = null;
+    };
+  }, []);
+
+  const handleGenerate = async () => {
+    if (images.length === 0) {
+      setStatus("Välj minst en bild först.");
+      return;
+    }
+
+    setLoading(true);
+    setStatus("Ansluter till AI-server...");
+
+    try {
+      const API_URL = "https://api-inference.huggingface.co/models/stabilityai/TripoSR";
+
+      const response = await fetch(API_URL, {
+        headers: {
+          Authorization: `Bearer ${HF_TOKEN.trim()}`,
+          "Content-Type": "application/octet-stream",
+        },
+        method: "POST",
+        body: images[0],
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`API Fel: ${response.status} - ${errText}`);
+      }
+
+      setStatus("Bearbetar 3D-data...");
+      const blob = await response.blob();
+
+      if (modelUrlRef.current) {
+        URL.revokeObjectURL(modelUrlRef.current);
+      }
+      const modelUrl = URL.createObjectURL(blob);
+      modelUrlRef.current = modelUrl;
+
+      const loader = new GLTFLoader();
+      loader.load(
+        modelUrl,
+        (gltf) => {
+          try {
+            const newHouse = gltf?.scene;
+            if (!(newHouse instanceof THREE.Object3D)) {
+              throw new Error("AI-modellen är inte ett giltigt Three.js Object3D.");
+            }
+
+            if (houseRef.current instanceof THREE.Object3D) {
+              sceneRef.current.remove(houseRef.current);
+            }
+
+            const box = new THREE.Box3().setFromObject(newHouse);
+            const size = box.getSize(new THREE.Vector3());
+            const maxSize = Math.max(size.x, size.y, size.z);
+            if (!Number.isFinite(maxSize) || maxSize <= 0) {
+              throw new Error("AI-modellen saknar giltig storlek.");
+            }
+
+            const scaleFactor = 4 / maxSize;
+            newHouse.scale.set(scaleFactor, scaleFactor, scaleFactor);
+
+            const scaledBox = new THREE.Box3().setFromObject(newHouse);
+            const center = scaledBox.getCenter(new THREE.Vector3());
+            newHouse.position.x -= center.x;
+            newHouse.position.z -= center.z;
+            newHouse.position.y -= scaledBox.min.y;
+
+            sceneRef.current.add(newHouse);
+            houseRef.current = newHouse;
+            setStatus("Huset är klart!");
+          } catch (err) {
+            console.error("DETALJERAT FEL:", err);
+            setStatus(`Fel: ${err.message}`);
+          } finally {
+            setLoading(false);
+          }
+        },
+        undefined,
+        (err) => {
+          console.error("DETALJERAT FEL:", err);
+          setStatus("Fel: Kunde inte tolka 3D-filen.");
+          setLoading(false);
+        }
+      );
+    } catch (err) {
+      console.error("DETALJERAT FEL:", err);
+      setStatus(`Fel: ${err.message}`);
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ width: '100%', height: '500px', position: 'relative' }}>
+      <div ref={mountRef} style={{ width: '100%', height: '100%', borderRadius: '12px', overflow: 'hidden' }} />
+
+      <div style={{ position: 'absolute', top: 20, left: 20, background: 'white', padding: 15, borderRadius: 8, boxShadow: '0 2px 10px rgba(0,0,0,0.2)', width: 260 }}>
+        <b style={{ display: 'block', marginBottom: 10 }}>AI 3D-Modellering</b>
+        <input
+          type="file"
+          multiple
+          accept="image/*"
+          onChange={(e) => setImages(Array.from(e.target.files || []))}
+          style={{ fontSize: '12px', marginBottom: 10, width: '100%' }}
+        />
+        <button
+          onClick={handleGenerate}
+          disabled={loading}
+          style={{ width: '100%', padding: '10px', background: '#007bff', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+        >
+          {loading ? "Jobbar..." : "Skapa 3D-hus"}
+        </button>
+        {status && <p style={{ fontSize: '12px', color: status.includes('Fel') ? 'red' : 'green', marginTop: 10 }}>{status}</p>}
+      </div>
+    </div>
+  );
+};
+
+export default Project3DBuildingPreview;
