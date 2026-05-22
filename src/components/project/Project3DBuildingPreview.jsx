@@ -93,7 +93,8 @@ const Project3DBuildingPreview = () => {
     setStatus("Ansluter till AI-server...");
 
     try {
-      const API_URL = "https://api-inference.huggingface.co/models/stabilityai/TripoSR";
+      const API_URL = "/api-hf/models/stabilityai/TripoSR";
+      console.log("TripoSR API URL:", API_URL);
 
       const response = await fetch(API_URL, {
         headers: {
@@ -106,7 +107,7 @@ const Project3DBuildingPreview = () => {
 
       if (!response.ok) {
         const errText = await response.text();
-        throw new Error(`API Fel: ${response.status} - ${errText}`);
+        throw new Error(`API Fel: HTTP ${response.status} ${response.statusText || ""} - ${errText}`);
       }
 
       setStatus("Bearbetar 3D-data...");
