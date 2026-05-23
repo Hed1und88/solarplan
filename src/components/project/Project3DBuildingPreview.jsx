@@ -1,48 +1,54 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-
-// ==========================================
-const PROXY_URL = "https://ai-house-proxy.hedlund1212.workers.dev";
-const HF_TOKEN = "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";
-// ==========================================
 
 const Project3DBuildingPreview = () => {
   const mountRef = useRef(null);
-  const [files, setFiles] = useState([]);
-  const [previews, setPreviews] = useState([]);
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState("");
+
+  // --- HUSETS MÅTT (STATER) ---
+  const [houseSize, setHouseSize] = useState({
+    width: 10,
+    height: 6,
+    depth: 8,
+    roofHeight: 4,
+    dormerWidth: 3,   // Takkupa bredd
+    dormerHeight: 2,  // Takkupa höjd
+    porchWidth: 4,    // Veranda bredd
+    porchHeight: 3,   // Veranda höjd
+  });
 
   const sceneRef = useRef(new THREE.Scene());
-  const houseRef = useRef(null);
+  const houseGroupRef = useRef(new THREE.Group());
 
   useEffect(() => {
     if (!mountRef.current) return;
+
+    // SCENE SETUP
     const width = mountRef.current.clientWidth;
     const height = mountRef.current.clientHeight;
     const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
-    camera.position.set(12, 12, 12);
+    camera.position.set(15, 15, 15);
+
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(width, height);
-    renderer.setClearColor(0x000000, 0);
+    renderer.setClearColor(0xf0f2f5, 1);
     mountRef.current.appendChild(renderer.domElement);
+
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    sceneRef.current.add(new THREE.AmbientLight(0xffffff, 0.8));
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+
+    // LJUS
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    sceneRef.current.add(ambientLight);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
     dirLight.position.set(10, 20, 10);
     sceneRef.current.add(dirLight);
-    sceneRef.current.add(new THREE.GridHelper(30, 30, 0x444444, 0x888888));
 
-    const geometry = new THREE.BoxGeometry(6, 4, 6);
-    const material = new THREE.MeshStandardMaterial({ color: 0x34495e, wireframe: true });
-    const cube = new THREE.Mesh(geometry, material);
-    cube.position.y = 2;
-    sceneRef.current.add(cube);
-    houseRef.current = cube;
+    // MARK & GRID
+    const grid = new THREE.GridHelper(40, 40, 0xcccccc, 0xeeeeee);
+    sceneRef.current.add(grid);
+
+    sceneRef.current.add(houseGroupRef.current);
 
     const animate = () => {
       requestAnimationFrame(animate);
@@ -50,123 +56,115 @@ const Project3DBuildingPreview = () => {
       renderer.render(sceneRef.current, camera);
     };
     animate();
+
     return () => { if (mountRef.current) mountRef.current.innerHTML = ""; };
   }, []);
 
-  // FUNKTION FÖR ATT FÖRMINSKA BILDEN
-  const compressImage = (file) => {
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (event) => {
-        const img = new Image();
-        img.src = event.target.result;
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 1024; // AI:n behöver inte mer än så här
-          let width = img.width;
-          let height = img.height;
+  // UPPDATERA MODELLEN NÄR MÅTTEN ÄNDRAS
+  useEffect(() => {
+    const group = houseGroupRef.current;
+    while (group.children.length > 0) { group.remove(group.children[0]); }
 
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0xffffff }); // Vit träpanel
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0x333333 }); // Svart takpannor
+    const detailMat = new THREE.MeshStandardMaterial({ color: 0x2c3e50 }); // Blå detaljer
 
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, width, height);
-          canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.8);
-        };
-      };
+    // 1. HUVUDKROPP
+    const bodyGeo = new THREE.BoxGeometry(houseSize.width, houseSize.height, houseSize.depth);
+    const body = new THREE.Mesh(bodyGeo, wallMat);
+    body.position.y = houseSize.height / 2;
+    group.add(body);
+
+    // 2. TAK (Gavel)
+    const roofShape = new THREE.Shape();
+    roofShape.moveTo(-houseSize.width / 2, 0);
+    roofShape.lineTo(houseSize.width / 2, 0);
+    roofShape.lineTo(0, houseSize.roofHeight);
+    roofShape.lineTo(-houseSize.width / 2, 0);
+
+    const roofExtrude = new THREE.ExtrudeGeometry(roofShape, {
+      depth: houseSize.depth + 0.5,
+      bevelEnabled: false,
     });
-  };
+    const roof = new THREE.Mesh(roofExtrude, roofMat);
+    roof.rotation.y = Math.PI; // Vrid för att matcha djupet
+    roof.position.set(0, houseSize.height, houseSize.depth / 2 + 0.25);
+    group.add(roof);
 
-  const handleFileChange = (e) => {
-    const selectedFiles = Array.from(e.target.files);
-    setFiles(selectedFiles);
-    const newPreviews = selectedFiles.map(file => URL.createObjectURL(file));
-    setPreviews(newPreviews);
-    setSelectedIndex(0);
-  };
+    // 3. TAKKUPA (Dormer) - Som på din bild
+    const dormerGeo = new THREE.BoxGeometry(houseSize.dormerWidth, houseSize.dormerHeight, 2);
+    const dormer = new THREE.Mesh(dormerGeo, wallMat);
+    dormer.position.set(0, houseSize.height + houseSize.dormerHeight / 2, houseSize.depth / 2 - 0.5);
+    group.add(dormer);
 
-  const generateModel = async () => {
-    if (files.length === 0) return setStatus("Välj bilder först!");
-    setLoading(true);
-    setStatus("Optimerar och skickar... (Vänta ca 30 sek)");
+    const dRoofShape = new THREE.Shape();
+    dRoofShape.moveTo(-houseSize.dormerWidth / 2 - 0.2, 0);
+    dRoofShape.lineTo(houseSize.dormerWidth / 2 + 0.2, 0);
+    dRoofShape.lineTo(0, 1);
+    dRoofShape.lineTo(-houseSize.dormerWidth / 2 - 0.2, 0);
 
-    try {
-      // 1. Krymp bilden (viktigt för att undvika timeout)
-      const optimizedBlob = await compressImage(files[selectedIndex]);
+    const dRoofGeo = new THREE.ExtrudeGeometry(dRoofShape, { depth: 2.2, bevelEnabled: false });
+    const dRoof = new THREE.Mesh(dRoofGeo, roofMat);
+    dRoof.position.set(0, houseSize.height + houseSize.dormerHeight, houseSize.depth / 2 + 1);
+    group.add(dRoof);
 
-      // 2. Anropa proxyn UTAN extra parametrar i URL:en för att undvika DNS-strul
-      const response = await fetch(PROXY_URL, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${HF_TOKEN}`,
-          "Content-Type": "application/octet-stream",
-        },
-        body: optimizedBlob,
-      });
+    // 4. VERANDA / ENTRÉ
+    const porchGeo = new THREE.BoxGeometry(houseSize.porchWidth, houseSize.porchHeight, 2);
+    const porch = new THREE.Mesh(porchGeo, wallMat);
+    porch.position.set(0, houseSize.porchHeight / 2, houseSize.depth / 2 + 1);
+    group.add(porch);
 
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || `Status ${response.status}`);
-      }
+    detailMat.dispose();
+  }, [houseSize]);
 
-      setStatus("Modell mottagen! Bygger 3D...");
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-
-      new GLTFLoader().load(url, (gltf) => {
-        if (houseRef.current) sceneRef.current.remove(houseRef.current);
-        const model = gltf.scene;
-        const box = new THREE.Box3().setFromObject(model);
-        const size = box.getSize(new THREE.Vector3());
-        const center = box.getCenter(new THREE.Vector3());
-        const scale = 10 / Math.max(size.x, size.y, size.z);
-        model.scale.set(scale, scale, scale);
-        model.position.x = -center.x * scale;
-        model.position.z = -center.z * scale;
-        model.position.y = -box.min.y * scale;
-        sceneRef.current.add(model);
-        houseRef.current = model;
-        setStatus("Klart!");
-        setLoading(false);
-      }, undefined, (err) => {
-        throw new Error("Kunde inte tolka 3D-filen.");
-      });
-    } catch (err) {
-      console.error(err);
-      // Om det fortfarande blir 1016, be användaren vänta
-      const msg = err.message.includes("1016") || err.message.includes("530")
-        ? "Nätverksfel hos Cloudflare. Vänta 30 sekunder och tryck på knappen igen."
-        : "Fel: " + err.message;
-      setStatus(msg);
-      setLoading(false);
-    }
+  const updateVal = (key, val) => {
+    setHouseSize(prev => ({ ...prev, [key]: parseFloat(val) }));
   };
 
   return (
-    <div style={{ width: '100%', height: '100%', minHeight: '600px', position: 'relative', background: '#f0f2f5' }}>
-      <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
-      <div style={{ position: 'absolute', top: 20, left: 20, background: 'white', padding: '20px', borderRadius: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.1)', width: '320px' }}>
-        <h3 style={{ margin: '0 0 10px 0' }}>3D Hus-Generator</h3>
-        <input type="file" multiple accept="image/*" onChange={handleFileChange} style={{ marginBottom: '15px', fontSize: '12px', width: '100%' }} />
-        {previews.length > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '15px', maxHeight: '150px', overflowY: 'auto', padding: '10px', background: '#f8f9fa', borderRadius: '8px' }}>
-            {previews.map((src, idx) => (
-              <img key={idx} src={src} onClick={() => setSelectedIndex(idx)} style={{ width: '100%', height: '50px', objectFit: 'cover', cursor: 'pointer', border: selectedIndex === idx ? '3px solid #2ecc71' : '1px solid #ddd', borderRadius: '4px' }} />
-            ))}
-          </div>
-        )}
-        <button onClick={generateModel} disabled={loading || files.length === 0} style={{ width: '100%', padding: '14px', background: loading ? '#ccc' : '#27ae60', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
-          {loading ? "AI arbetar..." : "Skapa 3D av markerad bild"}
-        </button>
-        {status && <p style={{ marginTop: '10px', fontSize: '11px', color: '#34495e', textAlign: 'center' }}>{status}</p>}
+    <div style={{ width: '100%', height: '100%', minHeight: '700px', display: 'flex', fontFamily: 'sans-serif' }}>
+      {/* 3D-VY */}
+      <div ref={mountRef} style={{ flex: 1, background: '#f0f2f5' }} />
+
+      {/* KONTROLLPANEL */}
+      <div style={{ width: '350px', background: 'white', padding: '25px', boxShadow: '-5px 0 15px rgba(0,0,0,0.05)', overflowY: 'auto' }}>
+        <h2 style={{ fontSize: '20px', marginBottom: '20px', color: '#2c3e50' }}>Husarkitekten 1.0</h2>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+          <Control label="Husbredd" val={houseSize.width} min="5" max="20" onChange={(v) => updateVal('width', v)} />
+          <Control label="Husdjup" val={houseSize.depth} min="5" max="20" onChange={(v) => updateVal('depth', v)} />
+          <Control label="Våningshöjd" val={houseSize.height} min="2" max="10" onChange={(v) => updateVal('height', v)} />
+          <hr style={{ border: '0.5px solid #eee', width: '100%' }} />
+          <Control label="Takhöjd" val={houseSize.roofHeight} min="1" max="8" onChange={(v) => updateVal('roofHeight', v)} />
+          <Control label="Takkupa Bredd" val={houseSize.dormerWidth} min="1" max="6" onChange={(v) => updateVal('dormerWidth', v)} />
+          <hr style={{ border: '0.5px solid #eee', width: '100%' }} />
+          <Control label="Veranda Bredd" val={houseSize.porchWidth} min="1" max="8" onChange={(v) => updateVal('porchWidth', v)} />
+          <Control label="Veranda Höjd" val={houseSize.porchHeight} min="1" max="5" onChange={(v) => updateVal('porchHeight', v)} />
+        </div>
+
+        <div style={{ marginTop: '30px', padding: '15px', background: '#e8f4fd', borderRadius: '8px' }}>
+          <p style={{ fontSize: '13px', color: '#2980b9', margin: 0 }}>
+            <strong>Tips:</strong> Använd reglagen för att matcha måtten på bilden. Du kan rotera huset med musen för att se det från alla håll.
+          </p>
+        </div>
       </div>
     </div>
   );
 };
+
+// Enkel komponent för reglage
+const Control = ({ label, val, min, max, onChange }) => (
+  <div style={{ display: 'flex', flexDirection: 'column' }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+      <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#34495e' }}>{label}</label>
+      <span style={{ fontSize: '12px', color: '#7f8c8d' }}>{val}m</span>
+    </div>
+    <input
+      type="range" min={min} max={max} step="0.1" value={val}
+      onChange={(e) => onChange(e.target.value)}
+      style={{ cursor: 'pointer' }}
+    />
+  </div>
+);
 
 export default Project3DBuildingPreview;
