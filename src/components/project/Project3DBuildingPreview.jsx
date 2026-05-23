@@ -1,170 +1,246 @@
 import React, { useState, useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 
 const Project3DBuildingPreview = () => {
   const mountRef = useRef(null);
+  const [selectedObject, setSelectedObject] = useState(null);
 
-  // --- HUSETS MÅTT (STATER) ---
-  const [houseSize, setHouseSize] = useState({
-    width: 10,
-    height: 6,
-    depth: 8,
-    roofHeight: 4,
-    dormerWidth: 3,   // Takkupa bredd
-    dormerHeight: 2,  // Takkupa höjd
-    porchWidth: 4,    // Veranda bredd
-    porchHeight: 3,   // Veranda höjd
-  });
-
+  // Refs för Three.js
   const sceneRef = useRef(new THREE.Scene());
-  const houseGroupRef = useRef(new THREE.Group());
+  const rendererRef = useRef(null);
+  const cameraRef = useRef(null);
+  const transformRef = useRef(null);
+  const orbitRef = useRef(null);
 
   useEffect(() => {
     if (!mountRef.current) return;
 
-    // SCENE SETUP
+    // 1. SETUP SCENE (Ren och ljus bakgrund som Aerotool)
     const width = mountRef.current.clientWidth;
     const height = mountRef.current.clientHeight;
-    const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
-    camera.position.set(15, 15, 15);
+    const scene = sceneRef.current;
+    scene.background = new THREE.Color(0xf1f5f9);
+
+    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+    camera.position.set(15, 12, 15);
+    cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(width, height);
-    renderer.setClearColor(0xf0f2f5, 1);
+    renderer.shadowMap.enabled = true;
     mountRef.current.appendChild(renderer.domElement);
+    rendererRef.current = renderer;
 
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
+    // 2. LJUS
+    const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+    scene.add(ambient);
+    const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+    sun.position.set(10, 20, 10);
+    sun.castShadow = true;
+    scene.add(sun);
 
-    // LJUS
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-    sceneRef.current.add(ambientLight);
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    dirLight.position.set(10, 20, 10);
-    sceneRef.current.add(dirLight);
+    // 3. KONTROLLER
+    const orbit = new OrbitControls(camera, renderer.domElement);
+    orbit.enableDamping = true;
+    orbitRef.current = orbit;
 
-    // MARK & GRID
-    const grid = new THREE.GridHelper(40, 40, 0xcccccc, 0xeeeeee);
-    sceneRef.current.add(grid);
+    const transform = new TransformControls(camera, renderer.domElement);
+    transform.addEventListener('dragging-changed', (e) => {
+      orbit.enabled = !e.value;
+    });
+    scene.add(transform);
+    transformRef.current = transform;
 
-    sceneRef.current.add(houseGroupRef.current);
+    // 4. GRID & MARK
+    const grid = new THREE.GridHelper(50, 50, 0xcbd5e1, 0xe2e8f0);
+    scene.add(grid);
 
+    // 5. SKAPA HUSETS GRUNDMODELL (Klickbar)
+    const houseGroup = new THREE.Group();
+
+    // Väggar
+    const wallGeo = new THREE.BoxGeometry(10, 5, 8);
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+    const walls = new THREE.Mesh(wallGeo, wallMat);
+    walls.position.y = 2.5;
+    walls.name = "Husväggar";
+    houseGroup.add(walls);
+
+    // Tak (Detta kan vi senare göra mer avancerat)
+    const roofGeo = new THREE.BoxGeometry(11, 0.5, 9);
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0x334155 });
+    const roof = new THREE.Mesh(roofGeo, roofMat);
+    roof.position.y = 5.25;
+    roof.name = "Takyta";
+    houseGroup.add(roof);
+
+    scene.add(houseGroup);
+
+    // 6. KLICK-DETEKTERING (Raycaster)
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    const onMouseDown = (event) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(scene.children, true);
+
+      if (intersects.length > 0) {
+        const clickedObj = intersects[0].object;
+        // Vi vill bara kunna flytta hinder, inte själva huset i detta läge
+        if (clickedObj.name !== "Husväggar" && clickedObj.name !== "GridHelper") {
+          transform.attach(clickedObj);
+          setSelectedObject(clickedObj);
+        }
+      } else {
+        // Om vi klickar på tom yta, avmarkera
+        if (!transform.dragging) {
+          transform.detach();
+          setSelectedObject(null);
+        }
+      }
+    };
+
+    renderer.domElement.addEventListener('mousedown', onMouseDown);
+
+    // 7. ANIMATIONSLOOP
     const animate = () => {
       requestAnimationFrame(animate);
-      controls.update();
-      renderer.render(sceneRef.current, camera);
+      orbit.update();
+      renderer.render(scene, camera);
     };
     animate();
 
-    return () => { if (mountRef.current) mountRef.current.innerHTML = ""; };
+    return () => {
+      if (mountRef.current) mountRef.current.innerHTML = "";
+    };
   }, []);
 
-  // UPPDATERA MODELLEN NÄR MÅTTEN ÄNDRAS
-  useEffect(() => {
-    const group = houseGroupRef.current;
-    while (group.children.length > 0) { group.remove(group.children[0]); }
+  // FUNKTION: LÄGG TILL HINDER (Fönster, Skorsten etc)
+  const addObstacle = (type) => {
+    let geo, mat, name;
+    if (type === 'skorsten') {
+      geo = new THREE.BoxGeometry(0.8, 2, 0.8);
+      mat = new THREE.MeshStandardMaterial({ color: 0x475569 });
+      name = "Skorsten";
+    } else if (type === 'vent') {
+      geo = new THREE.CylinderGeometry(0.2, 0.2, 0.8);
+      mat = new THREE.MeshStandardMaterial({ color: 0x1e293b });
+      name = "Ventilation";
+    } else if (type === 'fonster') {
+      geo = new THREE.BoxGeometry(1.2, 0.1, 1.8);
+      mat = new THREE.MeshStandardMaterial({ color: 0xadd8e6, transparent: true, opacity: 0.7 });
+      name = "Takfönster";
+    }
 
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0xffffff }); // Vit träpanel
-    const roofMat = new THREE.MeshStandardMaterial({ color: 0x333333 }); // Svart takpannor
-    const detailMat = new THREE.MeshStandardMaterial({ color: 0x2c3e50 }); // Blå detaljer
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(0, 5.5, 0); // Placera på taket
+    mesh.name = name;
+    sceneRef.current.add(mesh);
 
-    // 1. HUVUDKROPP
-    const bodyGeo = new THREE.BoxGeometry(houseSize.width, houseSize.height, houseSize.depth);
-    const body = new THREE.Mesh(bodyGeo, wallMat);
-    body.position.y = houseSize.height / 2;
-    group.add(body);
-
-    // 2. TAK (Gavel)
-    const roofShape = new THREE.Shape();
-    roofShape.moveTo(-houseSize.width / 2, 0);
-    roofShape.lineTo(houseSize.width / 2, 0);
-    roofShape.lineTo(0, houseSize.roofHeight);
-    roofShape.lineTo(-houseSize.width / 2, 0);
-
-    const roofExtrude = new THREE.ExtrudeGeometry(roofShape, {
-      depth: houseSize.depth + 0.5,
-      bevelEnabled: false,
-    });
-    const roof = new THREE.Mesh(roofExtrude, roofMat);
-    roof.rotation.y = Math.PI; // Vrid för att matcha djupet
-    roof.position.set(0, houseSize.height, houseSize.depth / 2 + 0.25);
-    group.add(roof);
-
-    // 3. TAKKUPA (Dormer) - Som på din bild
-    const dormerGeo = new THREE.BoxGeometry(houseSize.dormerWidth, houseSize.dormerHeight, 2);
-    const dormer = new THREE.Mesh(dormerGeo, wallMat);
-    dormer.position.set(0, houseSize.height + houseSize.dormerHeight / 2, houseSize.depth / 2 - 0.5);
-    group.add(dormer);
-
-    const dRoofShape = new THREE.Shape();
-    dRoofShape.moveTo(-houseSize.dormerWidth / 2 - 0.2, 0);
-    dRoofShape.lineTo(houseSize.dormerWidth / 2 + 0.2, 0);
-    dRoofShape.lineTo(0, 1);
-    dRoofShape.lineTo(-houseSize.dormerWidth / 2 - 0.2, 0);
-
-    const dRoofGeo = new THREE.ExtrudeGeometry(dRoofShape, { depth: 2.2, bevelEnabled: false });
-    const dRoof = new THREE.Mesh(dRoofGeo, roofMat);
-    dRoof.position.set(0, houseSize.height + houseSize.dormerHeight, houseSize.depth / 2 + 1);
-    group.add(dRoof);
-
-    // 4. VERANDA / ENTRÉ
-    const porchGeo = new THREE.BoxGeometry(houseSize.porchWidth, houseSize.porchHeight, 2);
-    const porch = new THREE.Mesh(porchGeo, wallMat);
-    porch.position.set(0, houseSize.porchHeight / 2, houseSize.depth / 2 + 1);
-    group.add(porch);
-
-    detailMat.dispose();
-  }, [houseSize]);
-
-  const updateVal = (key, val) => {
-    setHouseSize(prev => ({ ...prev, [key]: parseFloat(val) }));
+    // Aktivera flytt-pilar direkt
+    transformRef.current.attach(mesh);
+    setSelectedObject(mesh);
   };
 
   return (
-    <div style={{ width: '100%', height: '100%', minHeight: '700px', display: 'flex', fontFamily: 'sans-serif' }}>
+    <div style={{ width: '100%', height: '100%', position: 'relative', background: '#f1f5f9', borderRadius: '12px', overflow: 'hidden' }}>
+
       {/* 3D-VY */}
-      <div ref={mountRef} style={{ flex: 1, background: '#f0f2f5' }} />
+      <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
 
-      {/* KONTROLLPANEL */}
-      <div style={{ width: '350px', background: 'white', padding: '25px', boxShadow: '-5px 0 15px rgba(0,0,0,0.05)', overflowY: 'auto' }}>
-        <h2 style={{ fontSize: '20px', marginBottom: '20px', color: '#2c3e50' }}>Husarkitekten 1.0</h2>
+      {/* FLYTANDE VERKTYGSFÄLT (Hinder) */}
+      <div style={{
+        position: 'absolute',
+        bottom: '20px',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        display: 'flex',
+        gap: '10px',
+        background: 'rgba(255,255,255,0.9)',
+        padding: '10px 20px',
+        borderRadius: '100px',
+        boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
+        backdropFilter: 'blur(5px)',
+        border: '1px solid rgba(255,255,255,0.5)',
+      }}>
+        <ToolButton icon="🧱" label="Skorsten" onClick={() => addObstacle('skorsten')} />
+        <ToolButton icon="🪟" label="Fönster" onClick={() => addObstacle('fonster')} />
+        <ToolButton icon="🔘" label="Vent" onClick={() => addObstacle('vent')} />
+        <ToolButton icon="🪜" label="Stege" onClick={() => {}} />
+      </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-          <Control label="Husbredd" val={houseSize.width} min="5" max="20" onChange={(v) => updateVal('width', v)} />
-          <Control label="Husdjup" val={houseSize.depth} min="5" max="20" onChange={(v) => updateVal('depth', v)} />
-          <Control label="Våningshöjd" val={houseSize.height} min="2" max="10" onChange={(v) => updateVal('height', v)} />
-          <hr style={{ border: '0.5px solid #eee', width: '100%' }} />
-          <Control label="Takhöjd" val={houseSize.roofHeight} min="1" max="8" onChange={(v) => updateVal('roofHeight', v)} />
-          <Control label="Takkupa Bredd" val={houseSize.dormerWidth} min="1" max="6" onChange={(v) => updateVal('dormerWidth', v)} />
-          <hr style={{ border: '0.5px solid #eee', width: '100%' }} />
-          <Control label="Veranda Bredd" val={houseSize.porchWidth} min="1" max="8" onChange={(v) => updateVal('porchWidth', v)} />
-          <Control label="Veranda Höjd" val={houseSize.porchHeight} min="1" max="5" onChange={(v) => updateVal('porchHeight', v)} />
+      {/* OBJEKT-INFO (Visas när man klickar på något) */}
+      {selectedObject && (
+        <div style={{
+          position: 'absolute',
+          top: '20px',
+          right: '20px',
+          background: 'white',
+          padding: '15px',
+          borderRadius: '12px',
+          boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
+          width: '200px',
+        }}>
+          <h4 style={{ margin: '0 0 5px 0', fontSize: '14px' }}>{selectedObject.name}</h4>
+          <p style={{ fontSize: '11px', color: '#64748b', marginBottom: '15px' }}>Använd pilarna för att placera objektet exakt.</p>
+          <button
+            onClick={() => {
+              sceneRef.current.remove(selectedObject);
+              transformRef.current.detach();
+              setSelectedObject(null);
+            }}
+            style={{
+              width: '100%',
+              padding: '8px',
+              background: '#fee2e2',
+              color: '#dc2626',
+              border: 'none',
+              borderRadius: '6px',
+              fontSize: '12px',
+              cursor: 'pointer',
+              fontWeight: '600',
+            }}
+          >
+            Ta bort
+          </button>
         </div>
+      )}
 
-        <div style={{ marginTop: '30px', padding: '15px', background: '#e8f4fd', borderRadius: '8px' }}>
-          <p style={{ fontSize: '13px', color: '#2980b9', margin: 0 }}>
-            <strong>Tips:</strong> Använd reglagen för att matcha måtten på bilden. Du kan rotera huset med musen för att se det från alla håll.
-          </p>
-        </div>
+      {/* STATUS-INDIKATOR */}
+      <div style={{ position: 'absolute', top: '20px', left: '20px', background: 'white', padding: '8px 15px', borderRadius: '100px', fontSize: '12px', fontWeight: '600', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
+        🟢 Redigeringsläge
       </div>
     </div>
   );
 };
 
-// Enkel komponent för reglage
-const Control = ({ label, val, min, max, onChange }) => (
-  <div style={{ display: 'flex', flexDirection: 'column' }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-      <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#34495e' }}>{label}</label>
-      <span style={{ fontSize: '12px', color: '#7f8c8d' }}>{val}m</span>
-    </div>
-    <input
-      type="range" min={min} max={max} step="0.1" value={val}
-      onChange={(e) => onChange(e.target.value)}
-      style={{ cursor: 'pointer' }}
-    />
-  </div>
+// Knapp-komponent för verktygsfältet
+const ToolButton = ({ icon, label, onClick }) => (
+  <button
+    onClick={onClick}
+    style={{
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      background: 'none',
+      border: 'none',
+      cursor: 'pointer',
+      padding: '5px 10px',
+      borderRadius: '8px',
+      transition: 'background 0.2s',
+    }}
+    onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
+    onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+  >
+    <span style={{ fontSize: '20px' }}>{icon}</span>
+    <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#475569', marginTop: '2px' }}>{label}</span>
+  </button>
 );
 
 export default Project3DBuildingPreview;
