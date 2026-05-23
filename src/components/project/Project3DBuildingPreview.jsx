@@ -3,23 +3,24 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
+// ==========================================
+// 1. KLISTRA IN DIN TOKEN HÄR
 const HF_TOKEN = "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";
+// ==========================================
 
 const Project3DBuildingPreview = () => {
   const mountRef = useRef(null);
   const [images, setImages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
+  const [diag, setDiag] = useState("");
   const sceneRef = useRef(new THREE.Scene());
   const houseRef = useRef(null);
-  const modelUrlRef = useRef("");
 
   useEffect(() => {
     if (!mountRef.current) return;
-    const mountNode = mountRef.current;
-    const width = mountNode.clientWidth;
-    const height = mountNode.clientHeight;
-    const scene = sceneRef.current;
+    const width = mountRef.current.clientWidth;
+    const height = mountRef.current.clientHeight;
 
     const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
     camera.position.set(10, 10, 10);
@@ -27,142 +28,139 @@ const Project3DBuildingPreview = () => {
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(width, height);
     renderer.setClearColor(0x000000, 0);
-    mountNode.appendChild(renderer.domElement);
+    mountRef.current.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    sceneRef.current.add(new THREE.AmbientLight(0xffffff, 0.8));
     const dirLight = new THREE.DirectionalLight(0xffffff, 1);
     dirLight.position.set(5, 10, 7);
-    scene.add(dirLight);
+    sceneRef.current.add(dirLight);
+    sceneRef.current.add(new THREE.GridHelper(20, 20));
 
-    scene.add(new THREE.GridHelper(20, 20));
-
+    // Start-box
     const geometry = new THREE.BoxGeometry(5, 3, 5);
     const material = new THREE.MeshStandardMaterial({ color: 0xcccccc });
     const cube = new THREE.Mesh(geometry, material);
     cube.position.y = 1.5;
-    scene.add(cube);
+    sceneRef.current.add(cube);
     houseRef.current = cube;
 
-    let animationFrame = 0;
     const animate = () => {
-      animationFrame = requestAnimationFrame(animate);
+      requestAnimationFrame(animate);
       controls.update();
-      renderer.render(scene, camera);
+      renderer.render(sceneRef.current, camera);
     };
     animate();
 
     return () => {
-      cancelAnimationFrame(animationFrame);
-      controls.dispose();
-      renderer.dispose();
-      if (renderer.domElement.parentNode === mountNode) {
-        mountNode.removeChild(renderer.domElement);
-      }
-      if (modelUrlRef.current) {
-        URL.revokeObjectURL(modelUrlRef.current);
-        modelUrlRef.current = "";
-      }
-      scene.clear();
-      houseRef.current = null;
+      if (mountRef.current) mountRef.current.innerHTML = "";
     };
   }, []);
 
-  const generateModel = async () => {
-    if (images.length === 0) {
-      alert("Ladda upp bilder först!");
-      return;
+  // TESTA ANSLUTNING (DIAGNOSTIK)
+  const testNetwork = async () => {
+    setDiag("Testar anslutning...");
+    try {
+      await fetch("https://huggingface.co", { mode: 'no-cors' });
+      setDiag("✅ Kontakt med HuggingFace OK. Problemet är specifikt för API-underdomänen.");
+    } catch (e) {
+      setDiag("❌ Totalt stopp. Din dator/webbläsare vägrar prata med HuggingFace överhuvudtaget.");
     }
+  };
 
+  const generateModel = async () => {
+    if (images.length === 0) return setStatus("Välj bilder först!");
     setLoading(true);
-    setStatus("AI skapar husmodell...");
+    setStatus("AI:n bearbetar nu dina bilder...");
 
     try {
-      const response = await fetch(
-        "https://api-inference.huggingface.co/models/stabilityai/TripoSR",
-        {
-          mode: "cors",
-          headers: {
-            "Authorization": `Bearer ${HF_TOKEN.trim()}`,
-            "Content-Type": "application/octet-stream",
-          },
-          method: "POST",
-          body: images[0],
-        }
-      );
+      // Vi använder en "Clean URL" för att undvika DNS-cache problem
+      const API_URL = `https://api-inference.huggingface.co/models/stabilityai/TripoSR?t=${Date.now()}`;
+
+      const response = await fetch(API_URL, {
+        headers: {
+          "Authorization": `Bearer ${HF_TOKEN.trim()}`,
+          "Content-Type": "application/octet-stream",
+        },
+        method: "POST",
+        body: images[0],
+      });
 
       if (!response.ok) {
-        const errorText = await response.text().catch(() => "");
-        throw new Error(`API Svar: ${response.status}${errorText ? ` - ${errorText}` : ""}`);
+        if (response.status === 401) throw new Error("Ogiltig API-nyckel (Token).");
+        if (response.status === 429) throw new Error("För många anrop. Vänta en minut.");
+        throw new Error(`Serverfel: ${response.status}`);
       }
 
       const blob = await response.blob();
-      if (modelUrlRef.current) URL.revokeObjectURL(modelUrlRef.current);
       const url = URL.createObjectURL(blob);
-      modelUrlRef.current = url;
 
-      new GLTFLoader().load(
-        url,
-        (gltf) => {
-          try {
-            const model = gltf?.scene;
-            if (!(model instanceof THREE.Object3D)) {
-              throw new Error("AI-modellen är inte ett giltigt Three.js Object3D.");
-            }
+      new GLTFLoader().load(url, (gltf) => {
+        if (houseRef.current) sceneRef.current.remove(houseRef.current);
+        const model = gltf.scene;
 
-            if (houseRef.current instanceof THREE.Object3D) {
-              sceneRef.current.remove(houseRef.current);
-            }
+        const box = new THREE.Box3().setFromObject(model);
+        const center = box.getCenter(new THREE.Vector3());
+        model.position.sub(center);
+        model.position.y += (box.max.y - box.min.y) / 2;
+        model.scale.set(6, 6, 6);
 
-            const box = new THREE.Box3().setFromObject(model);
-            const center = box.getCenter(new THREE.Vector3());
-            const size = box.getSize(new THREE.Vector3());
-            const maxSize = Math.max(size.x, size.y, size.z);
-
-            if (!Number.isFinite(maxSize) || maxSize <= 0) {
-              throw new Error("AI-modellen saknar giltig storlek.");
-            }
-
-            model.position.sub(center);
-            model.position.y += size.y / 2;
-            model.scale.setScalar(5 / maxSize);
-
-            sceneRef.current.add(model);
-            houseRef.current = model;
-            setStatus("Klart!");
-          } catch (err) {
-            console.error(err);
-            setStatus(`Fel: ${err.message}`);
-          } finally {
-            setLoading(false);
-          }
-        },
-        undefined,
-        (err) => {
-          console.error(err);
-          setStatus("Fel: Kunde inte tolka 3D-filen.");
-          setLoading(false);
-        }
-      );
+        sceneRef.current.add(model);
+        houseRef.current = model;
+        setStatus("Modellering klar!");
+        setLoading(false);
+      });
     } catch (err) {
-      console.error(err);
-      const message = err instanceof TypeError
-        ? "Connection blocked by browser or network. Please check your internet/firewall."
-        : err.message;
-      setStatus(`Fel: ${message}`);
+      console.error("DEBUG:", err);
+      // Om felet är DNS-relaterat (ERR_NAME_NOT_RESOLVED)
+      setStatus("Nätverksfel: Webbläsaren hittar inte AI-servern.");
       setLoading(false);
     }
   };
 
   return (
-    <div style={{ width: '100%', height: '500px', position: 'relative', background: '#eee' }}>
+    <div style={{ width: '100%', height: '100%', minHeight: '500px', position: 'relative', background: '#f8f9fa' }}>
       <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
-      <div style={{ position: 'absolute', top: 10, left: 10, background: 'white', padding: 15, borderRadius: 8, width: 220 }}>
-        <input type="file" multiple accept="image/*" onChange={(e) => setImages(Array.from(e.target.files || []))} style={{ fontSize: 10 }} />
-        <button onClick={generateModel} disabled={loading} style={{ width: '100%', marginTop: 10, padding: 8, cursor: 'pointer' }}>
-          {loading ? "Skapar..." : "Skapa 3D-hus"}
+
+      <div style={{ position: 'absolute', top: 20, left: 20, background: 'white', padding: 20, borderRadius: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.15)', width: 280 }}>
+        <h3 style={{ margin: '0 0 10px 0', fontSize: 16 }}>Hus-AI (TripoSR)</h3>
+
+        <input
+          type="file"
+          multiple
+          onChange={(e) => setImages(Array.from(e.target.files))}
+          style={{ marginBottom: 15, width: '100%', fontSize: 12 }}
+        />
+
+        <button
+          onClick={generateModel}
+          disabled={loading || !images.length}
+          style={{
+            width: '100%',
+            padding: '12px',
+            background: loading ? '#ccc' : '#e67e22',
+            color: 'white',
+            border: 'none',
+            borderRadius: 6,
+            fontWeight: 'bold',
+            cursor: 'pointer',
+          }}
+        >
+          {loading ? "Skapar 3D..." : "Skapa 3D-hus"}
         </button>
-        <p style={{ fontSize: 10, color: 'red' }}>{status}</p>
+
+        {status && (
+          <div style={{ marginTop: 15, padding: 10, background: '#fff5f5', borderRadius: 6, border: '1px solid #feb2b2' }}>
+            <p style={{ margin: 0, fontSize: 12, color: '#c53030', fontWeight: '500' }}>{status}</p>
+          </div>
+        )}
+
+        <hr style={{ margin: '20px 0', border: 'none', borderTop: '1px solid #eee' }} />
+
+        <button onClick={testNetwork} style={{ fontSize: 10, background: 'none', border: '1px solid #ddd', cursor: 'pointer', padding: '5px 10px', borderRadius: 4 }}>
+          Kör diagnostik
+        </button>
+        {diag && <p style={{ fontSize: 9, marginTop: 5, color: '#666' }}>{diag}</p>}
       </div>
     </div>
   );
