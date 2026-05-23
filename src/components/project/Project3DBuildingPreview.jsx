@@ -93,15 +93,14 @@ const Project3DBuildingPreview = () => {
   const generateModel = async () => {
     if (files.length === 0) return setStatus("Välj bilder först!");
     setLoading(true);
-    setStatus("Optimerar bild och förbereder AI-analys...");
+    setStatus("Optimerar och skickar... (Vänta ca 30 sek)");
 
     try {
-      // 1. Komprimera bilden först!
+      // 1. Krymp bilden (viktigt för att undvika timeout)
       const optimizedBlob = await compressImage(files[selectedIndex]);
 
-      setStatus("Skickar till AI (detta kan ta 20-40 sekunder)...");
-
-      const response = await fetch(`${PROXY_URL}?t=${Date.now()}`, {
+      // 2. Anropa proxyn UTAN extra parametrar i URL:en för att undvika DNS-strul
+      const response = await fetch(PROXY_URL, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${HF_TOKEN}`,
@@ -112,10 +111,10 @@ const Project3DBuildingPreview = () => {
 
       if (!response.ok) {
         const text = await response.text();
-        throw new Error(text || "Anslutningen bröts av servern.");
+        throw new Error(text || `Status ${response.status}`);
       }
 
-      setStatus("Modell mottagen! Bearbetar 3D...");
+      setStatus("Modell mottagen! Bygger 3D...");
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
 
@@ -134,10 +133,16 @@ const Project3DBuildingPreview = () => {
         houseRef.current = model;
         setStatus("Klart!");
         setLoading(false);
+      }, undefined, (err) => {
+        throw new Error("Kunde inte tolka 3D-filen.");
       });
     } catch (err) {
       console.error(err);
-      setStatus("Fel: " + err.message + ". Prova en annan bild.");
+      // Om det fortfarande blir 1016, be användaren vänta
+      const msg = err.message.includes("1016") || err.message.includes("530")
+        ? "Nätverksfel hos Cloudflare. Vänta 30 sekunder och tryck på knappen igen."
+        : "Fel: " + err.message;
+      setStatus(msg);
       setLoading(false);
     }
   };
