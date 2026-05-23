@@ -4,7 +4,10 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 // ==========================================
-// 1. KLISTRA IN DIN TOKEN HÄR
+// 1. DIN PROXY-URL (Bekräftad fungerande!)
+const PROXY_URL = "https://ai-house-proxy.hedlund1212.workers.dev";
+
+// 2. KLISTRA IN DIN HUGGING FACE TOKEN HÄR
 const HF_TOKEN = "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";
 // ==========================================
 
@@ -13,7 +16,6 @@ const Project3DBuildingPreview = () => {
   const [images, setImages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
-  const [diag, setDiag] = useState("");
   const sceneRef = useRef(new THREE.Scene());
   const houseRef = useRef(null);
 
@@ -23,7 +25,7 @@ const Project3DBuildingPreview = () => {
     const height = mountRef.current.clientHeight;
 
     const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000);
-    camera.position.set(10, 10, 10);
+    camera.position.set(12, 12, 12);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(width, height);
@@ -31,17 +33,23 @@ const Project3DBuildingPreview = () => {
     mountRef.current.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
-    sceneRef.current.add(new THREE.AmbientLight(0xffffff, 0.8));
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-    dirLight.position.set(5, 10, 7);
-    sceneRef.current.add(dirLight);
-    sceneRef.current.add(new THREE.GridHelper(20, 20));
+    controls.enableDamping = true;
 
-    // Start-box
-    const geometry = new THREE.BoxGeometry(5, 3, 5);
-    const material = new THREE.MeshStandardMaterial({ color: 0xcccccc });
+    // Ljusinställningar för att se modellen bra
+    sceneRef.current.add(new THREE.AmbientLight(0xffffff, 0.8));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    dirLight.position.set(10, 20, 10);
+    sceneRef.current.add(dirLight);
+
+    // Grid (Marken)
+    const grid = new THREE.GridHelper(30, 30, 0x444444, 0x888888);
+    sceneRef.current.add(grid);
+
+    // Start-box (Visas innan AI-modellen är klar)
+    const geometry = new THREE.BoxGeometry(6, 4, 6);
+    const material = new THREE.MeshStandardMaterial({ color: 0x34495e, wireframe: true });
     const cube = new THREE.Mesh(geometry, material);
-    cube.position.y = 1.5;
+    cube.position.y = 2;
     sceneRef.current.add(cube);
     houseRef.current = cube;
 
@@ -57,79 +65,92 @@ const Project3DBuildingPreview = () => {
     };
   }, []);
 
-  // TESTA ANSLUTNING (DIAGNOSTIK)
-  const testNetwork = async () => {
-    setDiag("Testar anslutning...");
-    try {
-      await fetch("https://huggingface.co", { mode: 'no-cors' });
-      setDiag("✅ Kontakt med HuggingFace OK. Problemet är specifikt för API-underdomänen.");
-    } catch (e) {
-      setDiag("❌ Totalt stopp. Din dator/webbläsare vägrar prata med HuggingFace överhuvudtaget.");
-    }
-  };
-
   const generateModel = async () => {
-    if (images.length === 0) return setStatus("Välj bilder först!");
+    if (images.length === 0) return setStatus("Välj en bild på huset först!");
     setLoading(true);
-    setStatus("AI:n bearbetar nu dina bilder...");
+    setStatus("Kopplar upp mot AI-tunneln...");
 
     try {
-      // Vi använder en "Clean URL" för att undvika DNS-cache problem
-      const API_URL = `https://api-inference.huggingface.co/models/stabilityai/TripoSR?t=${Date.now()}`;
-
-      const response = await fetch(API_URL, {
+      const response = await fetch(PROXY_URL, {
+        method: "POST",
         headers: {
           "Authorization": `Bearer ${HF_TOKEN.trim()}`,
           "Content-Type": "application/octet-stream",
         },
-        method: "POST",
-        body: images[0],
+        body: images[0], // Skickar din uppladdade bild
       });
 
       if (!response.ok) {
-        if (response.status === 401) throw new Error("Ogiltig API-nyckel (Token).");
-        if (response.status === 429) throw new Error("För många anrop. Vänta en minut.");
-        throw new Error(`Serverfel: ${response.status}`);
+        const errorMsg = await response.text();
+        throw new Error(`AI-fel: ${response.status}. ${errorMsg}`);
       }
 
+      setStatus("Bearbetar 3D-data... Detta kan ta 10-20 sekunder.");
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
 
-      new GLTFLoader().load(url, (gltf) => {
+      const loader = new GLTFLoader();
+      loader.load(url, (gltf) => {
+        // Ta bort placeholder-boxen
         if (houseRef.current) sceneRef.current.remove(houseRef.current);
+
         const model = gltf.scene;
 
+        // Centrera och skala modellen automatiskt
         const box = new THREE.Box3().setFromObject(model);
+        const size = box.getSize(new THREE.Vector3());
         const center = box.getCenter(new THREE.Vector3());
-        model.position.sub(center);
-        model.position.y += (box.max.y - box.min.y) / 2;
-        model.scale.set(6, 6, 6);
+
+        // Skala upp den så den ser bra ut (ca 8 enheter stor)
+        const scale = 8 / Math.max(size.x, size.y, size.z);
+        model.scale.set(scale, scale, scale);
+
+        // Sätt den på marken (y=0)
+        model.position.x = -center.x * scale;
+        model.position.z = -center.z * scale;
+        model.position.y = -box.min.y * scale;
 
         sceneRef.current.add(model);
         houseRef.current = model;
-        setStatus("Modellering klar!");
+
+        setStatus("Klart! Du kan nu rotera huset.");
         setLoading(false);
+      }, undefined, (err) => {
+        throw new Error("Kunde inte läsa 3D-filen från AI:n.");
       });
+
     } catch (err) {
-      console.error("DEBUG:", err);
-      // Om felet är DNS-relaterat (ERR_NAME_NOT_RESOLVED)
-      setStatus("Nätverksfel: Webbläsaren hittar inte AI-servern.");
+      console.error("DETALJERAT FEL:", err);
+      setStatus("Fel: " + err.message);
       setLoading(false);
     }
   };
 
   return (
-    <div style={{ width: '100%', height: '100%', minHeight: '500px', position: 'relative', background: '#f8f9fa' }}>
+    <div style={{ width: '100%', height: '100%', minHeight: '600px', position: 'relative', background: '#ecf0f1', borderRadius: '15px', overflow: 'hidden' }}>
       <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
 
-      <div style={{ position: 'absolute', top: 20, left: 20, background: 'white', padding: 20, borderRadius: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.15)', width: 280 }}>
-        <h3 style={{ margin: '0 0 10px 0', fontSize: 16 }}>Hus-AI (TripoSR)</h3>
+      <div style={{
+        position: 'absolute',
+        top: 25,
+        left: 25,
+        background: 'rgba(255, 255, 255, 0.95)',
+        padding: '25px',
+        borderRadius: '15px',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.15)',
+        width: '300px',
+        backdropFilter: 'blur(5px)',
+        border: '1px solid rgba(255,255,255,0.3)',
+      }}>
+        <h2 style={{ margin: '0 0 5px 0', fontSize: '18px', color: '#2c3e50' }}>Hus-Preview 3D</h2>
+        <p style={{ margin: '0 0 20px 0', fontSize: '12px', color: '#7f8c8d' }}>Skapa en 3D-modell från en bild</p>
 
+        <label style={{ display: 'block', marginBottom: '10px', fontSize: '13px', fontWeight: 'bold' }}>Ladda upp bild:</label>
         <input
           type="file"
-          multiple
+          accept="image/*"
           onChange={(e) => setImages(Array.from(e.target.files))}
-          style={{ marginBottom: 15, width: '100%', fontSize: 12 }}
+          style={{ marginBottom: '20px', width: '100%', fontSize: '12px' }}
         />
 
         <button
@@ -137,30 +158,39 @@ const Project3DBuildingPreview = () => {
           disabled={loading || !images.length}
           style={{
             width: '100%',
-            padding: '12px',
-            background: loading ? '#ccc' : '#e67e22',
+            padding: '14px',
+            background: loading ? '#bdc3c7' : '#2ecc71',
             color: 'white',
             border: 'none',
-            borderRadius: 6,
+            borderRadius: '8px',
             fontWeight: 'bold',
-            cursor: 'pointer',
+            fontSize: '14px',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            transition: 'all 0.3s ease',
           }}
         >
-          {loading ? "Skapar 3D..." : "Skapa 3D-hus"}
+          {loading ? "AI arbetar..." : "Generera 3D-hus"}
         </button>
 
         {status && (
-          <div style={{ marginTop: 15, padding: 10, background: '#fff5f5', borderRadius: 6, border: '1px solid #feb2b2' }}>
-            <p style={{ margin: 0, fontSize: 12, color: '#c53030', fontWeight: '500' }}>{status}</p>
+          <div style={{
+            marginTop: '20px',
+            padding: '12px',
+            background: status.includes('Fel') ? '#fdecea' : '#e8f8f5',
+            borderRadius: '8px',
+            border: `1px solid ${status.includes('Fel') ? '#f5c6cb' : '#a3e4d7'}`,
+          }}>
+            <p style={{
+              margin: 0,
+              fontSize: '12px',
+              color: status.includes('Fel') ? '#721c24' : '#145a32',
+              textAlign: 'center',
+              lineHeight: '1.4',
+            }}>
+              {status}
+            </p>
           </div>
         )}
-
-        <hr style={{ margin: '20px 0', border: 'none', borderTop: '1px solid #eee' }} />
-
-        <button onClick={testNetwork} style={{ fontSize: 10, background: 'none', border: '1px solid #ddd', cursor: 'pointer', padding: '5px 10px', borderRadius: 4 }}>
-          Kör diagnostik
-        </button>
-        {diag && <p style={{ fontSize: 9, marginTop: 5, color: '#666' }}>{diag}</p>}
       </div>
     </div>
   );
