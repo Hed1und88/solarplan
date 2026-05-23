@@ -76,28 +76,36 @@ const Project3DBuildingPreview = () => {
   const generateModel = async () => {
     if (files.length === 0) return setStatus("Ladda upp bilder först!");
     setLoading(true);
-    setStatus("AI:n skapar 3D-modell av vald bild...");
+    setStatus("AI:n arbetar... (Detta kan ta upp till 30 sekunder)");
 
     try {
-      const response = await fetch(PROXY_URL, {
+      // Vi lägger till en slumpmässig siffra i slutet för att tvinga Cloudflare att uppdatera DNS
+      const FINAL_PROXY_URL = `${PROXY_URL}?cachebust=${Date.now()}`;
+
+      const response = await fetch(FINAL_PROXY_URL, {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${HF_TOKEN}`,
+          "Authorization": `Bearer ${HF_TOKEN.trim()}`,
           "Content-Type": "application/octet-stream",
         },
         body: files[selectedIndex],
       });
 
       if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(errText || `Serverfel ${response.status}`);
+        const errorText = await response.text();
+        // Om vi får 1016 eller 530, förklara vad det beror på
+        if (response.status === 530 || errorText.includes("1016")) {
+          throw new Error("Cloudflare DNS-strul. Vänta 10 sekunder och prova igen.");
+        }
+        throw new Error(errorText || `Fel ${response.status}`);
       }
 
-      setStatus("Modell klar! Laddar in i 3D-vyn...");
+      setStatus("Modell mottagen! Bygger 3D-scenen...");
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
 
-      new GLTFLoader().load(url, (gltf) => {
+      const loader = new GLTFLoader();
+      loader.load(url, (gltf) => {
         if (houseRef.current) sceneRef.current.remove(houseRef.current);
         const model = gltf.scene;
 
@@ -113,7 +121,7 @@ const Project3DBuildingPreview = () => {
 
         sceneRef.current.add(model);
         houseRef.current = model;
-        setStatus("Klart! Rotera med musen.");
+        setStatus("Klart! Använd musen för att rotera.");
         setLoading(false);
       });
     } catch (err) {
