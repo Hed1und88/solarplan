@@ -3,158 +3,194 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 
-// Vi tar emot props (data) från din huvudfil (ProjectDetails/Editor)
-const Project3DBuildingPreview = ({ projectData, onUpdateObstacle }) => {
+const Project3DBuildingPreview = () => {
   const mountRef = useRef(null);
-  const [selectedObject, setSelectedObject] = useState(null);
-
-  // Three.js Refs
+  const [selected, setSelected] = useState(null);
   const sceneRef = useRef(new THREE.Scene());
-  const rendererRef = useRef(null);
-  const cameraRef = useRef(null);
   const transformRef = useRef(null);
-  const houseGroupRef = useRef(new THREE.Group());
-
-  // --- HÄMTA DATA FRÅN APPEN ---
-  // Om projectData saknas använder vi standardvärden
-  const tilt = projectData?.tilt || 20;
-  const width = projectData?.width || 10;
-  const depth = projectData?.depth || 8;
-  const wallHeight = 4;
-
-  // Beräkna takhöjd baserat på lutning (trigonometri)
-  // Höjd = (Bredd/2) * tan(vinkel)
-  const roofHeight = (width / 2) * Math.tan((tilt * Math.PI) / 180);
 
   useEffect(() => {
-    if (!mountRef.current) return;
-
-    // 1. SCENE SETUP (Aerotool-look: Ljust och rent)
+    const width = mountRef.current.clientWidth;
+    const height = mountRef.current.clientHeight;
     const scene = sceneRef.current;
-    scene.background = new THREE.Color(0xf8fafc);
+    scene.background = new THREE.Color(0xeef2f6);
 
-    const camera = new THREE.PerspectiveCamera(40, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.1, 1000);
-    camera.position.set(15, 12, 15);
-    cameraRef.current = camera;
+    const camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 1000);
+    camera.position.set(18, 15, 18);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(width, height);
     renderer.shadowMap.enabled = true;
     mountRef.current.appendChild(renderer.domElement);
-    rendererRef.current = renderer;
 
-    // 2. LJUS & KONTROLLER
+    // Grid & Lights (Professional Look)
+    const grid = new THREE.GridHelper(100, 100, 0xcbd5e1, 0xd1d5db);
+    scene.add(grid);
     scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-    const sun = new THREE.DirectionalLight(0xffffff, 0.6);
-    sun.position.set(10, 20, 10);
+    const sun = new THREE.DirectionalLight(0xffffff, 1);
+    sun.position.set(20, 40, 20);
+    sun.castShadow = true;
     scene.add(sun);
 
     const orbit = new OrbitControls(camera, renderer.domElement);
-    orbit.enableDamping = true;
-
     const transform = new TransformControls(camera, renderer.domElement);
-    transform.addEventListener('dragging-changed', (e) => { orbit.enabled = !e.value; });
+    transform.addEventListener('dragging-changed', (e) => orbit.enabled = !e.value);
     scene.add(transform);
     transformRef.current = transform;
 
-    scene.add(new THREE.GridHelper(40, 40, 0xd1d5db, 0xe5e7eb));
-    scene.add(houseGroupRef.current);
+    // Default Building
+    const house = new THREE.Mesh(
+      new THREE.BoxGeometry(10, 5, 8),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 })
+    );
+    house.position.y = 2.5;
+    house.name = "Byggnad";
+    scene.add(house);
 
-    // 3. ANIMATION
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    const handlePointerDown = (event) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const hits = raycaster.intersectObjects(scene.children, true);
+      const target = hits.find((hit) => hit.object.isMesh && hit.object.type !== 'GridHelper')?.object;
+      if (target) {
+        transform.attach(target);
+        setSelected(target);
+      } else {
+        transform.detach();
+        setSelected(null);
+      }
+    };
+    renderer.domElement.addEventListener('pointerdown', handlePointerDown);
+
+    const handleResize = () => {
+      if (!mountRef.current) return;
+      const nextWidth = mountRef.current.clientWidth;
+      const nextHeight = mountRef.current.clientHeight;
+      camera.aspect = nextWidth / nextHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(nextWidth, nextHeight);
+    };
+    window.addEventListener('resize', handleResize);
+
+    let frame = 0;
     const animate = () => {
-      requestAnimationFrame(animate);
+      frame = requestAnimationFrame(animate);
       orbit.update();
       renderer.render(scene, camera);
     };
     animate();
 
-    // 4. KLICK-EVENT
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2();
-    const onClick = (e) => {
-      const rect = renderer.domElement.getBoundingClientRect();
-      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-      raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(scene.children, true);
-      if (intersects.length > 0) {
-        const obj = intersects[0].object;
-        if (obj.name !== "base" && obj.name !== "") {
-          transform.attach(obj);
-          setSelectedObject(obj);
-        }
-      } else {
-        transform.detach();
-        setSelectedObject(null);
-      }
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener('resize', handleResize);
+      renderer.domElement.removeEventListener('pointerdown', handlePointerDown);
+      transform.dispose();
+      orbit.dispose();
+      renderer.dispose();
+      if (mountRef.current) mountRef.current.innerHTML = "";
     };
-    renderer.domElement.addEventListener('mousedown', onClick);
-
-    return () => { if (mountRef.current) mountRef.current.innerHTML = ""; };
   }, []);
 
-  // --- UPPDATERA GEOMETRI NÄR LUTNING/BREDD ÄNDRAS ---
-  useEffect(() => {
-    const group = houseGroupRef.current;
-    while (group.children.length > 0) { group.remove(group.children[0]); }
-
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
-    const roofMat = new THREE.MeshStandardMaterial({ color: 0x334155 });
-
-    // Väggar
-    const walls = new THREE.Mesh(new THREE.BoxGeometry(width, wallHeight, depth), wallMat);
-    walls.position.y = wallHeight / 2;
-    walls.name = "base";
-    group.add(walls);
-
-    // Sadeltak (Prisma-geometri)
-    const roofShape = new THREE.Shape();
-    roofShape.moveTo(-width / 2, 0);
-    roofShape.lineTo(width / 2, 0);
-    roofShape.lineTo(0, roofHeight);
-    roofShape.lineTo(-width / 2, 0);
-
-    const roofGeo = new THREE.ExtrudeGeometry(roofShape, { depth: depth + 0.4, bevelEnabled: false });
-    const roof = new THREE.Mesh(roofGeo, roofMat);
-    roof.rotation.y = Math.PI;
-    roof.position.set(0, wallHeight, depth / 2 + 0.2);
-    roof.name = "base";
-    group.add(roof);
-
-  }, [tilt, width, depth, roofHeight]);
-
-  return (
-    <div style={{ width: '100%', height: '100%', position: 'relative', background: '#f8fafc' }}>
-      <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
-
-      {/* FLOATING TOOLS (Aerotool style) */}
-      <div style={{ position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '10px', background: 'white', padding: '10px', borderRadius: '50px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
-        <button onClick={() => addObstacle('skorsten')} style={toolBtnStyle}>🧱 Skorsten</button>
-        <button onClick={() => addObstacle('vent')} style={toolBtnStyle}>🔘 Vent</button>
-        <button onClick={() => addObstacle('fonster')} style={toolBtnStyle}>🪟 Fönster</button>
-      </div>
-
-      {selectedObject && (
-        <div style={{ position: 'absolute', top: '20px', right: '20px', background: 'white', padding: '15px', borderRadius: '12px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', width: '180px' }}>
-          <p style={{ margin: '0 0 10px 0', fontSize: '12px', fontWeight: 'bold' }}>Valt objekt: {selectedObject.name}</p>
-          <button onClick={() => { sceneRef.current.remove(selectedObject); transformRef.current.detach(); setSelectedObject(null); }} style={{ width: '100%', background: '#fee2e2', color: '#dc2626', border: 'none', padding: '5px', borderRadius: '5px', cursor: 'pointer' }}>Ta bort</button>
-        </div>
-      )}
-    </div>
-  );
-
-  function addObstacle(type) {
-    const geo = type === 'skorsten' ? new THREE.BoxGeometry(0.8, 2, 0.8) : new THREE.CylinderGeometry(0.2, 0.2, 1);
-    const mat = new THREE.MeshStandardMaterial({ color: 0x475569 });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(0, wallHeight + 1, 0);
-    mesh.name = type;
+  const addObstacle = (type) => {
+    const geo = type === 'chimney' ? new THREE.BoxGeometry(0.8, 2, 0.8) : new THREE.CylinderGeometry(0.3, 0.3, 1);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x334155 }));
+    mesh.position.set(0, 6, 0);
+    mesh.name = type === 'chimney' ? 'Skorsten' : 'Ventilation';
     sceneRef.current.add(mesh);
     transformRef.current.attach(mesh);
-    setSelectedObject(mesh);
-  }
+    setSelected(mesh);
+  };
+
+  return (
+    <div className="w-full h-full relative font-sans overflow-hidden bg-slate-100">
+      {/* PROFESSIONAL TOP BAR (AEROTOOL STYLE) */}
+      <div className="absolute top-0 left-0 w-full h-16 bg-[#005596] flex items-center px-6 z-50 shadow-lg">
+        <div className="flex items-center gap-2 mr-10">
+          <div className="w-8 h-8 bg-white rounded-md flex items-center justify-center font-bold text-[#005596]">A</div>
+          <span className="text-white font-bold tracking-tight">AEROCOMPACT</span>
+        </div>
+
+        <div className="flex gap-4">
+          <IconButton icon="🏠" label="Byggnad" />
+          <IconButton icon="🧱" label="Skorsten" onClick={() => addObstacle('chimney')} />
+          <IconButton icon="🔘" label="Ventilation" onClick={() => addObstacle('vent')} />
+          <IconButton icon="🌍" label="Karta" />
+          <IconButton icon="📊" label="Rapport" />
+        </div>
+
+        <div className="ml-auto flex items-center gap-2 rounded-full bg-white/10 px-3 py-2">
+          <RoofTypeButton label="Sadel" active />
+          <RoofTypeButton label="Valm" />
+          <RoofTypeButton label="Platt" />
+          <RoofTypeButton label="Pult" />
+        </div>
+      </div>
+
+      {/* 3D CANVAS */}
+      <div ref={mountRef} className="w-full h-full pt-16" />
+
+      {/* FLOATING DATA PANEL (LEFT) */}
+      <div className="absolute left-6 top-24 w-72 bg-white/90 backdrop-blur-md rounded-xl shadow-2xl p-6 border border-slate-200">
+        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Byggnadsparametrar</h3>
+        <div className="space-y-4">
+          <InputGroup label="Längd" value="12.0" unit="m" />
+          <InputGroup label="Bredd" value="8.0" unit="m" />
+          <InputGroup label="Taklutning" value="27" unit="°" />
+        </div>
+        {selected && (
+          <div className="mt-5 rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-slate-700">
+            Valt objekt: <span className="font-bold">{selected.name}</span>
+          </div>
+        )}
+      </div>
+
+      {/* FLOATING RESULTS PANEL (RIGHT) */}
+      <div className="absolute right-6 top-24 w-64 bg-[#1e293b]/95 text-white backdrop-blur-md rounded-xl shadow-2xl p-6">
+        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Beräkning</h3>
+        <div className="space-y-3">
+          <ResultRow label="Antal Paneler" value="24 st" />
+          <ResultRow label="Total Effekt" value="10.2 kWp" />
+          <ResultRow label="Årlig prod." value="13 347 kWh" />
+        </div>
+      </div>
+    </div>
+  );
 };
 
-const toolBtnStyle = { border: 'none', background: 'none', padding: '8px 15px', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#475569' };
+const IconButton = ({ icon, label, onClick }) => (
+  <button onClick={onClick} className="flex flex-col items-center group cursor-pointer">
+    <div className="w-10 h-10 rounded-full bg-white/10 group-hover:bg-white/20 flex items-center justify-center text-xl transition-all">
+      {icon}
+    </div>
+    <span className="text-[10px] text-white/70 mt-1 font-medium">{label}</span>
+  </button>
+);
+
+const RoofTypeButton = ({ label, active }) => (
+  <button className={`rounded-full px-3 py-1 text-xs font-bold transition ${active ? 'bg-white text-[#005596]' : 'text-white/80 hover:bg-white/10'}`}>
+    {label}
+  </button>
+);
+
+const InputGroup = ({ label, value, unit }) => (
+  <div className="flex flex-col gap-1">
+    <label className="text-xs font-semibold text-slate-600">{label}</label>
+    <div className="flex items-center bg-slate-100 rounded-md px-3 py-2 border border-slate-200">
+      <input className="bg-transparent w-full text-sm font-bold outline-none" defaultValue={value} />
+      <span className="text-xs text-slate-400 font-bold">{unit}</span>
+    </div>
+  </div>
+);
+
+const ResultRow = ({ label, value }) => (
+  <div className="flex justify-between items-center border-b border-slate-700 pb-2">
+    <span className="text-xs text-slate-400">{label}</span>
+    <span className="text-sm font-bold">{value}</span>
+  </div>
+);
 
 export default Project3DBuildingPreview;
