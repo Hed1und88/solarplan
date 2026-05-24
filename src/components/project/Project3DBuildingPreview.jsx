@@ -3,112 +3,64 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 
-const Project3DBuildingPreview = () => {
+// Vi tar emot props (data) från din huvudfil (ProjectDetails/Editor)
+const Project3DBuildingPreview = ({ projectData, onUpdateObstacle }) => {
   const mountRef = useRef(null);
   const [selectedObject, setSelectedObject] = useState(null);
 
-  // Refs för Three.js
+  // Three.js Refs
   const sceneRef = useRef(new THREE.Scene());
   const rendererRef = useRef(null);
   const cameraRef = useRef(null);
   const transformRef = useRef(null);
-  const orbitRef = useRef(null);
+  const houseGroupRef = useRef(new THREE.Group());
+
+  // --- HÄMTA DATA FRÅN APPEN ---
+  // Om projectData saknas använder vi standardvärden
+  const tilt = projectData?.tilt || 20;
+  const width = projectData?.width || 10;
+  const depth = projectData?.depth || 8;
+  const wallHeight = 4;
+
+  // Beräkna takhöjd baserat på lutning (trigonometri)
+  // Höjd = (Bredd/2) * tan(vinkel)
+  const roofHeight = (width / 2) * Math.tan((tilt * Math.PI) / 180);
 
   useEffect(() => {
     if (!mountRef.current) return;
 
-    // 1. SETUP SCENE (Ren och ljus bakgrund som Aerotool)
-    const width = mountRef.current.clientWidth;
-    const height = mountRef.current.clientHeight;
+    // 1. SCENE SETUP (Aerotool-look: Ljust och rent)
     const scene = sceneRef.current;
-    scene.background = new THREE.Color(0xf1f5f9);
+    scene.background = new THREE.Color(0xf8fafc);
 
-    const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+    const camera = new THREE.PerspectiveCamera(40, mountRef.current.clientWidth / mountRef.current.clientHeight, 0.1, 1000);
     camera.position.set(15, 12, 15);
     cameraRef.current = camera;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(width, height);
+    renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
     renderer.shadowMap.enabled = true;
     mountRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    // 2. LJUS
-    const ambient = new THREE.AmbientLight(0xffffff, 0.7);
-    scene.add(ambient);
-    const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+    // 2. LJUS & KONTROLLER
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.6);
     sun.position.set(10, 20, 10);
-    sun.castShadow = true;
     scene.add(sun);
 
-    // 3. KONTROLLER
     const orbit = new OrbitControls(camera, renderer.domElement);
     orbit.enableDamping = true;
-    orbitRef.current = orbit;
 
     const transform = new TransformControls(camera, renderer.domElement);
-    transform.addEventListener('dragging-changed', (e) => {
-      orbit.enabled = !e.value;
-    });
+    transform.addEventListener('dragging-changed', (e) => { orbit.enabled = !e.value; });
     scene.add(transform);
     transformRef.current = transform;
 
-    // 4. GRID & MARK
-    const grid = new THREE.GridHelper(50, 50, 0xcbd5e1, 0xe2e8f0);
-    scene.add(grid);
+    scene.add(new THREE.GridHelper(40, 40, 0xd1d5db, 0xe5e7eb));
+    scene.add(houseGroupRef.current);
 
-    // 5. SKAPA HUSETS GRUNDMODELL (Klickbar)
-    const houseGroup = new THREE.Group();
-
-    // Väggar
-    const wallGeo = new THREE.BoxGeometry(10, 5, 8);
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
-    const walls = new THREE.Mesh(wallGeo, wallMat);
-    walls.position.y = 2.5;
-    walls.name = "Husväggar";
-    houseGroup.add(walls);
-
-    // Tak (Detta kan vi senare göra mer avancerat)
-    const roofGeo = new THREE.BoxGeometry(11, 0.5, 9);
-    const roofMat = new THREE.MeshStandardMaterial({ color: 0x334155 });
-    const roof = new THREE.Mesh(roofGeo, roofMat);
-    roof.position.y = 5.25;
-    roof.name = "Takyta";
-    houseGroup.add(roof);
-
-    scene.add(houseGroup);
-
-    // 6. KLICK-DETEKTERING (Raycaster)
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2();
-
-    const onMouseDown = (event) => {
-      const rect = renderer.domElement.getBoundingClientRect();
-      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-      raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(scene.children, true);
-
-      if (intersects.length > 0) {
-        const clickedObj = intersects[0].object;
-        // Vi vill bara kunna flytta hinder, inte själva huset i detta läge
-        if (clickedObj.name !== "Husväggar" && clickedObj.name !== "GridHelper") {
-          transform.attach(clickedObj);
-          setSelectedObject(clickedObj);
-        }
-      } else {
-        // Om vi klickar på tom yta, avmarkera
-        if (!transform.dragging) {
-          transform.detach();
-          setSelectedObject(null);
-        }
-      }
-    };
-
-    renderer.domElement.addEventListener('mousedown', onMouseDown);
-
-    // 7. ANIMATIONSLOOP
+    // 3. ANIMATION
     const animate = () => {
       requestAnimationFrame(animate);
       orbit.update();
@@ -116,131 +68,93 @@ const Project3DBuildingPreview = () => {
     };
     animate();
 
-    return () => {
-      if (mountRef.current) mountRef.current.innerHTML = "";
+    // 4. KLICK-EVENT
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    const onClick = (e) => {
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(scene.children, true);
+      if (intersects.length > 0) {
+        const obj = intersects[0].object;
+        if (obj.name !== "base" && obj.name !== "") {
+          transform.attach(obj);
+          setSelectedObject(obj);
+        }
+      } else {
+        transform.detach();
+        setSelectedObject(null);
+      }
     };
+    renderer.domElement.addEventListener('mousedown', onClick);
+
+    return () => { if (mountRef.current) mountRef.current.innerHTML = ""; };
   }, []);
 
-  // FUNKTION: LÄGG TILL HINDER (Fönster, Skorsten etc)
-  const addObstacle = (type) => {
-    let geo, mat, name;
-    if (type === 'skorsten') {
-      geo = new THREE.BoxGeometry(0.8, 2, 0.8);
-      mat = new THREE.MeshStandardMaterial({ color: 0x475569 });
-      name = "Skorsten";
-    } else if (type === 'vent') {
-      geo = new THREE.CylinderGeometry(0.2, 0.2, 0.8);
-      mat = new THREE.MeshStandardMaterial({ color: 0x1e293b });
-      name = "Ventilation";
-    } else if (type === 'fonster') {
-      geo = new THREE.BoxGeometry(1.2, 0.1, 1.8);
-      mat = new THREE.MeshStandardMaterial({ color: 0xadd8e6, transparent: true, opacity: 0.7 });
-      name = "Takfönster";
-    }
+  // --- UPPDATERA GEOMETRI NÄR LUTNING/BREDD ÄNDRAS ---
+  useEffect(() => {
+    const group = houseGroupRef.current;
+    while (group.children.length > 0) { group.remove(group.children[0]); }
 
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(0, 5.5, 0); // Placera på taket
-    mesh.name = name;
-    sceneRef.current.add(mesh);
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0x334155 });
 
-    // Aktivera flytt-pilar direkt
-    transformRef.current.attach(mesh);
-    setSelectedObject(mesh);
-  };
+    // Väggar
+    const walls = new THREE.Mesh(new THREE.BoxGeometry(width, wallHeight, depth), wallMat);
+    walls.position.y = wallHeight / 2;
+    walls.name = "base";
+    group.add(walls);
+
+    // Sadeltak (Prisma-geometri)
+    const roofShape = new THREE.Shape();
+    roofShape.moveTo(-width / 2, 0);
+    roofShape.lineTo(width / 2, 0);
+    roofShape.lineTo(0, roofHeight);
+    roofShape.lineTo(-width / 2, 0);
+
+    const roofGeo = new THREE.ExtrudeGeometry(roofShape, { depth: depth + 0.4, bevelEnabled: false });
+    const roof = new THREE.Mesh(roofGeo, roofMat);
+    roof.rotation.y = Math.PI;
+    roof.position.set(0, wallHeight, depth / 2 + 0.2);
+    roof.name = "base";
+    group.add(roof);
+
+  }, [tilt, width, depth, roofHeight]);
 
   return (
-    <div style={{ width: '100%', height: '100%', position: 'relative', background: '#f1f5f9', borderRadius: '12px', overflow: 'hidden' }}>
-
-      {/* 3D-VY */}
+    <div style={{ width: '100%', height: '100%', position: 'relative', background: '#f8fafc' }}>
       <div ref={mountRef} style={{ width: '100%', height: '100%' }} />
 
-      {/* FLYTANDE VERKTYGSFÄLT (Hinder) */}
-      <div style={{
-        position: 'absolute',
-        bottom: '20px',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        display: 'flex',
-        gap: '10px',
-        background: 'rgba(255,255,255,0.9)',
-        padding: '10px 20px',
-        borderRadius: '100px',
-        boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
-        backdropFilter: 'blur(5px)',
-        border: '1px solid rgba(255,255,255,0.5)',
-      }}>
-        <ToolButton icon="🧱" label="Skorsten" onClick={() => addObstacle('skorsten')} />
-        <ToolButton icon="🪟" label="Fönster" onClick={() => addObstacle('fonster')} />
-        <ToolButton icon="🔘" label="Vent" onClick={() => addObstacle('vent')} />
-        <ToolButton icon="🪜" label="Stege" onClick={() => {}} />
+      {/* FLOATING TOOLS (Aerotool style) */}
+      <div style={{ position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '10px', background: 'white', padding: '10px', borderRadius: '50px', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
+        <button onClick={() => addObstacle('skorsten')} style={toolBtnStyle}>🧱 Skorsten</button>
+        <button onClick={() => addObstacle('vent')} style={toolBtnStyle}>🔘 Vent</button>
+        <button onClick={() => addObstacle('fonster')} style={toolBtnStyle}>🪟 Fönster</button>
       </div>
 
-      {/* OBJEKT-INFO (Visas när man klickar på något) */}
       {selectedObject && (
-        <div style={{
-          position: 'absolute',
-          top: '20px',
-          right: '20px',
-          background: 'white',
-          padding: '15px',
-          borderRadius: '12px',
-          boxShadow: '0 4px 15px rgba(0,0,0,0.1)',
-          width: '200px',
-        }}>
-          <h4 style={{ margin: '0 0 5px 0', fontSize: '14px' }}>{selectedObject.name}</h4>
-          <p style={{ fontSize: '11px', color: '#64748b', marginBottom: '15px' }}>Använd pilarna för att placera objektet exakt.</p>
-          <button
-            onClick={() => {
-              sceneRef.current.remove(selectedObject);
-              transformRef.current.detach();
-              setSelectedObject(null);
-            }}
-            style={{
-              width: '100%',
-              padding: '8px',
-              background: '#fee2e2',
-              color: '#dc2626',
-              border: 'none',
-              borderRadius: '6px',
-              fontSize: '12px',
-              cursor: 'pointer',
-              fontWeight: '600',
-            }}
-          >
-            Ta bort
-          </button>
+        <div style={{ position: 'absolute', top: '20px', right: '20px', background: 'white', padding: '15px', borderRadius: '12px', boxShadow: '0 4px 15px rgba(0,0,0,0.1)', width: '180px' }}>
+          <p style={{ margin: '0 0 10px 0', fontSize: '12px', fontWeight: 'bold' }}>Valt objekt: {selectedObject.name}</p>
+          <button onClick={() => { sceneRef.current.remove(selectedObject); transformRef.current.detach(); setSelectedObject(null); }} style={{ width: '100%', background: '#fee2e2', color: '#dc2626', border: 'none', padding: '5px', borderRadius: '5px', cursor: 'pointer' }}>Ta bort</button>
         </div>
       )}
-
-      {/* STATUS-INDIKATOR */}
-      <div style={{ position: 'absolute', top: '20px', left: '20px', background: 'white', padding: '8px 15px', borderRadius: '100px', fontSize: '12px', fontWeight: '600', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
-        🟢 Redigeringsläge
-      </div>
     </div>
   );
+
+  function addObstacle(type) {
+    const geo = type === 'skorsten' ? new THREE.BoxGeometry(0.8, 2, 0.8) : new THREE.CylinderGeometry(0.2, 0.2, 1);
+    const mat = new THREE.MeshStandardMaterial({ color: 0x475569 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(0, wallHeight + 1, 0);
+    mesh.name = type;
+    sceneRef.current.add(mesh);
+    transformRef.current.attach(mesh);
+    setSelectedObject(mesh);
+  }
 };
 
-// Knapp-komponent för verktygsfältet
-const ToolButton = ({ icon, label, onClick }) => (
-  <button
-    onClick={onClick}
-    style={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      background: 'none',
-      border: 'none',
-      cursor: 'pointer',
-      padding: '5px 10px',
-      borderRadius: '8px',
-      transition: 'background 0.2s',
-    }}
-    onMouseEnter={(e) => e.currentTarget.style.background = '#f1f5f9'}
-    onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
-  >
-    <span style={{ fontSize: '20px' }}>{icon}</span>
-    <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#475569', marginTop: '2px' }}>{label}</span>
-  </button>
-);
+const toolBtnStyle = { border: 'none', background: 'none', padding: '8px 15px', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#475569' };
 
 export default Project3DBuildingPreview;
