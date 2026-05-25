@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { AlertTriangle, Home, MousePointer2, PanelTop, Plus, Save, Trash2 } from 'lucide-react';
 import ProductSearchSelect from '@/components/products/ProductSearchSelect';
+import { resolveProductClampZone } from '@/lib/productDocuments';
 
 const DEFAULT_PANEL = { id: 'standard', name: 'Standardpanel 500 W', model: 'Standardpanel 500 W', width_mm: 1134, height_mm: 1953, power_watts: 500 };
 const PANEL_GAP_M = 0.03;
@@ -17,6 +18,18 @@ const positive = (value, fallback = 0) => n(value, fallback) > 0 ? n(value, fall
 const round = (value, decimals = 2) => Math.round(n(value) * 10 ** decimals) / 10 ** decimals;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
+const createPanelGroup = (index = 1) => ({
+  id: genId(),
+  name: `Panelgrupp ${index}`,
+  rows: 3,
+  cols: 4,
+  xM: 0.7,
+  yM: 0.7,
+  orientation: 'Stående',
+  threeRails: false,
+  panelOverrides: {},
+});
+
 const baseRoof = () => ({
   id: genId(),
   name: 'Tak 1',
@@ -27,23 +40,33 @@ const baseRoof = () => ({
   material: 'Takpannor',
   panelProductId: '',
   panelProductSnapshot: null,
-  panelGroups: [{ id: genId(), name: 'Panelgrupp 1', rows: 3, cols: 4, xM: 0.7, yM: 0.7, orientation: 'Stående', clampMm: 391, threeRails: false, panelOverrides: {} }],
+  panelGroups: [createPanelGroup(1)],
   obstacles: [],
 });
+
+function removeLegacyClampFromRoofs(roofs = []) {
+  return roofs.map(roof => ({
+    ...roof,
+    panelGroups: (roof.panelGroups || []).map(group => {
+      const { clampMm, ...rest } = group || {};
+      return rest;
+    }),
+  }));
+}
 
 function parseProjectLayout(project) {
   const rawCandidates = [project?.solar_roof_planner_data, project?.panel_layout_data];
   for (const raw of rawCandidates) {
     try {
       const data = JSON.parse(raw || 'null');
-      if (Array.isArray(data?.roofs) && data.roofs.length) return data.roofs;
+      if (Array.isArray(data?.roofs) && data.roofs.length) return removeLegacyClampFromRoofs(data.roofs);
     } catch {}
   }
 
   if (typeof window !== 'undefined' && project?.id) {
     try {
       const backup = JSON.parse(window.localStorage.getItem(`solarplan:project:${project.id}:solar_roof_planner_data`) || 'null');
-      if (Array.isArray(backup?.roofs) && backup.roofs.length) return backup.roofs;
+      if (Array.isArray(backup?.roofs) && backup.roofs.length) return removeLegacyClampFromRoofs(backup.roofs);
     } catch {}
   }
 
@@ -64,6 +87,12 @@ function panelSnapshot(product) {
     vmp_v: product.vmp_v,
     isc_a: product.isc_a,
     imp_a: product.imp_a,
+    description: product.description,
+    clamp_zone_min_mm: product.clamp_zone_min_mm,
+    clamp_zone_max_mm: product.clamp_zone_max_mm,
+    rail_offset_top_mm: product.rail_offset_top_mm,
+    rail_offset_bottom_mm: product.rail_offset_bottom_mm,
+    clamp_source: product.clamp_source,
   };
 }
 
@@ -133,6 +162,16 @@ function Select({ label, value, onChange, children }) {
   return <label className="block text-xs font-medium text-muted-foreground"><span>{label}</span><select value={value ?? ''} onChange={e => onChange(e.target.value)} className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground">{children}</select></label>;
 }
 
+function ClampInfoBox({ product }) {
+  const clampZone = resolveProductClampZone(product || DEFAULT_PANEL);
+  return (
+    <div className={`rounded-xl border px-3 py-2 text-xs ${clampZone.hasProductZone ? 'border-green-200 bg-green-50 text-green-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
+      <div className="font-semibold">Klämzon: {clampZone.label}</div>
+      <div>{clampZone.source}</div>
+    </div>
+  );
+}
+
 function RoofPreview({ roofs, products, dragMode, selectedItem, setSelectedItem, setSelectedRoofId, onMovePanel, onMoveGroup }) {
   const pad = 60;
   const gap = 95;
@@ -193,9 +232,10 @@ function RoofPreview({ roofs, products, dragMode, selectedItem, setSelectedItem,
         <defs><pattern id="roof-hatch-v2" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="10" stroke="#e2e8f0" strokeWidth="3" /></pattern></defs>
         {layouts.map(layout => {
           const product = panelProductForRoof(layout.roof, products);
+          const clampZone = resolveProductClampZone(product);
           return <g key={layout.roof.id}>
             <text x={layout.x} y={layout.y - 24} fontSize="18" fontWeight="800">{layout.roof.name}</text>
-            <text x={layout.x} y={layout.y - 7} fontSize="11" fill="#64748b">{panelLabel(product)} · {layout.roof.widthM} x {layout.roof.roofFallM} m</text>
+            <text x={layout.x} y={layout.y - 7} fontSize="11" fill="#64748b">{panelLabel(product)} · {layout.roof.widthM} x {layout.roof.roofFallM} m · Klämzon {clampZone.label}</text>
             <polygon points={polygonPoints(layout.x, layout.y, layout.w, layout.h, layout.roof.shape)} fill="url(#roof-hatch-v2)" stroke="#111827" strokeWidth="2.5" onClick={() => setSelectedRoofId(layout.roof.id)} />
             {(layout.roof.panelGroups || []).map(group => {
               const panel = panelSize(group.orientation, product);
@@ -253,6 +293,7 @@ export default function SolarRoofPlannerV2({ project, onUpdate }) {
   }, [project?.id, project?.solar_roof_planner_data, project?.panel_layout_data, project?.roof_width_m, project?.roof_height_m]);
 
   const selectedRoof = roofs.find(roof => String(roof.id) === String(selectedRoofId)) || roofs[0];
+  const selectedRoofProduct = selectedRoof ? panelProductForRoof(selectedRoof, panelProducts) : DEFAULT_PANEL;
   const total = useMemo(() => totals(roofs, panelProducts), [roofs, panelProducts]);
   const warnings = useMemo(() => roofs.flatMap(roof => (roof.panelGroups || []).map(group => ({ roof, group, size: groupSize(group, roof, panelProducts) })).filter(({ roof, group, size }) => n(group.xM) + size.w > n(roof.widthM) || n(group.yM) + size.h > n(roof.roofFallM))), [roofs, panelProducts]);
 
@@ -320,20 +361,21 @@ export default function SolarRoofPlannerV2({ project, onUpdate }) {
   const addGroup = () => {
     if (!selectedRoof) return;
     const nextIndex = (selectedRoof.panelGroups || []).length + 1;
-    setRoof(selectedRoof.id, { panelGroups: [...(selectedRoof.panelGroups || []), { id: genId(), name: `Panelgrupp ${nextIndex}`, rows: 3, cols: 4, xM: 0.7, yM: 0.7, orientation: 'Stående', clampMm: 391, threeRails: false, panelOverrides: {} }] });
+    setRoof(selectedRoof.id, { panelGroups: [...(selectedRoof.panelGroups || []), createPanelGroup(nextIndex)] });
   };
 
   const deleteGroup = (roofId, groupId) => setRoof(roofId, { panelGroups: (roofs.find(roof => String(roof.id) === String(roofId))?.panelGroups || []).filter(group => String(group.id) !== String(groupId)) });
 
   const save = async () => {
     setSaving(true);
-    const payload = { version: 9, scaleType: 'meter', railMode: 'per-panel', roofs, savedAt: new Date().toISOString() };
+    const savedRoofs = removeLegacyClampFromRoofs(roofs);
+    const payload = { version: 10, scaleType: 'meter', railMode: 'per-panel', clampSource: 'panel-product-documents', roofs: savedRoofs, savedAt: new Date().toISOString() };
     try {
       if (typeof window !== 'undefined' && project?.id) window.localStorage.setItem(`solarplan:project:${project.id}:solar_roof_planner_data`, JSON.stringify(payload));
       await onUpdate?.({
         solar_roof_planner_data: JSON.stringify(payload),
-        roof_width_m: roofs[0]?.widthM || '',
-        roof_height_m: roofs[0]?.roofFallM || '',
+        roof_width_m: savedRoofs[0]?.widthM || '',
+        roof_height_m: savedRoofs[0]?.roofFallM || '',
         panel_layout_data: JSON.stringify(payload),
       });
     } finally {
@@ -347,7 +389,7 @@ export default function SolarRoofPlannerV2({ project, onUpdate }) {
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <div>
             <CardTitle className="flex items-center gap-2"><Home className="h-5 w-5 text-primary" />Paneler och takmått</CardTitle>
-            <p className="text-sm text-muted-foreground">Sparade tak och panelgrupper kan ändras när som helst. Välj flyttläge och dra paneler direkt i ritningen.</p>
+            <p className="text-sm text-muted-foreground">Klämzon hämtas från vald panelprodukt. Byter du panel ändras klämzonsinformationen automatiskt.</p>
           </div>
           <Button onClick={save} disabled={saving} className="gap-2"><Save className="h-4 w-4" />{saving ? 'Sparar...' : 'Spara'}</Button>
         </CardHeader>
@@ -375,6 +417,7 @@ export default function SolarRoofPlannerV2({ project, onUpdate }) {
                   <div className="grid grid-cols-2 gap-2"><Input label="Taklutning (°)" type="number" value={selectedRoof.angleDeg} onChange={value => setRoof(selectedRoof.id, { angleDeg: value })} /><Select label="Takform" value={selectedRoof.shape} onChange={value => setRoof(selectedRoof.id, { shape: value })}>{SHAPES.map(shape => <option key={shape}>{shape}</option>)}</Select></div>
                   <Input label="Material" value={selectedRoof.material || ''} onChange={value => setRoof(selectedRoof.id, { material: value })} />
                   <ProductSearchSelect label="Solpanel för detta tak" products={panelProducts} value={selectedRoof.panelProductId || ''} onChange={value => { const product = panelProducts.find(item => item.id === value) || null; setRoof(selectedRoof.id, { panelProductId: value, panelProductSnapshot: panelSnapshot(product) }); }} placeholder="Välj solpanel" />
+                  <ClampInfoBox product={selectedRoofProduct} />
                 </div>
               )}
 
@@ -386,7 +429,8 @@ export default function SolarRoofPlannerV2({ project, onUpdate }) {
                   <Input label="Namn" value={group.name} onChange={value => setGroup(selectedRoof.id, group.id, { name: value })} />
                   <div className="grid grid-cols-2 gap-2"><Input label="Rader" type="number" min="0" value={group.rows} onChange={value => setGroup(selectedRoof.id, group.id, { rows: value, panelOverrides: {} })} /><Input label="Kolumner" type="number" min="0" value={group.cols} onChange={value => setGroup(selectedRoof.id, group.id, { cols: value, panelOverrides: {} })} /></div>
                   <div className="grid grid-cols-2 gap-2"><Input label="X från vänster (m)" type="number" step="0.1" min="0" value={group.xM} onChange={value => setGroup(selectedRoof.id, group.id, { xM: value })} /><Input label="Y från överkant (m)" type="number" step="0.1" min="0" value={group.yM} onChange={value => setGroup(selectedRoof.id, group.id, { yM: value })} /></div>
-                  <div className="grid grid-cols-2 gap-2"><Select label="Montering" value={group.orientation} onChange={value => setGroup(selectedRoof.id, group.id, { orientation: value, panelOverrides: {} })}><option>Stående</option><option>Liggande</option></Select><Input label="Klämzon (mm)" type="number" value={group.clampMm} onChange={value => setGroup(selectedRoof.id, group.id, { clampMm: value })} /></div>
+                  <Select label="Montering" value={group.orientation} onChange={value => setGroup(selectedRoof.id, group.id, { orientation: value, panelOverrides: {} })}><option>Stående</option><option>Liggande</option></Select>
+                  <ClampInfoBox product={selectedRoofProduct} />
                   <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={Boolean(group.threeRails)} onChange={event => setGroup(selectedRoof.id, group.id, { threeRails: event.target.checked })} />Tre skenor</label>
                 </div>
               ))}
