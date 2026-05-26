@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Plus, Package, Pencil, Trash2, Sun, Battery, Zap, Cable, Box } from 'lucide-react';
+import { Plus, Package, Pencil, Trash2, Sun, Battery, Zap, Cable, Box, ShieldAlert, ShieldCheck } from 'lucide-react';
 import ProductFormModal from '@/components/products/ProductFormModal';
 import ProductCatalogImporter from '@/components/products/ProductCatalogImporter';
 import ProductVisual from '@/components/products/ProductVisual';
+import { productValidationStatus } from '@/lib/productDocuments';
 
 const categoryConfig = {
   solpanel: { label: 'Solpanel', icon: Sun, color: 'bg-orange-100 text-orange-700' },
@@ -43,13 +44,14 @@ export default function Products() {
   };
 
   const filtered = filterCat === 'alla' ? products : products.filter(p => p.category === filterCat);
+  const readyCount = products.filter(product => productValidationStatus(product).ready).length;
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
       <div className="flex items-start justify-between mb-6 gap-3">
         <div>
           <h1 className="text-2xl font-bold">Produktsortiment</h1>
-          <p className="text-muted-foreground text-sm mt-1">{products.length} produkter totalt</p>
+          <p className="text-muted-foreground text-sm mt-1">{products.length} produkter totalt · {readyCount} godkända för kalkyl</p>
         </div>
         <div className="flex flex-wrap justify-end gap-2">
           <ProductCatalogImporter products={products} onDone={load} />
@@ -57,6 +59,10 @@ export default function Products() {
             <Plus className="w-4 h-4" /> Lägg till produkt
           </button>
         </div>
+      </div>
+
+      <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+        Produkter får inte användas som kalkylunderlag förrän manual och datablad är uppladdade i appen och teknisk data är hämtad från dokumenten. Importerade katalogprodukter är mallar tills detta är gjort.
       </div>
 
       <div className="flex gap-2 flex-wrap mb-6">
@@ -81,8 +87,9 @@ export default function Products() {
           {filtered.map(product => {
             const cat = categoryConfig[product.category] || categoryConfig.ovrigt;
             const Icon = cat.icon;
+            const validation = productValidationStatus(product);
             return (
-              <div key={product.id} className="bg-card rounded-2xl border border-border p-4 hover:shadow-md transition-shadow group">
+              <div key={product.id} className={`bg-card rounded-2xl border p-4 hover:shadow-md transition-shadow group ${validation.ready ? 'border-green-200' : 'border-amber-200'}`}>
                 <div className="flex items-start justify-between mb-3">
                   <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${cat.color}`}>
                     <Icon className="w-3 h-3" />{cat.label}
@@ -97,6 +104,15 @@ export default function Products() {
 
                 <h3 className="font-semibold text-sm text-foreground leading-snug">{product.name}</h3>
                 {product.brand && <p className="text-xs text-muted-foreground mt-0.5">{product.brand} {product.model}</p>}
+
+                <div className={`mt-3 rounded-xl p-2 text-xs ${validation.ready ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-amber-50 text-amber-900 border border-amber-200'}`}>
+                  <div className="flex items-center gap-1 font-semibold">
+                    {validation.ready ? <ShieldCheck className="h-3.5 w-3.5" /> : <ShieldAlert className="h-3.5 w-3.5" />}
+                    {validation.ready ? 'Klar för kalkyl' : 'Ej godkänd för kalkyl'}
+                  </div>
+                  {!validation.ready && <p className="mt-1 line-clamp-2">{validation.message}</p>}
+                </div>
+
                 <div className="mt-3 flex items-center justify-between"><p className="text-lg font-bold text-primary">{product.price?.toLocaleString('sv-SE')} kr</p><p className="text-xs text-muted-foreground">/{product.unit || 'st'}</p></div>
                 {(product.power_watts || product.capacity_kwh) && <div className="mt-2 flex gap-3">{product.power_watts && <span className="text-xs text-muted-foreground">{product.power_watts}W</span>}{product.capacity_kwh && <span className="text-xs text-muted-foreground">{product.capacity_kwh}kWh</span>}</div>}
               </div>
