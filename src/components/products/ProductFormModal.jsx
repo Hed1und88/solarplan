@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { base44 } from '@/api/base44Client';
-import { X, Upload, Loader2, Sparkles, FileText, Trash2 } from 'lucide-react';
+import { X, Upload, Loader2, Sparkles, FileText, Trash2, AlertTriangle, CheckCircle2, Ruler, Zap } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { buildProductDescription, productDescription, productDocuments, productMeta } from '@/lib/productDocuments';
+import { buildProductDescription, DOCUMENT_TYPE_LABELS, productDescription, productDocuments, productMeta } from '@/lib/productDocuments';
 
 const categories = [
   { value: 'solpanel', label: 'Solpanel' },
@@ -12,6 +12,15 @@ const categories = [
   { value: 'kabel', label: 'Kabel' },
   { value: 'montagesystem', label: 'Montagesystem' },
   { value: 'ovrigt', label: 'Övrigt' },
+];
+
+const DOCUMENT_UPLOAD_TYPES = [
+  { type: 'datasheet', label: 'Datablad' },
+  { type: 'manual', label: 'Manual' },
+  { type: 'certificate', label: 'Certifikat' },
+  { type: 'ce_approval', label: 'CE' },
+  { type: 'installation_guide', label: 'Installationsguide' },
+  { type: 'warranty', label: 'Garanti' },
 ];
 
 const COMMON_FIELDS = ['name', 'brand', 'model', 'power_watts', 'capacity_kwh', 'description'];
@@ -35,6 +44,70 @@ const DOCUMENT_FIELDS = ['clampZoneMinMm', 'clampZoneMaxMm', 'railOffsetTopMm', 
 
 function normalizeKey(...parts) {
   return parts.filter(Boolean).join(' ').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function hasValue(value) {
+  if (value === null || value === undefined || value === '') return false;
+  if (typeof value === 'number') return Number.isFinite(value) && value > 0;
+  if (typeof value === 'string') {
+    const n = Number(value);
+    return Number.isFinite(n) ? n > 0 : value.trim().length > 0;
+  }
+  return true;
+}
+
+function requiredTechnicalFields(form = {}) {
+  if (form.category === 'solpanel') {
+    return [
+      ['power_watts', 'effekt'],
+      ['width_mm', 'bredd'],
+      ['height_mm', 'höjd'],
+      ['voc_v', 'Voc'],
+      ['vmp_v', 'Vmp'],
+      ['isc_a', 'Isc'],
+      ['imp_a', 'Imp'],
+    ];
+  }
+  if (form.category === 'vaxelriktare') {
+    return [
+      ['power_watts', 'AC-effekt'],
+      ['max_dc_voltage_v', 'max DC-spänning'],
+      ['startup_voltage_v', 'startspänning'],
+      ['mppt_voltage_min_v', 'MPPT min'],
+      ['mppt_voltage_max_v', 'MPPT max'],
+      ['max_input_current_a', 'max ingångsström'],
+      ['max_short_circuit_current_a', 'max kortslutningsström'],
+    ];
+  }
+  if (form.category === 'batteri') {
+    return [
+      ['capacity_kwh', 'kapacitet'],
+      ['width_mm', 'bredd'],
+      ['height_mm', 'höjd'],
+      ['weight_kg', 'vikt'],
+    ];
+  }
+  return [];
+}
+
+function completenessFor(form = {}, documents = []) {
+  const hasDatasheet = documents.some(doc => doc.type === 'datasheet');
+  const hasManual = documents.some(doc => doc.type === 'manual');
+  const missingTechnical = requiredTechnicalFields(form).filter(([key]) => !hasValue(form[key])).map(([, label]) => label);
+  const needsClamp = form.category === 'solpanel';
+  const clampOk = !needsClamp || (hasValue(form.clampZoneMinMm) && hasValue(form.clampZoneMaxMm));
+  const docsOk = hasDatasheet && hasManual;
+  const technicalOk = missingTechnical.length === 0;
+  return {
+    hasDatasheet,
+    hasManual,
+    docsOk,
+    technicalOk,
+    missingTechnical,
+    needsClamp,
+    clampOk,
+    complete: docsOk && technicalOk && clampOk,
+  };
 }
 
 function getAutoFetchConfig(category, query, docs) {
@@ -88,6 +161,7 @@ export default function ProductFormModal({ product, onSave, onClose }) {
     capacity_kwh: product?.capacity_kwh || '',
     width_mm: product?.width_mm || '',
     height_mm: product?.height_mm || '',
+    weight_kg: product?.weight_kg || '',
     voc_v: product?.voc_v || '',
     isc_a: product?.isc_a || '',
     vmp_v: product?.vmp_v || '',
@@ -125,6 +199,7 @@ export default function ProductFormModal({ product, onSave, onClose }) {
   const [fetching, setFetching] = useState(false);
   const [fetchMsg, setFetchMsg] = useState(null);
   const autoFetchedInverterKeyRef = useRef(product?.category === 'vaxelriktare' ? normalizeKey(product?.brand, product?.model) : '');
+  const status = useMemo(() => completenessFor(form, documents), [form, documents]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -205,9 +280,9 @@ export default function ProductFormModal({ product, onSave, onClose }) {
       const { file_url } = await base44.integrations.Core.UploadFile({ file });
       setDocuments(current => [
         ...current.filter(doc => !(doc.type === type && doc.name === file.name)),
-        { id: `${Date.now()}-${type}`, type, name: file.name, file_url, uploadedAt: new Date().toISOString() },
+        { id: `${Date.now()}-${type}`, type, name: file.name, title: file.name, file_name: file.name, file_url, uploadedAt: new Date().toISOString(), uploaded_at: new Date().toISOString() },
       ]);
-      setFetchMsg('✓ Dokument uppladdat. Tryck Hämta från dokument för att fylla tekniska data.');
+      setFetchMsg('✓ Dokument uppladdat. Tryck Hämta från uppladdade dokument för att fylla tekniska data.');
     } finally {
       setDocUploading(null);
       event.target.value = '';
@@ -236,7 +311,7 @@ export default function ProductFormModal({ product, onSave, onClose }) {
     };
 
     [
-      'power_watts','capacity_kwh','width_mm','height_mm','voc_v','isc_a','vmp_v','imp_a','temp_coeff_pmax_percent_c','temp_coeff_voc_percent_c','temp_coeff_isc_percent_c','noct_c','max_dc_power_kw','max_dc_voltage_v','startup_voltage_v','mppt_voltage_min_v','mppt_voltage_max_v','nominal_dc_voltage_v','mppt_count','strings_per_mppt','max_input_current_a','max_short_circuit_current_a',
+      'power_watts','capacity_kwh','width_mm','height_mm','weight_kg','voc_v','isc_a','vmp_v','imp_a','temp_coeff_pmax_percent_c','temp_coeff_voc_percent_c','temp_coeff_isc_percent_c','noct_c','max_dc_power_kw','max_dc_voltage_v','startup_voltage_v','mppt_voltage_min_v','mppt_voltage_max_v','nominal_dc_voltage_v','mppt_count','strings_per_mppt','max_input_current_a','max_short_circuit_current_a',
     ].forEach(k => { data[k] = numOrNull(form[k]); });
 
     ['clampZoneMinMm','clampZoneMaxMm','railOffsetTopMm','railOffsetBottomMm','clampSource'].forEach(k => delete data[k]);
@@ -249,9 +324,6 @@ export default function ProductFormModal({ product, onSave, onClose }) {
     setSaving(false);
     onSave();
   };
-
-  const hasDatasheet = documents.some(doc => doc.type === 'datasheet');
-  const hasManual = documents.some(doc => doc.type === 'manual');
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -271,6 +343,8 @@ export default function ProductFormModal({ product, onSave, onClose }) {
             </div>
           </div>
 
+          <ProductCompletenessBox status={status} />
+
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
             Produkter ska ha både datablad och manual uppladdade. Teknisk data och klämzon ska hämtas från dessa dokument, inte från externa länkar.
           </div>
@@ -281,7 +355,7 @@ export default function ProductFormModal({ product, onSave, onClose }) {
             <Field label="Modell" value={form.model} onChange={v => set('model', v)} placeholder="T.ex. LR5-72HPH" />
           </div>
 
-          <DocumentUploadBlock documents={documents} hasDatasheet={hasDatasheet} hasManual={hasManual} docUploading={docUploading} onUpload={handleDocumentUpload} onRemove={removeDocument} />
+          <DocumentUploadBlock documents={documents} hasDatasheet={status.hasDatasheet} hasManual={status.hasManual} docUploading={docUploading} onUpload={handleDocumentUpload} onRemove={removeDocument} />
 
           <div className="flex items-center gap-3 flex-wrap">
             <button type="button" onClick={() => handleAutoFetch()} disabled={fetching || (!form.brand && !form.model && !form.name) || !documents.length} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-accent text-white text-xs font-medium hover:bg-accent/90 transition-colors disabled:opacity-50">
@@ -331,6 +405,10 @@ export default function ProductFormModal({ product, onSave, onClose }) {
             </>
           )}
 
+          {form.category === 'batteri' && (
+            <div className="grid grid-cols-2 gap-3"><Field label="Bredd (mm)" type="number" value={form.width_mm} onChange={v => set('width_mm', v)} placeholder="valfritt" /><Field label="Höjd (mm)" type="number" value={form.height_mm} onChange={v => set('height_mm', v)} placeholder="valfritt" /><Field label="Vikt (kg)" type="number" value={form.weight_kg} onChange={v => set('weight_kg', v)} placeholder="valfritt" /></div>
+          )}
+
           <Field label="Beskrivning" value={form.description} onChange={v => set('description', v)} placeholder="Valfri beskrivning..." multiline />
 
           <div>
@@ -348,24 +426,56 @@ export default function ProductFormModal({ product, onSave, onClose }) {
   );
 }
 
-function DocumentUploadBlock({ documents, hasDatasheet, hasManual, docUploading, onUpload, onRemove }) {
+function ProductCompletenessBox({ status }) {
+  const missing = [];
+  if (!status.hasDatasheet) missing.push('Datablad saknas');
+  if (!status.hasManual) missing.push('Manual saknas');
+  if (!status.technicalOk) missing.push(`Teknisk data saknas: ${status.missingTechnical.join(', ')}`);
+  if (status.needsClamp && !status.clampOk) missing.push('Klämzon saknas från manual/datablad');
+
   return (
-    <div className="rounded-xl border p-3 space-y-3">
+    <div className={`rounded-xl border p-3 ${status.complete ? 'border-green-200 bg-green-50 text-green-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div><p className="text-sm font-semibold">Produktdokument</p><p className="text-xs text-muted-foreground">Krav: ett datablad och en manual per produkt.</p></div>
-        <div className="flex gap-2"><StatusPill ok={hasDatasheet} label="Datablad" /><StatusPill ok={hasManual} label="Manual" /></div>
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          {status.complete ? <CheckCircle2 className="h-4 w-4 text-green-700" /> : <AlertTriangle className="h-4 w-4 text-amber-700" />}
+          {status.complete ? 'Produkten är komplett' : 'Produkten är ofullständig'}
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          <StatusPill ok={status.hasDatasheet} label="Datablad" />
+          <StatusPill ok={status.hasManual} label="Manual" />
+          <StatusPill ok={status.technicalOk} label="Teknisk data" icon={Zap} />
+          {status.needsClamp && <StatusPill ok={status.clampOk} label="Klämzon" icon={Ruler} />}
+        </div>
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed px-3 py-2 text-xs hover:border-primary/60">{docUploading === 'datasheet' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Ladda upp datablad<input type="file" className="hidden" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp" onChange={event => onUpload(event, 'datasheet')} /></label>
-        <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed px-3 py-2 text-xs hover:border-primary/60">{docUploading === 'manual' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Ladda upp manual<input type="file" className="hidden" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp" onChange={event => onUpload(event, 'manual')} /></label>
-      </div>
-      {documents.length > 0 && <div className="space-y-2">{documents.map(doc => <div key={doc.id} className="flex items-center justify-between gap-2 rounded-lg bg-muted/50 px-3 py-2 text-xs"><div className="flex min-w-0 items-center gap-2"><FileText className="h-4 w-4 shrink-0 text-primary" /><span className="truncate"><b>{doc.type === 'manual' ? 'Manual' : 'Datablad'}:</b> {doc.name}</span></div><button type="button" onClick={() => onRemove(doc.id)} className="text-red-600 hover:text-red-700"><Trash2 className="h-3.5 w-3.5" /></button></div>)}</div>}
+      {missing.length > 0 && <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs">{missing.map(item => <li key={item}>{item}</li>)}</ul>}
+      {!status.complete && <p className="mt-2 text-xs">Produkten kan sparas, men bör inte användas i projekt förrän kraven är kompletta.</p>}
     </div>
   );
 }
 
-function StatusPill({ ok, label }) {
-  return <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${ok ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{label}: {ok ? 'OK' : 'Saknas'}</span>;
+function DocumentUploadBlock({ documents, hasDatasheet, hasManual, docUploading, onUpload, onRemove }) {
+  return (
+    <div className="rounded-xl border p-3 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div><p className="text-sm font-semibold">Produktdokument</p><p className="text-xs text-muted-foreground">Krav: minst ett datablad och en manual per produkt. Certifikat/CE kan läggas till som stödjande dokument.</p></div>
+        <div className="flex gap-2"><StatusPill ok={hasDatasheet} label="Datablad" /><StatusPill ok={hasManual} label="Manual" /></div>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {DOCUMENT_UPLOAD_TYPES.map(item => (
+          <label key={item.type} className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed px-3 py-2 text-xs hover:border-primary/60">
+            {docUploading === item.type ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            Ladda upp {item.label.toLowerCase()}
+            <input type="file" className="hidden" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp" onChange={event => onUpload(event, item.type)} />
+          </label>
+        ))}
+      </div>
+      {documents.length > 0 && <div className="space-y-2">{documents.map(doc => <div key={doc.id} className="flex items-center justify-between gap-2 rounded-lg bg-muted/50 px-3 py-2 text-xs"><div className="flex min-w-0 items-center gap-2"><FileText className="h-4 w-4 shrink-0 text-primary" /><span className="truncate"><b>{DOCUMENT_TYPE_LABELS[doc.type] || 'Dokument'}:</b> {doc.name}</span></div><button type="button" onClick={() => onRemove(doc.id)} className="text-red-600 hover:text-red-700"><Trash2 className="h-3.5 w-3.5" /></button></div>)}</div>}
+    </div>
+  );
+}
+
+function StatusPill({ ok, label, icon: Icon }) {
+  return <span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold ${ok ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{Icon && <Icon className="h-3 w-3" />}{label}: {ok ? 'OK' : 'Saknas'}</span>;
 }
 
 function BooleanToggle({ label, checked, onChange }) {
