@@ -143,7 +143,7 @@ export default function ProjectDetail() {
       <TabsContent value="solar"><SolarDataPanelV2 project={project} onUpdate={saveProject} /></TabsContent>
       <TabsContent value="singleline"><AutoSingleLineSchemaTab project={project} onUpdate={saveProject} products={products} /></TabsContent>
       <TabsContent value="mounting" className="space-y-4"><SolarRoofPlannerV2 project={project} onUpdate={saveProject} /><MountingSystemCalculator project={project} onUpdate={saveProject} /></TabsContent>
-      <TabsContent value="documents"><ProjectDocumentsTab project={project} products={products} /></TabsContent>
+      <TabsContent value="documents"><ProjectDocumentsTab project={project} products={products} onUpdate={saveProject} /></TabsContent>
     </Tabs>
   </div>;
 }
