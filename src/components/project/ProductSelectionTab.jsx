@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Minus, Save, Trash2, ShieldCheck } from 'lucide-react';
+import { Plus, Minus, Save, Trash2, ShieldCheck, RefreshCw } from 'lucide-react';
 import ProductVisual from '@/components/products/ProductVisual';
 import { createProductSnapshot, productDocuments } from '@/lib/productDocuments';
 
@@ -37,7 +37,7 @@ function buildSelectedProduct(product, old = {}) {
     product_id: product.id,
     product_name: product.name,
     quantity: Number(old.quantity) || 1,
-    unit_price: Number(product.price) || Number(old.unit_price) || 0,
+    unit_price: Number(old.unit_price) || Number(product.price) || 0,
     product_snapshot: snapshot,
     documents_snapshot: snapshot?.documents_snapshot || productDocuments(product),
     technical_snapshot: snapshot?.technical_data_snapshot || null,
@@ -45,12 +45,23 @@ function buildSelectedProduct(product, old = {}) {
   };
 }
 
+function findCurrentProduct(products, productId) {
+  return products.find(product => String(product.id) === String(productId)) || null;
+}
+
+function documentsOk(item = {}) {
+  const docs = Array.isArray(item.documents_snapshot) ? item.documents_snapshot : [];
+  return docs.some(doc => doc.type === 'datasheet') && docs.some(doc => doc.type === 'manual');
+}
+
 export default function ProductSelectionTab({ project, onUpdate }) {
   const [selectedProducts, setSelectedProducts] = useState(() => normalizeSelectedProducts(project.selected_products));
   const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
 
   useEffect(() => {
     setSelectedProducts(normalizeSelectedProducts(project.selected_products));
+    setMessage('');
   }, [project?.id, project?.selected_products]);
 
   const { data: products = [] } = useQuery({
@@ -60,6 +71,7 @@ export default function ProductSelectionTab({ project, onUpdate }) {
 
   const addProduct = (product) => {
     const existing = selectedProducts.find(sp => sp.product_id === product.id);
+    setMessage('');
     if (existing) {
       setSelectedProducts(prev => prev.map(sp =>
         sp.product_id === product.id
@@ -83,6 +95,32 @@ export default function ProductSelectionTab({ project, onUpdate }) {
     setSelectedProducts(prev => prev.filter(sp => sp.product_id !== productId));
   };
 
+  const refreshOneSnapshot = (productId) => {
+    const existing = selectedProducts.find(item => item.product_id === productId);
+    const product = findCurrentProduct(products, productId);
+    if (!existing || !product) {
+      setMessage('Produkten kunde inte uppdateras eftersom den inte hittades i Produktsortimentet.');
+      return;
+    }
+    setSelectedProducts(prev => prev.map(item => item.product_id === productId ? buildSelectedProduct(product, item) : item));
+    setMessage(`Snapshot uppdaterad för ${product.name}. Tryck Spara för att spara i projektet.`);
+  };
+
+  const refreshAllSnapshots = () => {
+    let updated = 0;
+    let skipped = 0;
+    setSelectedProducts(prev => prev.map(item => {
+      const product = findCurrentProduct(products, item.product_id);
+      if (!product) {
+        skipped += 1;
+        return item;
+      }
+      updated += 1;
+      return buildSelectedProduct(product, item);
+    }));
+    setMessage(`${updated} snapshot(s) uppdaterade. ${skipped ? `${skipped} produkt(er) hittades inte i sortimentet. ` : ''}Tryck Spara för att spara i projektet.`);
+  };
+
   const totalCost = selectedProducts.reduce((sum, sp) => sum + (Number(sp.unit_price) || 0) * (Number(sp.quantity) || 0), 0);
   const groupedProducts = categoryOrder
     .map(category => ({
@@ -99,52 +137,68 @@ export default function ProductSelectionTab({ project, onUpdate }) {
       total_cost: totalCost,
     });
     setSaving(false);
+    setMessage('Produktlistan är sparad i projektet.');
   };
 
   return (
     <div className="space-y-4">
       <Card className="border-0 shadow-sm">
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row items-center justify-between gap-4">
           <div>
             <CardTitle className="text-lg">Valda produkter</CardTitle>
             <p className="mt-1 text-xs text-muted-foreground">När en produkt sparas i projektet sparas även en snapshot av teknisk data och dokument, så gamla projekt inte tappar data om produktsortimentet ändras senare.</p>
           </div>
-          <Button onClick={handleSave} disabled={saving} className="gap-2" size="sm">
-            <Save className="w-4 h-4" /> {saving ? 'Sparar...' : 'Spara'}
-          </Button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button onClick={refreshAllSnapshots} disabled={!selectedProducts.length || !products.length} variant="outline" className="gap-2" size="sm">
+              <RefreshCw className="w-4 h-4" /> Uppdatera alla snapshots
+            </Button>
+            <Button onClick={handleSave} disabled={saving} className="gap-2" size="sm">
+              <Save className="w-4 h-4" /> {saving ? 'Sparar...' : 'Spara'}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
+          {message && <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900">{message}</div>}
           {selectedProducts.length === 0 ? (
             <p className="text-muted-foreground text-sm text-center py-6">Inga produkter valda. Lägg till produkter från sortimentet nedan.</p>
           ) : (
             <div className="space-y-3">
-              {selectedProducts.map(sp => (
-                <div key={sp.product_id} className="flex items-center justify-between p-3 bg-muted/50 rounded-xl">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="font-medium truncate">{sp.product_name}</p>
-                      {sp.product_snapshot && <Badge className="bg-green-100 text-green-700 border-green-200 text-xs"><ShieldCheck className="mr-1 h-3 w-3" />Snapshot</Badge>}
+              {selectedProducts.map(sp => {
+                const sourceProduct = findCurrentProduct(products, sp.product_id);
+                return (
+                  <div key={sp.product_id} className="flex items-center justify-between gap-3 p-3 bg-muted/50 rounded-xl">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-medium truncate">{sp.product_name}</p>
+                        {sp.product_snapshot && <Badge className="bg-green-100 text-green-700 border-green-200 text-xs"><ShieldCheck className="mr-1 h-3 w-3" />Snapshot</Badge>}
+                        <Badge className={documentsOk(sp) ? 'bg-green-100 text-green-700 border-green-200 text-xs' : 'bg-amber-100 text-amber-700 border-amber-200 text-xs'}>
+                          {documentsOk(sp) ? 'Dokument OK' : 'Dokument saknas'}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">{sp.unit_price?.toLocaleString('sv-SE')} SEK/st</p>
+                      {sp.snapshot_created_at && <p className="text-[11px] text-muted-foreground">Produktdata låst {new Date(sp.snapshot_created_at).toLocaleString('sv-SE')}</p>}
                     </div>
-                    <p className="text-sm text-muted-foreground">{sp.unit_price?.toLocaleString('sv-SE')} SEK/st</p>
-                    {sp.snapshot_created_at && <p className="text-[11px] text-muted-foreground">Produktdata låst {new Date(sp.snapshot_created_at).toLocaleString('sv-SE')}</p>}
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <div className="flex items-center gap-2">
-                      <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => updateQuantity(sp.product_id, -1)}>
-                        <Minus className="w-3 h-3" />
+                    <div className="flex items-center gap-3 shrink-0">
+                      <Button size="sm" variant="outline" className="h-8 gap-1 text-xs" onClick={() => refreshOneSnapshot(sp.product_id)} disabled={!sourceProduct}>
+                        <RefreshCw className="w-3.5 h-3.5" /> Uppdatera
                       </Button>
-                      <span className="w-8 text-center font-semibold">{sp.quantity}</span>
-                      <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => updateQuantity(sp.product_id, 1)}>
-                        <Plus className="w-3 h-3" />
+                      <div className="flex items-center gap-2">
+                        <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => updateQuantity(sp.product_id, -1)}>
+                          <Minus className="w-3 h-3" />
+                        </Button>
+                        <span className="w-8 text-center font-semibold">{sp.quantity}</span>
+                        <Button size="icon" variant="outline" className="h-8 w-8" onClick={() => updateQuantity(sp.product_id, 1)}>
+                          <Plus className="w-3 h-3" />
+                        </Button>
+                      </div>
+                      <span className="font-semibold w-24 text-right">{(sp.unit_price * sp.quantity).toLocaleString('sv-SE')} SEK</span>
+                      <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => removeProduct(sp.product_id)}>
+                        <Trash2 className="w-3.5 h-3.5" />
                       </Button>
                     </div>
-                    <span className="font-semibold w-24 text-right">{(sp.unit_price * sp.quantity).toLocaleString('sv-SE')} SEK</span>
-                    <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => removeProduct(sp.product_id)}>
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
                   </div>
-                </div>
-              ))}
+                );
+              })}
               <div className="flex justify-between items-center pt-4 border-t">
                 <span className="font-semibold text-lg">Totalt</span>
                 <span className="font-bold text-2xl text-primary">{totalCost.toLocaleString('sv-SE')} SEK</span>
