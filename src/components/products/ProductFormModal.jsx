@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { base44 } from '@/api/base44Client';
-import { X, Upload, Loader2, Sparkles, FileText, Trash2, AlertTriangle, CheckCircle2, Ruler, Zap, Battery, Move3D, Layers } from 'lucide-react';
+import { X, Upload, Loader2, Sparkles, FileText, Trash2, AlertTriangle, CheckCircle2, Ruler, Zap, Battery } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { buildProductDescription, DOCUMENT_TYPE_LABELS, productDescription, productDocuments, productMeta } from '@/lib/productDocuments';
 
@@ -123,17 +123,7 @@ function completenessFor(form = {}, documents = []) {
   const clampOk = !needsClamp || (hasValue(form.clampZoneMinMm) && hasValue(form.clampZoneMaxMm));
   const docsOk = hasDatasheet && hasManual;
   const technicalOk = missingTechnical.length === 0;
-  return {
-    hasDatasheet,
-    hasManual,
-    docsOk,
-    technicalOk,
-    missingTechnical,
-    needsClamp,
-    needsBatteryInstallationData,
-    clampOk,
-    complete: docsOk && technicalOk && clampOk,
-  };
+  return { hasDatasheet, hasManual, docsOk, technicalOk, missingTechnical, needsClamp, needsBatteryInstallationData, clampOk, complete: docsOk && technicalOk && clampOk };
 }
 
 function schemaFor(fields) {
@@ -152,11 +142,7 @@ function getAutoFetchConfig(category, query, docs) {
 
   if (category === 'vaxelriktare') {
     const fields = [...COMMON_FIELDS, ...INVERTER_FIELDS];
-    return {
-      prompt: `${baseInstruction}\n\nExtract inverter specifications. Return ONLY a JSON object. Fields:\n${fields.join(', ')}.`,
-      fields,
-      schema: schemaFor(fields),
-    };
+    return { prompt: `${baseInstruction}\n\nExtract inverter specifications. Return ONLY a JSON object. Fields:\n${fields.join(', ')}.`, fields, schema: schemaFor(fields) };
   }
 
   if (category === 'solpanel') {
@@ -179,14 +165,10 @@ function getAutoFetchConfig(category, query, docs) {
   }
 
   const fields = ['name','brand','model','power_watts','width_mm','height_mm','voc_v','isc_a','vmp_v','imp_a','capacity_kwh','description'];
-  return {
-    prompt: `${baseInstruction}\n\nExtract technical datasheet specifications. Return ONLY a JSON object with fields: ${fields.join(', ')}`,
-    fields,
-    schema: schemaFor(fields),
-  };
+  return { prompt: `${baseInstruction}\n\nExtract technical datasheet specifications. Return ONLY a JSON object with fields: ${fields.join(', ')}`, fields, schema: schemaFor(fields) };
 }
 
-export default function ProductFormModal({ product, onSave, onClose }) {
+export default function ProductFormModal({ product, onSave, onClose, fixMode = false, hasNextProduct = false }) {
   const meta = productMeta(product || {});
   const [form, setForm] = useState({
     name: product?.name || '',
@@ -273,11 +255,7 @@ export default function ProductFormModal({ product, onSave, onClose }) {
 
     try {
       const config = getAutoFetchConfig(activeCategory, query, documents);
-      const result = await base44.integrations.Core.InvokeLLM({
-        prompt: config.prompt,
-        add_context_from_internet: false,
-        response_json_schema: config.schema,
-      });
+      const result = await base44.integrations.Core.InvokeLLM({ prompt: config.prompt, add_context_from_internet: false, response_json_schema: config.schema });
 
       let filled = 0;
       setForm(f => {
@@ -341,7 +319,7 @@ export default function ProductFormModal({ product, onSave, onClose }) {
 
   const removeDocument = id => setDocuments(current => current.filter(doc => doc.id !== id));
 
-  const handleSave = async () => {
+  const handleSave = async ({ continueToNext = false } = {}) => {
     setSaving(true);
     const numOrNull = v => (v !== '' && v != null && !isNaN(Number(v))) ? Number(v) : undefined;
     const batteryMeta = BATTERY_FIELDS.reduce((acc, key) => {
@@ -369,12 +347,7 @@ export default function ProductFormModal({ product, onSave, onClose }) {
     };
     Object.keys(metaPatch).forEach(k => metaPatch[k] === undefined && delete metaPatch[k]);
 
-    const data = {
-      ...form,
-      price: Number(form.price) || 0,
-      description: buildProductDescription(form.description, metaPatch),
-    };
-
+    const data = { ...form, price: Number(form.price) || 0, description: buildProductDescription(form.description, metaPatch) };
     ['power_watts','capacity_kwh','width_mm','height_mm','weight_kg','voc_v','isc_a','vmp_v','imp_a','temp_coeff_pmax_percent_c','temp_coeff_voc_percent_c','temp_coeff_isc_percent_c','noct_c','max_dc_power_kw','max_dc_voltage_v','startup_voltage_v','mppt_voltage_min_v','mppt_voltage_max_v','nominal_dc_voltage_v','mppt_count','strings_per_mppt','max_input_current_a','max_short_circuit_current_a'].forEach(k => { data[k] = numOrNull(form[k]); });
 
     [...PANEL_META_FIELDS, ...BATTERY_FIELDS].forEach(k => delete data[k]);
@@ -385,14 +358,17 @@ export default function ProductFormModal({ product, onSave, onClose }) {
     if (product?.id) await base44.entities.Product.update(product.id, data);
     else await base44.entities.Product.create(data);
     setSaving(false);
-    onSave();
+    await onSave?.({ continueToNext, savedProductId: product?.id });
   };
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
       <div className="bg-card rounded-2xl border border-border w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-5 border-b border-border">
-          <h2 className="font-semibold text-foreground">{product ? 'Redigera produkt' : 'Ny produkt'}</h2>
+          <div>
+            <h2 className="font-semibold text-foreground">{product ? 'Redigera produkt' : 'Ny produkt'}</h2>
+            {fixMode && <p className="mt-1 text-xs text-muted-foreground">Fixläge: spara och gå vidare till nästa produkt som matchar filtren.</p>}
+          </div>
           <button onClick={onClose} className="p-1.5 hover:bg-muted rounded-lg transition-colors"><X className="w-4 h-4" /></button>
         </div>
 
@@ -437,37 +413,9 @@ export default function ProductFormModal({ product, onSave, onClose }) {
           </div>
 
           {(form.category === 'solpanel' || form.category === 'vaxelriktare' || form.category === 'optimerare') && <Field label={form.category === 'vaxelriktare' ? 'Nominell AC-effekt (W)' : 'Effekt (W)'} type="number" value={form.power_watts} onChange={v => set('power_watts', v)} placeholder={form.category === 'vaxelriktare' ? '15000' : '415'} />}
-
           {form.category === 'batteri' && <BatteryFields form={form} set={set} usableKwh={usableKwh} />}
-
-          {form.category === 'solpanel' && (
-            <>
-              <div className="grid grid-cols-2 gap-3"><Field label="Bredd (mm)" type="number" value={form.width_mm} onChange={v => set('width_mm', v)} placeholder="1134" /><Field label="Höjd (mm)" type="number" value={form.height_mm} onChange={v => set('height_mm', v)} placeholder="1762" /></div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Elektriska data (för slingkontroll)</label>
-                <div className="grid grid-cols-2 gap-3"><Field label="Voc (V)" type="number" value={form.voc_v} onChange={v => set('voc_v', v)} placeholder="49.5" /><Field label="Isc (A)" type="number" value={form.isc_a} onChange={v => set('isc_a', v)} placeholder="10.8" /><Field label="Vmp (V)" type="number" value={form.vmp_v} onChange={v => set('vmp_v', v)} placeholder="41.8" /><Field label="Imp (A)" type="number" value={form.imp_a} onChange={v => set('imp_a', v)} placeholder="9.93" /></div>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Temperaturdata</label>
-                <div className="grid grid-cols-2 gap-3"><Field label="Tempkoeff. Pmax (%/°C)" type="number" value={form.temp_coeff_pmax_percent_c} onChange={v => set('temp_coeff_pmax_percent_c', v)} placeholder="-0.35" /><Field label="Tempkoeff. Voc (%/°C)" type="number" value={form.temp_coeff_voc_percent_c} onChange={v => set('temp_coeff_voc_percent_c', v)} placeholder="-0.27" /><Field label="Tempkoeff. Isc (%/°C)" type="number" value={form.temp_coeff_isc_percent_c} onChange={v => set('temp_coeff_isc_percent_c', v)} placeholder="0.05" /><Field label="NOCT/NMOT (°C)" type="number" value={form.noct_c} onChange={v => set('noct_c', v)} placeholder="45" /></div>
-                <BooleanToggle label="Bifacial panel" checked={form.bifacial} onChange={v => set('bifacial', v)} />
-              </div>
-              <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 space-y-3">
-                <div><p className="text-sm font-semibold text-blue-900">Klämzon från panelens manual/datablad</p><p className="text-xs text-blue-800">Detta gäller endast solpaneler. Lämna tomt om dokumentet inte anger zonen.</p></div>
-                <div className="grid grid-cols-2 gap-3"><Field label="Klämzon min (mm)" type="number" value={form.clampZoneMinMm} onChange={v => set('clampZoneMinMm', v)} placeholder="t.ex. 260" /><Field label="Klämzon max (mm)" type="number" value={form.clampZoneMaxMm} onChange={v => set('clampZoneMaxMm', v)} placeholder="t.ex. 520" /></div>
-                <div className="grid grid-cols-2 gap-3"><Field label="Skena från överkant (mm)" type="number" value={form.railOffsetTopMm} onChange={v => set('railOffsetTopMm', v)} placeholder="valfritt" /><Field label="Skena från underkant (mm)" type="number" value={form.railOffsetBottomMm} onChange={v => set('railOffsetBottomMm', v)} placeholder="valfritt" /></div>
-                <Field label="Källa i dokument" value={form.clampSource} onChange={v => set('clampSource', v)} placeholder="T.ex. Installation manual, Mounting methods" />
-              </div>
-            </>
-          )}
-
-          {form.category === 'vaxelriktare' && (
-            <>
-              <div><label className="text-xs font-medium text-muted-foreground mb-1.5 block">Växelriktardata</label><div className="grid grid-cols-2 gap-3"><Field label="Max DC-effekt (kW)" type="number" value={form.max_dc_power_kw} onChange={v => set('max_dc_power_kw', v)} placeholder="22.5" /><Field label="Max DC-spänning (V)" type="number" value={form.max_dc_voltage_v} onChange={v => set('max_dc_voltage_v', v)} placeholder="1000" /><Field label="Startspänning (V)" type="number" value={form.startup_voltage_v} onChange={v => set('startup_voltage_v', v)} placeholder="180" /><Field label="Nominell DC-spänning (V)" type="number" value={form.nominal_dc_voltage_v} onChange={v => set('nominal_dc_voltage_v', v)} placeholder="640" /></div></div>
-              <div><label className="text-xs font-medium text-muted-foreground mb-1.5 block">MPPT och strömgränser</label><div className="grid grid-cols-2 gap-3"><Field label="MPPT min (V)" type="number" value={form.mppt_voltage_min_v} onChange={v => set('mppt_voltage_min_v', v)} placeholder="160" /><Field label="MPPT max (V)" type="number" value={form.mppt_voltage_max_v} onChange={v => set('mppt_voltage_max_v', v)} placeholder="950" /><Field label="Antal MPPT" type="number" value={form.mppt_count} onChange={v => set('mppt_count', v)} placeholder="2" /><Field label="Strängar per MPPT" type="number" value={form.strings_per_mppt} onChange={v => set('strings_per_mppt', v)} placeholder="1" /><Field label="Max ingångsström (A)" type="number" value={form.max_input_current_a} onChange={v => set('max_input_current_a', v)} placeholder="16" /><Field label="Max kortslutningsström (A)" type="number" value={form.max_short_circuit_current_a} onChange={v => set('max_short_circuit_current_a', v)} placeholder="20" /></div></div>
-              <div><label className="text-xs font-medium text-muted-foreground mb-1.5 block">Typ och system</label><div className="grid grid-cols-2 gap-3"><Field label="Fas" value={form.phase_type} onChange={v => set('phase_type', v)} placeholder="3-fas" /><Field label="Växelriktartyp" value={form.inverter_type} onChange={v => set('inverter_type', v)} placeholder="Hybrid" /></div><BooleanToggle label="Batteristöd / hybrid" checked={form.battery_supported} onChange={v => set('battery_supported', v)} /></div>
-            </>
-          )}
+          {form.category === 'solpanel' && <PanelFields form={form} set={set} />}
+          {form.category === 'vaxelriktare' && <InverterFields form={form} set={set} />}
 
           <Field label="Beskrivning" value={form.description} onChange={v => set('description', v)} placeholder="Valfri beskrivning..." multiline />
 
@@ -477,9 +425,10 @@ export default function ProductFormModal({ product, onSave, onClose }) {
           </div>
         </div>
 
-        <div className="flex gap-3 p-5 border-t border-border">
-          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-border text-sm font-medium hover:bg-muted transition-colors">Avbryt</button>
-          <button onClick={handleSave} disabled={saving || !form.name || !form.price} className="flex-1 py-2.5 rounded-xl bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">{saving && <Loader2 className="w-4 h-4 animate-spin" />}{product ? 'Spara ändringar' : 'Lägg till'}</button>
+        <div className="flex flex-wrap gap-3 p-5 border-t border-border">
+          <button onClick={onClose} className="flex-1 min-w-[130px] py-2.5 rounded-xl border border-border text-sm font-medium hover:bg-muted transition-colors">Avbryt</button>
+          {fixMode && <button onClick={() => handleSave({ continueToNext: true })} disabled={saving || !form.name || !form.price} className="flex-1 min-w-[170px] py-2.5 rounded-xl border border-primary text-primary text-sm font-medium hover:bg-primary/10 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">{saving && <Loader2 className="w-4 h-4 animate-spin" />}Spara och nästa</button>}
+          <button onClick={() => handleSave({ continueToNext: false })} disabled={saving || !form.name || !form.price} className="flex-1 min-w-[150px] py-2.5 rounded-xl bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">{saving && <Loader2 className="w-4 h-4 animate-spin" />}{product ? 'Spara ändringar' : 'Lägg till'}</button>
         </div>
       </div>
     </div>
@@ -514,40 +463,31 @@ function ProductCompletenessBox({ status }) {
   );
 }
 
+function PanelFields({ form, set }) {
+  return <>
+    <div className="grid grid-cols-2 gap-3"><Field label="Bredd (mm)" type="number" value={form.width_mm} onChange={v => set('width_mm', v)} placeholder="1134" /><Field label="Höjd (mm)" type="number" value={form.height_mm} onChange={v => set('height_mm', v)} placeholder="1762" /></div>
+    <div><label className="text-xs font-medium text-muted-foreground mb-1.5 block">Elektriska data (för slingkontroll)</label><div className="grid grid-cols-2 gap-3"><Field label="Voc (V)" type="number" value={form.voc_v} onChange={v => set('voc_v', v)} placeholder="49.5" /><Field label="Isc (A)" type="number" value={form.isc_a} onChange={v => set('isc_a', v)} placeholder="10.8" /><Field label="Vmp (V)" type="number" value={form.vmp_v} onChange={v => set('vmp_v', v)} placeholder="41.8" /><Field label="Imp (A)" type="number" value={form.imp_a} onChange={v => set('imp_a', v)} placeholder="9.93" /></div></div>
+    <div><label className="text-xs font-medium text-muted-foreground mb-1.5 block">Temperaturdata</label><div className="grid grid-cols-2 gap-3"><Field label="Tempkoeff. Pmax (%/°C)" type="number" value={form.temp_coeff_pmax_percent_c} onChange={v => set('temp_coeff_pmax_percent_c', v)} placeholder="-0.35" /><Field label="Tempkoeff. Voc (%/°C)" type="number" value={form.temp_coeff_voc_percent_c} onChange={v => set('temp_coeff_voc_percent_c', v)} placeholder="-0.27" /><Field label="Tempkoeff. Isc (%/°C)" type="number" value={form.temp_coeff_isc_percent_c} onChange={v => set('temp_coeff_isc_percent_c', v)} placeholder="0.05" /><Field label="NOCT/NMOT (°C)" type="number" value={form.noct_c} onChange={v => set('noct_c', v)} placeholder="45" /></div><BooleanToggle label="Bifacial panel" checked={form.bifacial} onChange={v => set('bifacial', v)} /></div>
+    <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 space-y-3"><div><p className="text-sm font-semibold text-blue-900">Klämzon från panelens manual/datablad</p><p className="text-xs text-blue-800">Detta gäller endast solpaneler. Lämna tomt om dokumentet inte anger zonen.</p></div><div className="grid grid-cols-2 gap-3"><Field label="Klämzon min (mm)" type="number" value={form.clampZoneMinMm} onChange={v => set('clampZoneMinMm', v)} placeholder="t.ex. 260" /><Field label="Klämzon max (mm)" type="number" value={form.clampZoneMaxMm} onChange={v => set('clampZoneMaxMm', v)} placeholder="t.ex. 520" /></div><div className="grid grid-cols-2 gap-3"><Field label="Skena från överkant (mm)" type="number" value={form.railOffsetTopMm} onChange={v => set('railOffsetTopMm', v)} placeholder="valfritt" /><Field label="Skena från underkant (mm)" type="number" value={form.railOffsetBottomMm} onChange={v => set('railOffsetBottomMm', v)} placeholder="valfritt" /></div><Field label="Källa i dokument" value={form.clampSource} onChange={v => set('clampSource', v)} placeholder="T.ex. Installation manual, Mounting methods" /></div>
+  </>;
+}
+
+function InverterFields({ form, set }) {
+  return <>
+    <div><label className="text-xs font-medium text-muted-foreground mb-1.5 block">Växelriktardata</label><div className="grid grid-cols-2 gap-3"><Field label="Max DC-effekt (kW)" type="number" value={form.max_dc_power_kw} onChange={v => set('max_dc_power_kw', v)} placeholder="22.5" /><Field label="Max DC-spänning (V)" type="number" value={form.max_dc_voltage_v} onChange={v => set('max_dc_voltage_v', v)} placeholder="1000" /><Field label="Startspänning (V)" type="number" value={form.startup_voltage_v} onChange={v => set('startup_voltage_v', v)} placeholder="180" /><Field label="Nominell DC-spänning (V)" type="number" value={form.nominal_dc_voltage_v} onChange={v => set('nominal_dc_voltage_v', v)} placeholder="640" /></div></div>
+    <div><label className="text-xs font-medium text-muted-foreground mb-1.5 block">MPPT och strömgränser</label><div className="grid grid-cols-2 gap-3"><Field label="MPPT min (V)" type="number" value={form.mppt_voltage_min_v} onChange={v => set('mppt_voltage_min_v', v)} placeholder="160" /><Field label="MPPT max (V)" type="number" value={form.mppt_voltage_max_v} onChange={v => set('mppt_voltage_max_v', v)} placeholder="950" /><Field label="Antal MPPT" type="number" value={form.mppt_count} onChange={v => set('mppt_count', v)} placeholder="2" /><Field label="Strängar per MPPT" type="number" value={form.strings_per_mppt} onChange={v => set('strings_per_mppt', v)} placeholder="1" /><Field label="Max ingångsström (A)" type="number" value={form.max_input_current_a} onChange={v => set('max_input_current_a', v)} placeholder="16" /><Field label="Max kortslutningsström (A)" type="number" value={form.max_short_circuit_current_a} onChange={v => set('max_short_circuit_current_a', v)} placeholder="20" /></div></div>
+    <div><label className="text-xs font-medium text-muted-foreground mb-1.5 block">Typ och system</label><div className="grid grid-cols-2 gap-3"><Field label="Fas" value={form.phase_type} onChange={v => set('phase_type', v)} placeholder="3-fas" /><Field label="Växelriktartyp" value={form.inverter_type} onChange={v => set('inverter_type', v)} placeholder="Hybrid" /></div><BooleanToggle label="Batteristöd / hybrid" checked={form.battery_supported} onChange={v => set('battery_supported', v)} /></div>
+  </>;
+}
+
 function BatteryFields({ form, set, usableKwh }) {
   return (
     <div className="rounded-xl border border-green-100 bg-green-50 p-3 space-y-3">
-      <div>
-        <p className="text-sm font-semibold text-green-900">Batteridata och installationskrav</p>
-        <p className="text-xs text-green-800">Här används inte klämzoner. Fyll i mått, avstånd, modul/stapeldata och kapacitet från manual/datablad.</p>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Nominell kapacitet (kWh)" type="number" value={form.capacity_kwh} onChange={v => set('capacity_kwh', v)} placeholder="t.ex. 3.6" />
-        <Field label="kWh per modul" type="number" value={form.module_capacity_kwh} onChange={v => set('module_capacity_kwh', v)} placeholder="t.ex. 3.6" />
-        <Field label="Antal moduler" type="number" value={form.modules_count} onChange={v => set('modules_count', v)} placeholder="valfritt" />
-        <Field label="Max moduler i stapel" type="number" value={form.max_modules_per_stack} onChange={v => set('max_modules_per_stack', v)} placeholder="t.ex. 4" />
-        <Field label="Max moduler totalt" type="number" value={form.max_battery_modules} onChange={v => set('max_battery_modules', v)} placeholder="valfritt" />
-        <Field label="DoD (%)" type="number" value={form.dod_percent} onChange={v => set('dod_percent', v)} placeholder="90" />
-      </div>
+      <div><p className="text-sm font-semibold text-green-900">Batteridata och installationskrav</p><p className="text-xs text-green-800">Här används inte klämzoner. Fyll i mått, avstånd, modul/stapeldata och kapacitet från manual/datablad.</p></div>
+      <div className="grid grid-cols-2 gap-3"><Field label="Nominell kapacitet (kWh)" type="number" value={form.capacity_kwh} onChange={v => set('capacity_kwh', v)} placeholder="t.ex. 3.6" /><Field label="kWh per modul" type="number" value={form.module_capacity_kwh} onChange={v => set('module_capacity_kwh', v)} placeholder="t.ex. 3.6" /><Field label="Antal moduler" type="number" value={form.modules_count} onChange={v => set('modules_count', v)} placeholder="valfritt" /><Field label="Max moduler i stapel" type="number" value={form.max_modules_per_stack} onChange={v => set('max_modules_per_stack', v)} placeholder="t.ex. 4" /><Field label="Max moduler totalt" type="number" value={form.max_battery_modules} onChange={v => set('max_battery_modules', v)} placeholder="valfritt" /><Field label="DoD (%)" type="number" value={form.dod_percent} onChange={v => set('dod_percent', v)} placeholder="90" /></div>
       <div className="rounded-lg bg-white/70 p-2 text-xs text-green-900">Användbar kapacitet vid {form.dod_percent || 90}% DoD: <b>{usableKwh || '-'} kWh</b></div>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Bredd (mm)" type="number" value={form.width_mm} onChange={v => set('width_mm', v)} placeholder="510" />
-        <Field label="Höjd (mm)" type="number" value={form.height_mm} onChange={v => set('height_mm', v)} placeholder="365" />
-        <Field label="Djup (mm)" type="number" value={form.depth_mm} onChange={v => set('depth_mm', v)} placeholder="152" />
-        <Field label="Vikt total/modul (kg)" type="number" value={form.weight_kg} onChange={v => set('weight_kg', v)} placeholder="30" />
-        <Field label="Modulvikt (kg)" type="number" value={form.module_weight_kg} onChange={v => set('module_weight_kg', v)} placeholder="25" />
-        <Field label="BMS vikt (kg)" type="number" value={form.bms_weight_kg} onChange={v => set('bms_weight_kg', v)} placeholder="13" />
-        <Field label="Basvikt (kg)" type="number" value={form.base_weight_kg} onChange={v => set('base_weight_kg', v)} placeholder="10" />
-        <Field label="IP-klass" value={form.ip_rating} onChange={v => set('ip_rating', v)} placeholder="IP66" />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Avstånd sida (mm)" type="number" value={form.clearance_side_mm} onChange={v => set('clearance_side_mm', v)} placeholder="400" />
-        <Field label="Avstånd ovanför (mm)" type="number" value={form.clearance_top_mm} onChange={v => set('clearance_top_mm', v)} placeholder="100" />
-        <Field label="Avstånd framför (mm)" type="number" value={form.clearance_front_mm} onChange={v => set('clearance_front_mm', v)} placeholder="valfritt" />
-        <Field label="Avstånd bakom (mm)" type="number" value={form.clearance_back_mm} onChange={v => set('clearance_back_mm', v)} placeholder="valfritt" />
-        <Field label="Avstånd under (mm)" type="number" value={form.clearance_bottom_mm} onChange={v => set('clearance_bottom_mm', v)} placeholder="valfritt" />
-        <Field label="Installationsplats" value={form.installation_location} onChange={v => set('installation_location', v)} placeholder="Inomhus/utomhus, undvik direkt sol/regn/snö" />
-      </div>
+      <div className="grid grid-cols-2 gap-3"><Field label="Bredd (mm)" type="number" value={form.width_mm} onChange={v => set('width_mm', v)} placeholder="510" /><Field label="Höjd (mm)" type="number" value={form.height_mm} onChange={v => set('height_mm', v)} placeholder="365" /><Field label="Djup (mm)" type="number" value={form.depth_mm} onChange={v => set('depth_mm', v)} placeholder="152" /><Field label="Vikt total/modul (kg)" type="number" value={form.weight_kg} onChange={v => set('weight_kg', v)} placeholder="30" /><Field label="Modulvikt (kg)" type="number" value={form.module_weight_kg} onChange={v => set('module_weight_kg', v)} placeholder="25" /><Field label="BMS vikt (kg)" type="number" value={form.bms_weight_kg} onChange={v => set('bms_weight_kg', v)} placeholder="13" /><Field label="Basvikt (kg)" type="number" value={form.base_weight_kg} onChange={v => set('base_weight_kg', v)} placeholder="10" /><Field label="IP-klass" value={form.ip_rating} onChange={v => set('ip_rating', v)} placeholder="IP66" /></div>
+      <div className="grid grid-cols-2 gap-3"><Field label="Avstånd sida (mm)" type="number" value={form.clearance_side_mm} onChange={v => set('clearance_side_mm', v)} placeholder="400" /><Field label="Avstånd ovanför (mm)" type="number" value={form.clearance_top_mm} onChange={v => set('clearance_top_mm', v)} placeholder="100" /><Field label="Avstånd framför (mm)" type="number" value={form.clearance_front_mm} onChange={v => set('clearance_front_mm', v)} placeholder="valfritt" /><Field label="Avstånd bakom (mm)" type="number" value={form.clearance_back_mm} onChange={v => set('clearance_back_mm', v)} placeholder="valfritt" /><Field label="Avstånd under (mm)" type="number" value={form.clearance_bottom_mm} onChange={v => set('clearance_bottom_mm', v)} placeholder="valfritt" /><Field label="Installationsplats" value={form.installation_location} onChange={v => set('installation_location', v)} placeholder="Inomhus/utomhus, undvik direkt sol/regn/snö" /></div>
     </div>
   );
 }
@@ -555,19 +495,8 @@ function BatteryFields({ form, set, usableKwh }) {
 function DocumentUploadBlock({ documents, hasDatasheet, hasManual, docUploading, onUpload, onRemove }) {
   return (
     <div className="rounded-xl border p-3 space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div><p className="text-sm font-semibold">Produktdokument</p><p className="text-xs text-muted-foreground">Krav: minst ett datablad och en manual per produkt. Certifikat/CE kan läggas till som stödjande dokument.</p></div>
-        <div className="flex gap-2"><StatusPill ok={hasDatasheet} label="Datablad" /><StatusPill ok={hasManual} label="Manual" /></div>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        {DOCUMENT_UPLOAD_TYPES.map(item => (
-          <label key={item.type} className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed px-3 py-2 text-xs hover:border-primary/60">
-            {docUploading === item.type ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-            Ladda upp {item.label.toLowerCase()}
-            <input type="file" className="hidden" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp" onChange={event => onUpload(event, item.type)} />
-          </label>
-        ))}
-      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-semibold">Produktdokument</p><p className="text-xs text-muted-foreground">Krav: minst ett datablad och en manual per produkt. Certifikat/CE kan läggas till som stödjande dokument.</p></div><div className="flex gap-2"><StatusPill ok={hasDatasheet} label="Datablad" /><StatusPill ok={hasManual} label="Manual" /></div></div>
+      <div className="grid grid-cols-2 gap-2">{DOCUMENT_UPLOAD_TYPES.map(item => <label key={item.type} className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed px-3 py-2 text-xs hover:border-primary/60">{docUploading === item.type ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}Ladda upp {item.label.toLowerCase()}<input type="file" className="hidden" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp" onChange={event => onUpload(event, item.type)} /></label>)}</div>
       {documents.length > 0 && <div className="space-y-2">{documents.map(doc => <div key={doc.id} className="flex items-center justify-between gap-2 rounded-lg bg-muted/50 px-3 py-2 text-xs"><div className="flex min-w-0 items-center gap-2"><FileText className="h-4 w-4 shrink-0 text-primary" /><span className="truncate"><b>{DOCUMENT_TYPE_LABELS[doc.type] || 'Dokument'}:</b> {doc.name}</span></div><button type="button" onClick={() => onRemove(doc.id)} className="text-red-600 hover:text-red-700"><Trash2 className="h-3.5 w-3.5" /></button></div>)}</div>}
     </div>
   );
