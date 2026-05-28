@@ -213,24 +213,30 @@ function pickDefined(source = {}, fields = []) {
   }, {});
 }
 
+export function hydrateProductWithMeta(product = {}) {
+  const meta = productMeta(product);
+  return { ...meta, ...product, product_meta_snapshot: meta };
+}
+
 export function createProductSnapshot(product = {}) {
   if (!product?.id) return null;
-  const docs = productDocuments(product);
+  const hydrated = hydrateProductWithMeta(product);
+  const docs = productDocuments(hydrated);
   const meta = productMeta(product);
-  const clampData = productClampData(product);
-  const technical = pickDefined(product, TECHNICAL_SNAPSHOT_FIELDS);
+  const clampData = productClampData(hydrated);
+  const technical = pickDefined(hydrated, TECHNICAL_SNAPSHOT_FIELDS);
 
   return {
     id: product.id,
     product_id: product.id,
-    category: product.category || 'ovrigt',
-    name: product.name || '',
-    brand: product.brand || '',
-    model: product.model || '',
-    article_number: product.article_number || '',
-    price: product.price,
-    unit: product.unit || 'st',
-    image_url: product.image_url || '',
+    category: hydrated.category || 'ovrigt',
+    name: hydrated.name || '',
+    brand: hydrated.brand || '',
+    model: hydrated.model || '',
+    article_number: hydrated.article_number || '',
+    price: hydrated.price,
+    unit: hydrated.unit || 'st',
+    image_url: hydrated.image_url || '',
     description: product.description || '',
     clean_description: productDescription(product),
     technical_data_snapshot: technical,
@@ -239,7 +245,7 @@ export function createProductSnapshot(product = {}) {
     clamp_data_snapshot: clampData,
     mounting_data_snapshot: {
       clampData,
-      hasProductZone: productHasClampZone(product),
+      hasProductZone: productHasClampZone(hydrated),
     },
     source_product_updated_at: product.updated_date || product.updated_at || product.modified_date || '',
     snapshot_created_at: new Date().toISOString(),
