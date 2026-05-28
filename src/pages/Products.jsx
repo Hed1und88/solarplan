@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Plus, Package, Pencil, Trash2, Sun, Battery, Zap, Cable, Box, CheckCircle2, AlertTriangle, FileText, Ruler, Layers, Move3D } from 'lucide-react';
+import { Plus, Package, Pencil, Trash2, Sun, Battery, Zap, Cable, Box, CheckCircle2, AlertTriangle, FileText, Ruler, Layers, Move3D, ListChecks } from 'lucide-react';
 import ProductFormModal from '@/components/products/ProductFormModal';
 import ProductCatalogImporter from '@/components/products/ProductCatalogImporter';
 import ProductVisual from '@/components/products/ProductVisual';
@@ -38,6 +38,15 @@ const META_FIELDS = [
   'width_mm',
   'height_mm',
   'weight_kg',
+];
+
+const qualityFilters = [
+  { value: 'alla', label: 'Alla status' },
+  { value: 'ofullstandiga', label: 'Ofullständiga' },
+  { value: 'saknar_dokument', label: 'Saknar dokument' },
+  { value: 'saknar_teknisk', label: 'Saknar teknisk data' },
+  { value: 'saknar_klamzon', label: 'Saknar klämzon' },
+  { value: 'saknar_batteridata', label: 'Saknar batteridata' },
 ];
 
 function hydrateProduct(product = {}) {
@@ -133,6 +142,30 @@ function productCompleteness(rawProduct = {}) {
   };
 }
 
+function issueFlags(product = {}, status = {}) {
+  return {
+    incomplete: !status.complete,
+    missingDocs: !status.docsOk,
+    missingTechnical: !status.technicalOk,
+    missingClamp: status.needsClamp && !status.clampOk,
+    missingBatteryData: product.category === 'batteri' && !status.technicalOk,
+  };
+}
+
+function qualityMatches(filter, product, status) {
+  const flags = issueFlags(product, status);
+  if (filter === 'ofullstandiga') return flags.incomplete;
+  if (filter === 'saknar_dokument') return flags.missingDocs;
+  if (filter === 'saknar_teknisk') return flags.missingTechnical;
+  if (filter === 'saknar_klamzon') return flags.missingClamp;
+  if (filter === 'saknar_batteridata') return flags.missingBatteryData;
+  return true;
+}
+
+function countBy(products, predicate) {
+  return products.reduce((sum, item) => sum + (predicate(item) ? 1 : 0), 0);
+}
+
 function StatusPill({ ok, children, icon: Icon }) {
   return (
     <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${ok ? 'border-green-200 bg-green-50 text-green-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
@@ -142,12 +175,23 @@ function StatusPill({ ok, children, icon: Icon }) {
   );
 }
 
+function QualityStat({ label, value, tone = 'neutral', onClick }) {
+  const toneClass = tone === 'green' ? 'border-green-200 bg-green-50 text-green-800' : tone === 'amber' ? 'border-amber-200 bg-amber-50 text-amber-800' : tone === 'red' ? 'border-red-200 bg-red-50 text-red-800' : 'border-border bg-card text-foreground';
+  return (
+    <button onClick={onClick} className={`rounded-2xl border p-3 text-left transition-colors hover:bg-muted/40 ${toneClass}`}>
+      <div className="text-2xl font-bold leading-none">{value}</div>
+      <div className="mt-1 text-xs font-medium">{label}</div>
+    </button>
+  );
+}
+
 export default function Products() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editProduct, setEditProduct] = useState(null);
   const [filterCat, setFilterCat] = useState('alla');
+  const [filterQuality, setFilterQuality] = useState('alla');
 
   const load = async () => {
     const data = await base44.entities.Product.list('-created_date');
@@ -169,7 +213,26 @@ export default function Products() {
     load();
   };
 
-  const filtered = filterCat === 'alla' ? products : products.filter(p => p.category === filterCat);
+  const productRows = products.map(rawProduct => {
+    const product = hydrateProduct(rawProduct);
+    const status = productCompleteness(product);
+    return { rawProduct, product, status };
+  });
+
+  const stats = {
+    total: productRows.length,
+    complete: countBy(productRows, row => row.status.complete),
+    incomplete: countBy(productRows, row => !row.status.complete),
+    missingDocs: countBy(productRows, row => !row.status.docsOk),
+    missingTechnical: countBy(productRows, row => !row.status.technicalOk),
+    missingClamp: countBy(productRows, row => row.status.needsClamp && !row.status.clampOk),
+    missingBatteryData: countBy(productRows, row => row.product.category === 'batteri' && !row.status.technicalOk),
+  };
+
+  const filteredRows = productRows.filter(({ product, status }) => {
+    const catOk = filterCat === 'alla' || product.category === filterCat;
+    return catOk && qualityMatches(filterQuality, product, status);
+  });
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -191,30 +254,55 @@ export default function Products() {
         Produkter bör inte användas i projekt förrän manual, datablad och produktspecifik teknisk data är komplett. Klämzon krävs bara för solpaneler.
       </div>
 
-      <div className="flex gap-2 flex-wrap mb-6">
+      <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+        <QualityStat label="Totalt" value={stats.total} onClick={() => setFilterQuality('alla')} />
+        <QualityStat label="Kompletta" value={stats.complete} tone="green" onClick={() => setFilterQuality('alla')} />
+        <QualityStat label="Ofullständiga" value={stats.incomplete} tone="amber" onClick={() => setFilterQuality('ofullstandiga')} />
+        <QualityStat label="Saknar dokument" value={stats.missingDocs} tone="amber" onClick={() => setFilterQuality('saknar_dokument')} />
+        <QualityStat label="Saknar teknisk" value={stats.missingTechnical} tone="amber" onClick={() => setFilterQuality('saknar_teknisk')} />
+        <QualityStat label="Saknar klämzon" value={stats.missingClamp} tone="red" onClick={() => setFilterQuality('saknar_klamzon')} />
+        <QualityStat label="Saknar batteridata" value={stats.missingBatteryData} tone="red" onClick={() => setFilterQuality('saknar_batteridata')} />
+      </div>
+
+      <div className="flex gap-2 flex-wrap mb-3">
         {['alla', ...Object.keys(categoryConfig)].map(cat => (
           <button key={cat} onClick={() => setFilterCat(cat)} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${filterCat === cat ? 'bg-primary text-white border-primary' : 'bg-card text-muted-foreground border-border hover:border-primary/50'}`}>
-            {cat === 'alla' ? 'Alla' : categoryConfig[cat].label}
+            {cat === 'alla' ? 'Alla kategorier' : categoryConfig[cat].label}
           </button>
         ))}
+      </div>
+
+      <div className="mb-6 flex flex-wrap gap-2">
+        {qualityFilters.map(filter => (
+          <button key={filter.value} onClick={() => setFilterQuality(filter.value)} className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${filterQuality === filter.value ? 'border-primary bg-primary text-white' : 'border-border bg-card text-muted-foreground hover:border-primary/50'}`}>
+            <ListChecks className="h-3.5 w-3.5" /> {filter.label}
+          </button>
+        ))}
+        {(filterCat !== 'alla' || filterQuality !== 'alla') && (
+          <button onClick={() => { setFilterCat('alla'); setFilterQuality('alla'); }} className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted">
+            Rensa filter
+          </button>
+        )}
+      </div>
+
+      <div className="mb-4 text-xs text-muted-foreground">
+        Visar {filteredRows.length} av {products.length} produkter.
       </div>
 
       {loading ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {[1,2,3,4,5,6].map(i => <div key={i} className="h-40 bg-muted rounded-2xl animate-pulse" />)}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : filteredRows.length === 0 ? (
         <div className="text-center py-16 bg-card rounded-2xl border border-border">
           <Package className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3" />
-          <p className="text-muted-foreground">Inga produkter i denna kategori</p>
+          <p className="text-muted-foreground">Inga produkter matchar filtren</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map(rawProduct => {
-            const product = hydrateProduct(rawProduct);
+          {filteredRows.map(({ rawProduct, product, status }) => {
             const cat = categoryConfig[product.category] || categoryConfig.ovrigt;
             const Icon = cat.icon;
-            const status = productCompleteness(product);
             const usableKwh = product.category === 'batteri' ? usableBatteryKwh(product) : null;
             return (
               <div key={product.id} className={`bg-card rounded-2xl border p-4 hover:shadow-md transition-shadow group ${status.complete ? 'border-green-200' : 'border-amber-200'}`}>
