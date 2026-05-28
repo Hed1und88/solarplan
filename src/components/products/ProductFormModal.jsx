@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { base44 } from '@/api/base44Client';
-import { X, Upload, Loader2, Sparkles, FileText, Trash2, AlertTriangle, CheckCircle2, Ruler, Zap } from 'lucide-react';
+import { X, Upload, Loader2, Sparkles, FileText, Trash2, AlertTriangle, CheckCircle2, Ruler, Zap, Battery, Move3D, Layers } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { buildProductDescription, DOCUMENT_TYPE_LABELS, productDescription, productDocuments, productMeta } from '@/lib/productDocuments';
 
@@ -25,22 +25,28 @@ const DOCUMENT_UPLOAD_TYPES = [
 
 const COMMON_FIELDS = ['name', 'brand', 'model', 'power_watts', 'capacity_kwh', 'description'];
 const PANEL_FIELDS = ['width_mm', 'height_mm', 'voc_v', 'isc_a', 'vmp_v', 'imp_a', 'temp_coeff_pmax_percent_c', 'temp_coeff_voc_percent_c', 'temp_coeff_isc_percent_c', 'noct_c', 'bifacial'];
-const INVERTER_FIELDS = [
-  'max_dc_power_kw',
-  'max_dc_voltage_v',
-  'startup_voltage_v',
-  'mppt_voltage_min_v',
-  'mppt_voltage_max_v',
-  'nominal_dc_voltage_v',
-  'mppt_count',
-  'strings_per_mppt',
-  'max_input_current_a',
-  'max_short_circuit_current_a',
-  'battery_supported',
-  'phase_type',
-  'inverter_type',
+const INVERTER_FIELDS = ['max_dc_power_kw','max_dc_voltage_v','startup_voltage_v','mppt_voltage_min_v','mppt_voltage_max_v','nominal_dc_voltage_v','mppt_count','strings_per_mppt','max_input_current_a','max_short_circuit_current_a','battery_supported','phase_type','inverter_type'];
+const PANEL_META_FIELDS = ['clampZoneMinMm', 'clampZoneMaxMm', 'railOffsetTopMm', 'railOffsetBottomMm', 'clampSource'];
+const BATTERY_FIELDS = [
+  'module_capacity_kwh',
+  'usable_capacity_kwh',
+  'dod_percent',
+  'modules_count',
+  'max_modules_per_stack',
+  'max_battery_modules',
+  'depth_mm',
+  'module_weight_kg',
+  'base_weight_kg',
+  'bms_weight_kg',
+  'clearance_front_mm',
+  'clearance_back_mm',
+  'clearance_side_mm',
+  'clearance_top_mm',
+  'clearance_bottom_mm',
+  'installation_location',
+  'ip_rating',
 ];
-const DOCUMENT_FIELDS = ['clampZoneMinMm', 'clampZoneMaxMm', 'railOffsetTopMm', 'railOffsetBottomMm', 'clampSource'];
+const BATTERY_AUTO_FIELDS = ['name', 'brand', 'model', 'capacity_kwh', 'width_mm', 'height_mm', 'weight_kg', 'description', ...BATTERY_FIELDS];
 
 function normalizeKey(...parts) {
   return parts.filter(Boolean).join(' ').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -54,6 +60,20 @@ function hasValue(value) {
     return Number.isFinite(n) ? n > 0 : value.trim().length > 0;
   }
   return true;
+}
+
+function numValue(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function calculatedUsableKwh(form = {}) {
+  const explicit = numValue(form.usable_capacity_kwh);
+  if (explicit && explicit > 0) return explicit;
+  const capacity = numValue(form.capacity_kwh);
+  const dod = numValue(form.dod_percent) || 90;
+  if (!capacity || capacity <= 0) return '';
+  return Math.round(capacity * dod) / 100;
 }
 
 function requiredTechnicalFields(form = {}) {
@@ -81,10 +101,14 @@ function requiredTechnicalFields(form = {}) {
   }
   if (form.category === 'batteri') {
     return [
-      ['capacity_kwh', 'kapacitet'],
+      ['capacity_kwh', 'nominell kWh'],
+      ['module_capacity_kwh', 'kWh per modul'],
+      ['max_modules_per_stack', 'max moduler i stapel'],
       ['width_mm', 'bredd'],
       ['height_mm', 'höjd'],
-      ['weight_kg', 'vikt'],
+      ['depth_mm', 'djup'],
+      ['clearance_side_mm', 'sidavstånd'],
+      ['clearance_top_mm', 'avstånd ovanför'],
     ];
   }
   return [];
@@ -95,6 +119,7 @@ function completenessFor(form = {}, documents = []) {
   const hasManual = documents.some(doc => doc.type === 'manual');
   const missingTechnical = requiredTechnicalFields(form).filter(([key]) => !hasValue(form[key])).map(([, label]) => label);
   const needsClamp = form.category === 'solpanel';
+  const needsBatteryInstallationData = form.category === 'batteri';
   const clampOk = !needsClamp || (hasValue(form.clampZoneMinMm) && hasValue(form.clampZoneMaxMm));
   const docsOk = hasDatasheet && hasManual;
   const technicalOk = missingTechnical.length === 0;
@@ -105,8 +130,19 @@ function completenessFor(form = {}, documents = []) {
     technicalOk,
     missingTechnical,
     needsClamp,
+    needsBatteryInstallationData,
     clampOk,
     complete: docsOk && technicalOk && clampOk,
+  };
+}
+
+function schemaFor(fields) {
+  return {
+    type: 'object',
+    properties: fields.reduce((acc, field) => {
+      acc[field] = field === 'battery_supported' || field === 'bifacial' ? { type: 'boolean' } : { type: ['string', 'number', 'boolean', 'null'] };
+      return acc;
+    }, {}),
   };
 }
 
@@ -115,36 +151,38 @@ function getAutoFetchConfig(category, query, docs) {
   const baseInstruction = `Use ONLY these uploaded SolarPlan product documents. Do not use external websites or guessed public manuals. If a value is not present in the uploaded documents, return null.\n\nProduct: "${query}"\nUploaded documents:\n${docList || 'No documents uploaded.'}`;
 
   if (category === 'vaxelriktare') {
+    const fields = [...COMMON_FIELDS, ...INVERTER_FIELDS];
     return {
-      prompt: `${baseInstruction}\n\nExtract inverter specifications. Return ONLY a JSON object. Fields:\nname, brand, model, power_watts, max_dc_power_kw, max_dc_voltage_v, startup_voltage_v, mppt_voltage_min_v, mppt_voltage_max_v, nominal_dc_voltage_v, mppt_count, strings_per_mppt, max_input_current_a, max_short_circuit_current_a, battery_supported, phase_type, inverter_type, description.`,
-      fields: [...COMMON_FIELDS, ...INVERTER_FIELDS],
-      schema: {
-        type: 'object',
-        properties: {
-          name: { type: 'string' }, brand: { type: 'string' }, model: { type: 'string' }, power_watts: { type: 'number' }, max_dc_power_kw: { type: 'number' }, max_dc_voltage_v: { type: 'number' }, startup_voltage_v: { type: 'number' }, mppt_voltage_min_v: { type: 'number' }, mppt_voltage_max_v: { type: 'number' }, nominal_dc_voltage_v: { type: 'number' }, mppt_count: { type: 'number' }, strings_per_mppt: { type: 'number' }, max_input_current_a: { type: 'number' }, max_short_circuit_current_a: { type: 'number' }, battery_supported: { type: 'boolean' }, phase_type: { type: 'string' }, inverter_type: { type: 'string' }, description: { type: 'string' },
-        },
-      },
+      prompt: `${baseInstruction}\n\nExtract inverter specifications. Return ONLY a JSON object. Fields:\n${fields.join(', ')}.`,
+      fields,
+      schema: schemaFor(fields),
     };
   }
 
   if (category === 'solpanel') {
+    const fields = [...COMMON_FIELDS, ...PANEL_FIELDS];
     return {
-      prompt: `${baseInstruction}\n\nExtract solar module specifications and module mounting/clamp-zone data. Return ONLY a JSON object. Fields:\nname, brand, model, power_watts, width_mm, height_mm, voc_v, isc_a, vmp_v, imp_a, temp_coeff_pmax_percent_c, temp_coeff_voc_percent_c, temp_coeff_isc_percent_c, noct_c, bifacial, description, clampZoneMinMm, clampZoneMaxMm, railOffsetTopMm, railOffsetBottomMm, clampSource.\n\nClamp-zone rules:\n- clampZoneMinMm and clampZoneMaxMm must come from the product manual/datasheet mounting section.\n- Do not calculate 10%/33% here unless the document explicitly states it.\n- clampSource should be the short document section/table name if found.`,
-      fields: [...COMMON_FIELDS, ...PANEL_FIELDS],
-      metaFields: DOCUMENT_FIELDS,
-      schema: {
-        type: 'object',
-        properties: {
-          name: { type: 'string' }, brand: { type: 'string' }, model: { type: 'string' }, power_watts: { type: 'number' }, width_mm: { type: 'number' }, height_mm: { type: 'number' }, voc_v: { type: 'number' }, isc_a: { type: 'number' }, vmp_v: { type: 'number' }, imp_a: { type: 'number' }, temp_coeff_pmax_percent_c: { type: 'number' }, temp_coeff_voc_percent_c: { type: 'number' }, temp_coeff_isc_percent_c: { type: 'number' }, noct_c: { type: 'number' }, bifacial: { type: 'boolean' }, description: { type: 'string' }, clampZoneMinMm: { type: 'number' }, clampZoneMaxMm: { type: 'number' }, railOffsetTopMm: { type: 'number' }, railOffsetBottomMm: { type: 'number' }, clampSource: { type: 'string' },
-        },
-      },
+      prompt: `${baseInstruction}\n\nExtract solar module specifications and module mounting/clamp-zone data. Return ONLY a JSON object. Fields:\n${[...fields, ...PANEL_META_FIELDS].join(', ')}.\n\nClamp-zone rules:\n- clampZoneMinMm and clampZoneMaxMm must come from the product manual/datasheet mounting section.\n- Do not calculate 10%/33% here unless the document explicitly states it.\n- clampSource should be the short document section/table name if found.`,
+      fields,
+      metaFields: PANEL_META_FIELDS,
+      schema: schemaFor([...fields, ...PANEL_META_FIELDS]),
     };
   }
 
+  if (category === 'batteri') {
+    return {
+      prompt: `${baseInstruction}\n\nExtract battery product and installation specifications. Return ONLY a JSON object. Fields:\n${BATTERY_AUTO_FIELDS.join(', ')}.\n\nRules:\n- capacity_kwh = nominal battery capacity for the complete configured battery if stated.\n- module_capacity_kwh = capacity per battery module if stated.\n- usable_capacity_kwh = usable capacity if stated. If not stated, leave null.\n- dod_percent = depth of discharge percentage, default only if document explicitly says it.\n- max_modules_per_stack = maximum modules in one vertical stack.\n- clearance_*_mm = required installation clearances, not clamp zones.`,
+      fields: BATTERY_AUTO_FIELDS,
+      metaFields: BATTERY_FIELDS,
+      schema: schemaFor(BATTERY_AUTO_FIELDS),
+    };
+  }
+
+  const fields = ['name','brand','model','power_watts','width_mm','height_mm','voc_v','isc_a','vmp_v','imp_a','capacity_kwh','description'];
   return {
-    prompt: `${baseInstruction}\n\nExtract technical datasheet specifications. Return ONLY a JSON object with fields: name, brand, model, power_watts, width_mm, height_mm, voc_v, isc_a, vmp_v, imp_a, capacity_kwh, description`,
-    fields: ['name','brand','model','power_watts','width_mm','height_mm','voc_v','isc_a','vmp_v','imp_a','capacity_kwh','description'],
-    schema: { type: 'object', properties: { name: { type: 'string' }, brand: { type: 'string' }, model: { type: 'string' }, power_watts: { type: 'number' }, width_mm: { type: 'number' }, height_mm: { type: 'number' }, voc_v: { type: 'number' }, isc_a: { type: 'number' }, vmp_v: { type: 'number' }, imp_a: { type: 'number' }, capacity_kwh: { type: 'number' }, description: { type: 'string' } } },
+    prompt: `${baseInstruction}\n\nExtract technical datasheet specifications. Return ONLY a JSON object with fields: ${fields.join(', ')}`,
+    fields,
+    schema: schemaFor(fields),
   };
 }
 
@@ -158,10 +196,27 @@ export default function ProductFormModal({ product, onSave, onClose }) {
     price: product?.price || '',
     unit: product?.unit || 'st',
     power_watts: product?.power_watts || '',
-    capacity_kwh: product?.capacity_kwh || '',
-    width_mm: product?.width_mm || '',
-    height_mm: product?.height_mm || '',
-    weight_kg: product?.weight_kg || '',
+    capacity_kwh: product?.capacity_kwh || meta.capacity_kwh || '',
+    width_mm: product?.width_mm || meta.width_mm || '',
+    height_mm: product?.height_mm || meta.height_mm || '',
+    weight_kg: product?.weight_kg || meta.weight_kg || '',
+    depth_mm: meta.depth_mm || product?.depth_mm || '',
+    module_capacity_kwh: meta.module_capacity_kwh || product?.module_capacity_kwh || '',
+    usable_capacity_kwh: meta.usable_capacity_kwh || product?.usable_capacity_kwh || '',
+    dod_percent: meta.dod_percent || product?.dod_percent || 90,
+    modules_count: meta.modules_count || product?.modules_count || '',
+    max_modules_per_stack: meta.max_modules_per_stack || product?.max_modules_per_stack || '',
+    max_battery_modules: meta.max_battery_modules || product?.max_battery_modules || '',
+    module_weight_kg: meta.module_weight_kg || product?.module_weight_kg || '',
+    base_weight_kg: meta.base_weight_kg || product?.base_weight_kg || '',
+    bms_weight_kg: meta.bms_weight_kg || product?.bms_weight_kg || '',
+    clearance_front_mm: meta.clearance_front_mm || product?.clearance_front_mm || '',
+    clearance_back_mm: meta.clearance_back_mm || product?.clearance_back_mm || '',
+    clearance_side_mm: meta.clearance_side_mm || product?.clearance_side_mm || '',
+    clearance_top_mm: meta.clearance_top_mm || product?.clearance_top_mm || '',
+    clearance_bottom_mm: meta.clearance_bottom_mm || product?.clearance_bottom_mm || '',
+    installation_location: meta.installation_location || product?.installation_location || '',
+    ip_rating: meta.ip_rating || product?.ip_rating || '',
     voc_v: product?.voc_v || '',
     isc_a: product?.isc_a || '',
     vmp_v: product?.vmp_v || '',
@@ -200,6 +255,7 @@ export default function ProductFormModal({ product, onSave, onClose }) {
   const [fetchMsg, setFetchMsg] = useState(null);
   const autoFetchedInverterKeyRef = useRef(product?.category === 'vaxelriktare' ? normalizeKey(product?.brand, product?.model) : '');
   const status = useMemo(() => completenessFor(form, documents), [form, documents]);
+  const usableKwh = calculatedUsableKwh(form);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -226,13 +282,7 @@ export default function ProductFormModal({ product, onSave, onClose }) {
       let filled = 0;
       setForm(f => {
         const next = { ...f };
-        config.fields.forEach(k => {
-          if (result?.[k] != null && result[k] !== '') {
-            next[k] = result[k];
-            filled++;
-          }
-        });
-        (config.metaFields || []).forEach(k => {
+        [...(config.fields || []), ...(config.metaFields || [])].forEach(k => {
           if (result?.[k] != null && result[k] !== '') {
             next[k] = result[k];
             filled++;
@@ -294,6 +344,20 @@ export default function ProductFormModal({ product, onSave, onClose }) {
   const handleSave = async () => {
     setSaving(true);
     const numOrNull = v => (v !== '' && v != null && !isNaN(Number(v))) ? Number(v) : undefined;
+    const batteryMeta = BATTERY_FIELDS.reduce((acc, key) => {
+      const raw = form[key];
+      if (raw === '' || raw === null || raw === undefined) return acc;
+      acc[key] = ['installation_location', 'ip_rating'].includes(key) ? raw : numOrNull(raw);
+      return acc;
+    }, {});
+    if (form.category === 'batteri') {
+      ['capacity_kwh', 'width_mm', 'height_mm', 'weight_kg'].forEach(key => {
+        const value = numOrNull(form[key]);
+        if (value !== undefined) batteryMeta[key] = value;
+      });
+      if (!batteryMeta.usable_capacity_kwh && usableKwh) batteryMeta.usable_capacity_kwh = usableKwh;
+    }
+
     const metaPatch = {
       documents,
       clampZoneMinMm: numOrNull(form.clampZoneMinMm),
@@ -301,6 +365,7 @@ export default function ProductFormModal({ product, onSave, onClose }) {
       railOffsetTopMm: numOrNull(form.railOffsetTopMm),
       railOffsetBottomMm: numOrNull(form.railOffsetBottomMm),
       clampSource: form.clampSource || '',
+      ...batteryMeta,
     };
     Object.keys(metaPatch).forEach(k => metaPatch[k] === undefined && delete metaPatch[k]);
 
@@ -310,11 +375,9 @@ export default function ProductFormModal({ product, onSave, onClose }) {
       description: buildProductDescription(form.description, metaPatch),
     };
 
-    [
-      'power_watts','capacity_kwh','width_mm','height_mm','weight_kg','voc_v','isc_a','vmp_v','imp_a','temp_coeff_pmax_percent_c','temp_coeff_voc_percent_c','temp_coeff_isc_percent_c','noct_c','max_dc_power_kw','max_dc_voltage_v','startup_voltage_v','mppt_voltage_min_v','mppt_voltage_max_v','nominal_dc_voltage_v','mppt_count','strings_per_mppt','max_input_current_a','max_short_circuit_current_a',
-    ].forEach(k => { data[k] = numOrNull(form[k]); });
+    ['power_watts','capacity_kwh','width_mm','height_mm','weight_kg','voc_v','isc_a','vmp_v','imp_a','temp_coeff_pmax_percent_c','temp_coeff_voc_percent_c','temp_coeff_isc_percent_c','noct_c','max_dc_power_kw','max_dc_voltage_v','startup_voltage_v','mppt_voltage_min_v','mppt_voltage_max_v','nominal_dc_voltage_v','mppt_count','strings_per_mppt','max_input_current_a','max_short_circuit_current_a'].forEach(k => { data[k] = numOrNull(form[k]); });
 
-    ['clampZoneMinMm','clampZoneMaxMm','railOffsetTopMm','railOffsetBottomMm','clampSource'].forEach(k => delete data[k]);
+    [...PANEL_META_FIELDS, ...BATTERY_FIELDS].forEach(k => delete data[k]);
     data.bifacial = Boolean(form.bifacial);
     data.battery_supported = Boolean(form.battery_supported);
     Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
@@ -346,7 +409,7 @@ export default function ProductFormModal({ product, onSave, onClose }) {
           <ProductCompletenessBox status={status} />
 
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-            Produkter ska ha både datablad och manual uppladdade. Teknisk data och klämzon ska hämtas från dessa dokument, inte från externa länkar.
+            Produkter ska ha både datablad och manual uppladdade. Solpaneler kräver klämzon från manual/datablad. Batterier kräver mått, installationsavstånd, modul-/stapeldata och användbar kapacitet.
           </div>
 
           <Field label="Produktnamn *" value={form.name} onChange={v => set('name', v)} placeholder={form.category === 'vaxelriktare' ? 'Fylls från dokument eller manuellt' : 'T.ex. JA Solar 415W'} />
@@ -374,7 +437,8 @@ export default function ProductFormModal({ product, onSave, onClose }) {
           </div>
 
           {(form.category === 'solpanel' || form.category === 'vaxelriktare' || form.category === 'optimerare') && <Field label={form.category === 'vaxelriktare' ? 'Nominell AC-effekt (W)' : 'Effekt (W)'} type="number" value={form.power_watts} onChange={v => set('power_watts', v)} placeholder={form.category === 'vaxelriktare' ? '15000' : '415'} />}
-          {form.category === 'batteri' && <Field label="Kapacitet (kWh)" type="number" value={form.capacity_kwh} onChange={v => set('capacity_kwh', v)} placeholder="10" />}
+
+          {form.category === 'batteri' && <BatteryFields form={form} set={set} usableKwh={usableKwh} />}
 
           {form.category === 'solpanel' && (
             <>
@@ -389,7 +453,7 @@ export default function ProductFormModal({ product, onSave, onClose }) {
                 <BooleanToggle label="Bifacial panel" checked={form.bifacial} onChange={v => set('bifacial', v)} />
               </div>
               <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 space-y-3">
-                <div><p className="text-sm font-semibold text-blue-900">Klämzon från panelens manual/datablad</p><p className="text-xs text-blue-800">Detta ersätter det gamla fasta värdet. Lämna tomt om dokumentet inte anger zonen.</p></div>
+                <div><p className="text-sm font-semibold text-blue-900">Klämzon från panelens manual/datablad</p><p className="text-xs text-blue-800">Detta gäller endast solpaneler. Lämna tomt om dokumentet inte anger zonen.</p></div>
                 <div className="grid grid-cols-2 gap-3"><Field label="Klämzon min (mm)" type="number" value={form.clampZoneMinMm} onChange={v => set('clampZoneMinMm', v)} placeholder="t.ex. 260" /><Field label="Klämzon max (mm)" type="number" value={form.clampZoneMaxMm} onChange={v => set('clampZoneMaxMm', v)} placeholder="t.ex. 520" /></div>
                 <div className="grid grid-cols-2 gap-3"><Field label="Skena från överkant (mm)" type="number" value={form.railOffsetTopMm} onChange={v => set('railOffsetTopMm', v)} placeholder="valfritt" /><Field label="Skena från underkant (mm)" type="number" value={form.railOffsetBottomMm} onChange={v => set('railOffsetBottomMm', v)} placeholder="valfritt" /></div>
                 <Field label="Källa i dokument" value={form.clampSource} onChange={v => set('clampSource', v)} placeholder="T.ex. Installation manual, Mounting methods" />
@@ -403,10 +467,6 @@ export default function ProductFormModal({ product, onSave, onClose }) {
               <div><label className="text-xs font-medium text-muted-foreground mb-1.5 block">MPPT och strömgränser</label><div className="grid grid-cols-2 gap-3"><Field label="MPPT min (V)" type="number" value={form.mppt_voltage_min_v} onChange={v => set('mppt_voltage_min_v', v)} placeholder="160" /><Field label="MPPT max (V)" type="number" value={form.mppt_voltage_max_v} onChange={v => set('mppt_voltage_max_v', v)} placeholder="950" /><Field label="Antal MPPT" type="number" value={form.mppt_count} onChange={v => set('mppt_count', v)} placeholder="2" /><Field label="Strängar per MPPT" type="number" value={form.strings_per_mppt} onChange={v => set('strings_per_mppt', v)} placeholder="1" /><Field label="Max ingångsström (A)" type="number" value={form.max_input_current_a} onChange={v => set('max_input_current_a', v)} placeholder="16" /><Field label="Max kortslutningsström (A)" type="number" value={form.max_short_circuit_current_a} onChange={v => set('max_short_circuit_current_a', v)} placeholder="20" /></div></div>
               <div><label className="text-xs font-medium text-muted-foreground mb-1.5 block">Typ och system</label><div className="grid grid-cols-2 gap-3"><Field label="Fas" value={form.phase_type} onChange={v => set('phase_type', v)} placeholder="3-fas" /><Field label="Växelriktartyp" value={form.inverter_type} onChange={v => set('inverter_type', v)} placeholder="Hybrid" /></div><BooleanToggle label="Batteristöd / hybrid" checked={form.battery_supported} onChange={v => set('battery_supported', v)} /></div>
             </>
-          )}
-
-          {form.category === 'batteri' && (
-            <div className="grid grid-cols-2 gap-3"><Field label="Bredd (mm)" type="number" value={form.width_mm} onChange={v => set('width_mm', v)} placeholder="valfritt" /><Field label="Höjd (mm)" type="number" value={form.height_mm} onChange={v => set('height_mm', v)} placeholder="valfritt" /><Field label="Vikt (kg)" type="number" value={form.weight_kg} onChange={v => set('weight_kg', v)} placeholder="valfritt" /></div>
           )}
 
           <Field label="Beskrivning" value={form.description} onChange={v => set('description', v)} placeholder="Valfri beskrivning..." multiline />
@@ -444,11 +504,50 @@ function ProductCompletenessBox({ status }) {
           <StatusPill ok={status.hasDatasheet} label="Datablad" />
           <StatusPill ok={status.hasManual} label="Manual" />
           <StatusPill ok={status.technicalOk} label="Teknisk data" icon={Zap} />
+          {status.needsBatteryInstallationData && <StatusPill ok={status.technicalOk} label="Batteridata" icon={Battery} />}
           {status.needsClamp && <StatusPill ok={status.clampOk} label="Klämzon" icon={Ruler} />}
         </div>
       </div>
       {missing.length > 0 && <ul className="mt-2 list-disc space-y-0.5 pl-5 text-xs">{missing.map(item => <li key={item}>{item}</li>)}</ul>}
       {!status.complete && <p className="mt-2 text-xs">Produkten kan sparas, men bör inte användas i projekt förrän kraven är kompletta.</p>}
+    </div>
+  );
+}
+
+function BatteryFields({ form, set, usableKwh }) {
+  return (
+    <div className="rounded-xl border border-green-100 bg-green-50 p-3 space-y-3">
+      <div>
+        <p className="text-sm font-semibold text-green-900">Batteridata och installationskrav</p>
+        <p className="text-xs text-green-800">Här används inte klämzoner. Fyll i mått, avstånd, modul/stapeldata och kapacitet från manual/datablad.</p>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Nominell kapacitet (kWh)" type="number" value={form.capacity_kwh} onChange={v => set('capacity_kwh', v)} placeholder="t.ex. 3.6" />
+        <Field label="kWh per modul" type="number" value={form.module_capacity_kwh} onChange={v => set('module_capacity_kwh', v)} placeholder="t.ex. 3.6" />
+        <Field label="Antal moduler" type="number" value={form.modules_count} onChange={v => set('modules_count', v)} placeholder="valfritt" />
+        <Field label="Max moduler i stapel" type="number" value={form.max_modules_per_stack} onChange={v => set('max_modules_per_stack', v)} placeholder="t.ex. 4" />
+        <Field label="Max moduler totalt" type="number" value={form.max_battery_modules} onChange={v => set('max_battery_modules', v)} placeholder="valfritt" />
+        <Field label="DoD (%)" type="number" value={form.dod_percent} onChange={v => set('dod_percent', v)} placeholder="90" />
+      </div>
+      <div className="rounded-lg bg-white/70 p-2 text-xs text-green-900">Användbar kapacitet vid {form.dod_percent || 90}% DoD: <b>{usableKwh || '-'} kWh</b></div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Bredd (mm)" type="number" value={form.width_mm} onChange={v => set('width_mm', v)} placeholder="510" />
+        <Field label="Höjd (mm)" type="number" value={form.height_mm} onChange={v => set('height_mm', v)} placeholder="365" />
+        <Field label="Djup (mm)" type="number" value={form.depth_mm} onChange={v => set('depth_mm', v)} placeholder="152" />
+        <Field label="Vikt total/modul (kg)" type="number" value={form.weight_kg} onChange={v => set('weight_kg', v)} placeholder="30" />
+        <Field label="Modulvikt (kg)" type="number" value={form.module_weight_kg} onChange={v => set('module_weight_kg', v)} placeholder="25" />
+        <Field label="BMS vikt (kg)" type="number" value={form.bms_weight_kg} onChange={v => set('bms_weight_kg', v)} placeholder="13" />
+        <Field label="Basvikt (kg)" type="number" value={form.base_weight_kg} onChange={v => set('base_weight_kg', v)} placeholder="10" />
+        <Field label="IP-klass" value={form.ip_rating} onChange={v => set('ip_rating', v)} placeholder="IP66" />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Avstånd sida (mm)" type="number" value={form.clearance_side_mm} onChange={v => set('clearance_side_mm', v)} placeholder="400" />
+        <Field label="Avstånd ovanför (mm)" type="number" value={form.clearance_top_mm} onChange={v => set('clearance_top_mm', v)} placeholder="100" />
+        <Field label="Avstånd framför (mm)" type="number" value={form.clearance_front_mm} onChange={v => set('clearance_front_mm', v)} placeholder="valfritt" />
+        <Field label="Avstånd bakom (mm)" type="number" value={form.clearance_back_mm} onChange={v => set('clearance_back_mm', v)} placeholder="valfritt" />
+        <Field label="Avstånd under (mm)" type="number" value={form.clearance_bottom_mm} onChange={v => set('clearance_bottom_mm', v)} placeholder="valfritt" />
+        <Field label="Installationsplats" value={form.installation_location} onChange={v => set('installation_location', v)} placeholder="Inomhus/utomhus, undvik direkt sol/regn/snö" />
+      </div>
     </div>
   );
 }
