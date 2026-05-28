@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Plus, Package, Pencil, Trash2, Sun, Battery, Zap, Cable, Box, CheckCircle2, AlertTriangle, FileText, Ruler } from 'lucide-react';
+import { Plus, Package, Pencil, Trash2, Sun, Battery, Zap, Cable, Box, CheckCircle2, AlertTriangle, FileText, Ruler, Layers, Move3D } from 'lucide-react';
 import ProductFormModal from '@/components/products/ProductFormModal';
 import ProductCatalogImporter from '@/components/products/ProductCatalogImporter';
 import ProductVisual from '@/components/products/ProductVisual';
@@ -51,14 +51,27 @@ function requiredTechnicalFields(product = {}) {
   }
   if (product.category === 'batteri') {
     return [
-      ['capacity_kwh', 'kapacitet'],
+      ['capacity_kwh', 'nominell kWh'],
+      ['module_capacity_kwh', 'kWh per modul'],
+      ['max_modules_per_stack', 'max moduler i stapel'],
       ['width_mm', 'bredd'],
       ['height_mm', 'höjd'],
-      ['weight_kg', 'vikt'],
+      ['depth_mm', 'djup'],
+      ['clearance_side_mm', 'sidavstånd'],
+      ['clearance_top_mm', 'avstånd ovanför'],
     ];
   }
   if (product.category === 'kabel') return [['length_m', 'längd']].filter(([key]) => product[key] !== undefined);
   return [];
+}
+
+function usableBatteryKwh(product = {}) {
+  const explicit = Number(product.usable_capacity_kwh);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  const capacity = Number(product.capacity_kwh);
+  const dod = Number(product.dod_percent || 90);
+  if (!Number.isFinite(capacity) || capacity <= 0) return null;
+  return Math.round(capacity * (Number.isFinite(dod) ? dod : 90)) / 100;
 }
 
 function productCompleteness(product = {}) {
@@ -141,7 +154,7 @@ export default function Products() {
 
       <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
         <AlertTriangle className="mr-2 inline h-4 w-4" />
-        Produkter bör inte användas i projekt förrän manual, datablad, teknisk data och eventuell klämzon är komplett.
+        Produkter bör inte användas i projekt förrän manual, datablad och produktspecifik teknisk data är komplett. Klämzon krävs bara för solpaneler.
       </div>
 
       <div className="flex gap-2 flex-wrap mb-6">
@@ -167,6 +180,7 @@ export default function Products() {
             const cat = categoryConfig[product.category] || categoryConfig.ovrigt;
             const Icon = cat.icon;
             const status = productCompleteness(product);
+            const usableKwh = product.category === 'batteri' ? usableBatteryKwh(product) : null;
             return (
               <div key={product.id} className={`bg-card rounded-2xl border p-4 hover:shadow-md transition-shadow group ${status.complete ? 'border-green-200' : 'border-amber-200'}`}>
                 <div className="flex items-start justify-between mb-3 gap-2">
@@ -190,12 +204,22 @@ export default function Products() {
                 <h3 className="font-semibold text-sm text-foreground leading-snug">{product.name}</h3>
                 {product.brand && <p className="text-xs text-muted-foreground mt-0.5">{product.brand} {product.model}</p>}
                 <div className="mt-3 flex items-center justify-between"><p className="text-lg font-bold text-primary">{product.price?.toLocaleString('sv-SE')} kr</p><p className="text-xs text-muted-foreground">/{product.unit || 'st'}</p></div>
-                {(product.power_watts || product.capacity_kwh) && <div className="mt-2 flex gap-3">{product.power_watts && <span className="text-xs text-muted-foreground">{product.power_watts}W</span>}{product.capacity_kwh && <span className="text-xs text-muted-foreground">{product.capacity_kwh}kWh</span>}</div>}
+                {(product.power_watts || product.capacity_kwh) && <div className="mt-2 flex gap-3">{product.power_watts && <span className="text-xs text-muted-foreground">{product.power_watts}W</span>}{product.capacity_kwh && <span className="text-xs text-muted-foreground">{product.capacity_kwh}kWh nominellt</span>}{usableKwh && <span className="text-xs text-green-700">{usableKwh}kWh vid {product.dod_percent || 90}% DoD</span>}</div>}
+                {product.category === 'batteri' && (
+                  <div className="mt-2 grid grid-cols-2 gap-1 text-[11px] text-muted-foreground">
+                    {product.module_capacity_kwh && <span>Modul: {product.module_capacity_kwh} kWh</span>}
+                    {product.max_modules_per_stack && <span>Max stapel: {product.max_modules_per_stack} moduler</span>}
+                    {(product.width_mm || product.height_mm || product.depth_mm) && <span className="col-span-2">Mått: {[product.width_mm, product.height_mm, product.depth_mm].filter(Boolean).join(' × ')} mm</span>}
+                    {(product.clearance_side_mm || product.clearance_top_mm) && <span className="col-span-2">Avstånd: sida {product.clearance_side_mm || '-'} mm, ovan {product.clearance_top_mm || '-'} mm</span>}
+                  </div>
+                )}
 
                 <div className="mt-4 flex flex-wrap gap-1.5">
                   <StatusPill ok={status.hasDatasheet} icon={FileText}>Datablad</StatusPill>
                   <StatusPill ok={status.hasManual} icon={FileText}>Manual</StatusPill>
                   <StatusPill ok={status.technicalOk} icon={Zap}>Teknisk data</StatusPill>
+                  {product.category === 'batteri' && <StatusPill ok={hasValue(product.max_modules_per_stack)} icon={Layers}>Stapel</StatusPill>}
+                  {product.category === 'batteri' && <StatusPill ok={hasValue(product.clearance_side_mm) || hasValue(product.clearance_top_mm)} icon={Move3D}>Avstånd</StatusPill>}
                   {status.needsClamp && <StatusPill ok={status.clampOk} icon={Ruler}>Klämzon</StatusPill>}
                 </div>
 
