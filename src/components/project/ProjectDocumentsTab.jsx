@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { FileText, AlertTriangle, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { FileText, AlertTriangle, CheckCircle2, ShieldCheck, Database } from 'lucide-react';
 import { DOCUMENT_TYPE_LABELS, createProductSnapshot, productDocuments, productHasRequiredDocuments } from '@/lib/productDocuments';
 
 function safeJson(raw, fallback = null) {
@@ -91,7 +91,7 @@ export default function ProjectDocumentsTab({ project, products = [] }) {
             <FileText className="h-5 w-5 text-primary" /> Dokument för projektets produkter
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Dokument visas i första hand från projektets sparade produktsnapshots. Äldre projekt som saknar snapshot använder aktuell produktdata som reserv så tidigare arbete inte tappas.
+            Grön markering betyder att produktdata finns sparad i projektet. Dokumentstatus visas separat till höger. Om dokument saknas: lägg upp manual/datablad på produkten i Produktsortimentet och spara om produkten i projektet.
           </p>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -104,7 +104,7 @@ export default function ProjectDocumentsTab({ project, products = [] }) {
               {missing.length > 0 && (
                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                   <AlertTriangle className="mr-2 inline h-4 w-4" />
-                  {missing.length} produkt(er) saknar manual eller datablad i snapshot/reservdata.
+                  {missing.length} produkt(er) saknar manual eller datablad. Produktdata kan vara sparad, men dokumenten saknas på produkten eller i projektets snapshot.
                 </div>
               )}
 
@@ -118,14 +118,15 @@ export default function ProjectDocumentsTab({ project, products = [] }) {
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
                             <p className="font-semibold text-foreground">{product.name}</p>
-                            {product.hasSnapshot && <Badge className="bg-green-100 text-green-700 border-green-200"><ShieldCheck className="mr-1 h-3 w-3" />Snapshot</Badge>}
+                            {product.hasSnapshot && <Badge className="bg-green-100 text-green-700 border-green-200"><Database className="mr-1 h-3 w-3" />Produktdata sparad</Badge>}
+                            {docs.length > 0 && <Badge variant="outline" className="text-xs"><ShieldCheck className="mr-1 h-3 w-3" />{docs.length} dokument</Badge>}
                           </div>
                           <p className="text-sm text-muted-foreground">{[product.brand, product.model].filter(Boolean).join(' ') || product.category}</p>
                           <p className="text-xs text-muted-foreground">Källa: {product.source}</p>
                         </div>
                         <Badge className={hasRequired ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}>
                           {hasRequired ? <CheckCircle2 className="mr-1 h-3 w-3" /> : <AlertTriangle className="mr-1 h-3 w-3" />}
-                          {hasRequired ? 'Manual + datablad' : 'Dokument saknas'}
+                          {hasRequired ? 'Dokument OK' : 'Dokument saknas'}
                         </Badge>
                       </div>
 
@@ -142,7 +143,7 @@ export default function ProjectDocumentsTab({ project, products = [] }) {
                           ))}
                         </div>
                       ) : (
-                        <p className="mt-3 rounded-xl bg-muted/40 p-3 text-sm text-muted-foreground">Inga uppladdade dokument på denna produkt.</p>
+                        <p className="mt-3 rounded-xl bg-muted/40 p-3 text-sm text-muted-foreground">Inga uppladdade dokument hittades för denna produkt. Lägg in manual/datablad i Produktsortimentet och spara om produkten i projektet.</p>
                       )}
                     </div>
                   );
