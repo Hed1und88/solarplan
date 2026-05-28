@@ -1,8 +1,8 @@
 import React, { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { FileText, AlertTriangle, CheckCircle2, ShieldCheck, Database } from 'lucide-react';
-import { DOCUMENT_TYPE_LABELS, createProductSnapshot, productDocuments, productHasRequiredDocuments } from '@/lib/productDocuments';
+import { FileText, AlertTriangle, CheckCircle2, ShieldCheck, Database, Battery, Ruler, Zap } from 'lucide-react';
+import { DOCUMENT_TYPE_LABELS, createProductSnapshot, hydrateProductWithMeta, productDocuments, productHasRequiredDocuments } from '@/lib/productDocuments';
 
 function safeJson(raw, fallback = null) {
   try { return JSON.parse(raw || ''); } catch { return fallback; }
@@ -12,20 +12,28 @@ function productById(products, id) {
   return products.find(product => String(product.id) === String(id)) || null;
 }
 
+function mergeProductData(base = {}, fallbackProduct = null) {
+  const fromSnapshot = base?.technical_data_snapshot || {};
+  const fallbackHydrated = fallbackProduct ? hydrateProductWithMeta(fallbackProduct) : {};
+  return hydrateProductWithMeta({ ...fallbackHydrated, ...fromSnapshot, ...base });
+}
+
 function normalizeProjectProduct(entry = {}, fallbackProduct = null, source = 'Projekt') {
   const snapshot = entry.product_snapshot || entry.panelProductSnapshot || entry.snapshot || null;
   const base = snapshot || (fallbackProduct ? createProductSnapshot(fallbackProduct) : null) || entry;
-  const docs = productDocuments({ ...base, documents_snapshot: entry.documents_snapshot || base.documents_snapshot });
+  const productData = mergeProductData(base, fallbackProduct);
+  const docs = productDocuments({ ...productData, documents_snapshot: entry.documents_snapshot || base.documents_snapshot });
   return {
-    id: entry.product_id || entry.panelProductId || base.product_id || base.id || fallbackProduct?.id || `${source}-${entry.product_name || entry.name || 'produkt'}`,
-    product_id: entry.product_id || entry.panelProductId || base.product_id || base.id || fallbackProduct?.id || '',
-    name: entry.product_name || base.name || fallbackProduct?.name || 'Produkt',
-    brand: base.brand || fallbackProduct?.brand || '',
-    model: base.model || fallbackProduct?.model || '',
-    category: base.category || fallbackProduct?.category || 'ovrigt',
+    id: entry.product_id || entry.panelProductId || productData.product_id || productData.id || fallbackProduct?.id || `${source}-${entry.product_name || entry.name || 'produkt'}`,
+    product_id: entry.product_id || entry.panelProductId || productData.product_id || productData.id || fallbackProduct?.id || '',
+    name: entry.product_name || productData.name || fallbackProduct?.name || 'Produkt',
+    brand: productData.brand || fallbackProduct?.brand || '',
+    model: productData.model || fallbackProduct?.model || '',
+    category: productData.category || fallbackProduct?.category || 'ovrigt',
     source,
     hasSnapshot: Boolean(snapshot || entry.product_snapshot || entry.documents_snapshot?.length),
     documents_snapshot: docs,
+    product_data: productData,
   };
 }
 
@@ -79,6 +87,78 @@ function collectProjectProducts(project = {}, products = []) {
   return list;
 }
 
+function num(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function usableBatteryKwh(product = {}) {
+  const explicit = num(product.usable_capacity_kwh);
+  if (explicit) return explicit;
+  const capacity = num(product.capacity_kwh);
+  const dod = num(product.dod_percent) || 90;
+  if (!capacity) return null;
+  return Math.round(capacity * dod) / 100;
+}
+
+function ProductTechSummary({ product }) {
+  const data = product.product_data || {};
+  if (product.category === 'batteri') {
+    const usable = usableBatteryKwh(data);
+    const items = [
+      data.capacity_kwh && `Nominell: ${data.capacity_kwh} kWh`,
+      usable && `Användbar: ${usable} kWh vid ${data.dod_percent || 90}% DoD`,
+      data.module_capacity_kwh && `Modul: ${data.module_capacity_kwh} kWh`,
+      data.max_modules_per_stack && `Max stapel: ${data.max_modules_per_stack} moduler`,
+      (data.width_mm || data.height_mm || data.depth_mm) && `Mått: ${[data.width_mm, data.height_mm, data.depth_mm].filter(Boolean).join(' × ')} mm`,
+      (data.clearance_side_mm || data.clearance_top_mm) && `Avstånd: sida ${data.clearance_side_mm || '-'} mm, ovan ${data.clearance_top_mm || '-'} mm`,
+      data.ip_rating && `IP-klass: ${data.ip_rating}`,
+      data.installation_location && `Placering: ${data.installation_location}`,
+    ].filter(Boolean);
+    if (!items.length) return null;
+    return <SummaryBox icon={Battery} title="Batteridata" items={items} />;
+  }
+
+  if (product.category === 'solpanel') {
+    const items = [
+      data.power_watts && `Effekt: ${data.power_watts} W`,
+      (data.width_mm || data.height_mm) && `Mått: ${[data.width_mm, data.height_mm].filter(Boolean).join(' × ')} mm`,
+      data.voc_v && `Voc: ${data.voc_v} V`,
+      data.vmp_v && `Vmp: ${data.vmp_v} V`,
+      data.isc_a && `Isc: ${data.isc_a} A`,
+      data.imp_a && `Imp: ${data.imp_a} A`,
+    ].filter(Boolean);
+    if (!items.length) return null;
+    return <SummaryBox icon={Ruler} title="Paneldata" items={items} />;
+  }
+
+  if (product.category === 'vaxelriktare') {
+    const items = [
+      data.power_watts && `AC-effekt: ${data.power_watts} W`,
+      data.max_dc_voltage_v && `Max DC: ${data.max_dc_voltage_v} V`,
+      data.startup_voltage_v && `Start: ${data.startup_voltage_v} V`,
+      (data.mppt_voltage_min_v || data.mppt_voltage_max_v) && `MPPT: ${data.mppt_voltage_min_v || '-'}–${data.mppt_voltage_max_v || '-'} V`,
+      data.mppt_count && `MPPT: ${data.mppt_count} st`,
+      data.max_input_current_a && `Max ingångsström: ${data.max_input_current_a} A`,
+    ].filter(Boolean);
+    if (!items.length) return null;
+    return <SummaryBox icon={Zap} title="Växelriktardata" items={items} />;
+  }
+
+  return null;
+}
+
+function SummaryBox({ icon: Icon, title, items }) {
+  return (
+    <div className="mt-3 rounded-xl border bg-muted/20 p-3">
+      <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-foreground"><Icon className="h-4 w-4 text-primary" />{title}</div>
+      <div className="grid gap-1 text-xs text-muted-foreground sm:grid-cols-2">
+        {items.map(item => <div key={item}>• {item}</div>)}
+      </div>
+    </div>
+  );
+}
+
 export default function ProjectDocumentsTab({ project, products = [] }) {
   const projectProducts = useMemo(() => collectProjectProducts(project, products), [project, products]);
   const missing = projectProducts.filter(product => !productHasRequiredDocuments({ documents_snapshot: product.documents_snapshot }));
@@ -129,6 +209,8 @@ export default function ProjectDocumentsTab({ project, products = [] }) {
                           {hasRequired ? 'Dokument OK' : 'Dokument saknas'}
                         </Badge>
                       </div>
+
+                      <ProductTechSummary product={product} />
 
                       {docs.length ? (
                         <div className="mt-3 grid gap-2 sm:grid-cols-2">
