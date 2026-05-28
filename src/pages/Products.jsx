@@ -4,7 +4,7 @@ import { Plus, Package, Pencil, Trash2, Sun, Battery, Zap, Cable, Box, CheckCirc
 import ProductFormModal from '@/components/products/ProductFormModal';
 import ProductCatalogImporter from '@/components/products/ProductCatalogImporter';
 import ProductVisual from '@/components/products/ProductVisual';
-import { productDocuments, resolveProductClampZone } from '@/lib/productDocuments';
+import { productDocuments, productMeta, resolveProductClampZone } from '@/lib/productDocuments';
 
 const categoryConfig = {
   solpanel: { label: 'Solpanel', icon: Sun, color: 'bg-orange-100 text-orange-700' },
@@ -15,6 +15,39 @@ const categoryConfig = {
   montagesystem: { label: 'Montagesystem', icon: Box, color: 'bg-yellow-100 text-yellow-700' },
   ovrigt: { label: 'Övrigt', icon: Package, color: 'bg-gray-100 text-gray-700' },
 };
+
+const META_FIELDS = [
+  'module_capacity_kwh',
+  'usable_capacity_kwh',
+  'dod_percent',
+  'modules_count',
+  'max_modules_per_stack',
+  'max_battery_modules',
+  'depth_mm',
+  'module_weight_kg',
+  'base_weight_kg',
+  'bms_weight_kg',
+  'clearance_front_mm',
+  'clearance_back_mm',
+  'clearance_side_mm',
+  'clearance_top_mm',
+  'clearance_bottom_mm',
+  'installation_location',
+  'ip_rating',
+  'capacity_kwh',
+  'width_mm',
+  'height_mm',
+  'weight_kg',
+];
+
+function hydrateProduct(product = {}) {
+  const meta = productMeta(product);
+  const fromMeta = META_FIELDS.reduce((acc, key) => {
+    if (product[key] === undefined || product[key] === null || product[key] === '') acc[key] = meta[key];
+    return acc;
+  }, {});
+  return { ...product, ...fromMeta, _productMeta: meta };
+}
 
 function hasValue(value) {
   if (value === null || value === undefined || value === '') return false;
@@ -74,7 +107,8 @@ function usableBatteryKwh(product = {}) {
   return Math.round(capacity * (Number.isFinite(dod) ? dod : 90)) / 100;
 }
 
-function productCompleteness(product = {}) {
+function productCompleteness(rawProduct = {}) {
+  const product = hydrateProduct(rawProduct);
   const docs = productDocuments(product);
   const hasManual = docs.some(doc => doc.type === 'manual');
   const hasDatasheet = docs.some(doc => doc.type === 'datasheet');
@@ -176,7 +210,8 @@ export default function Products() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map(product => {
+          {filtered.map(rawProduct => {
+            const product = hydrateProduct(rawProduct);
             const cat = categoryConfig[product.category] || categoryConfig.ovrigt;
             const Icon = cat.icon;
             const status = productCompleteness(product);
@@ -193,18 +228,18 @@ export default function Products() {
                       {status.complete ? 'Komplett' : 'Ofullständig'}
                     </span>
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => { setEditProduct(product); setShowModal(true); }} className="p-1.5 hover:bg-muted rounded-lg transition-colors"><Pencil className="w-3.5 h-3.5 text-muted-foreground" /></button>
+                      <button onClick={() => { setEditProduct(rawProduct); setShowModal(true); }} className="p-1.5 hover:bg-muted rounded-lg transition-colors"><Pencil className="w-3.5 h-3.5 text-muted-foreground" /></button>
                       <button onClick={() => handleDelete(product.id)} className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"><Trash2 className="w-3.5 h-3.5 text-red-500" /></button>
                     </div>
                   </div>
                 </div>
 
-                <ProductVisual product={product} className="w-full h-28 mb-3" />
+                <ProductVisual product={rawProduct} className="w-full h-28 mb-3" />
 
                 <h3 className="font-semibold text-sm text-foreground leading-snug">{product.name}</h3>
                 {product.brand && <p className="text-xs text-muted-foreground mt-0.5">{product.brand} {product.model}</p>}
                 <div className="mt-3 flex items-center justify-between"><p className="text-lg font-bold text-primary">{product.price?.toLocaleString('sv-SE')} kr</p><p className="text-xs text-muted-foreground">/{product.unit || 'st'}</p></div>
-                {(product.power_watts || product.capacity_kwh) && <div className="mt-2 flex gap-3">{product.power_watts && <span className="text-xs text-muted-foreground">{product.power_watts}W</span>}{product.capacity_kwh && <span className="text-xs text-muted-foreground">{product.capacity_kwh}kWh nominellt</span>}{usableKwh && <span className="text-xs text-green-700">{usableKwh}kWh vid {product.dod_percent || 90}% DoD</span>}</div>}
+                {(product.power_watts || product.capacity_kwh) && <div className="mt-2 flex flex-wrap gap-3">{product.power_watts && <span className="text-xs text-muted-foreground">{product.power_watts}W</span>}{product.capacity_kwh && <span className="text-xs text-muted-foreground">{product.capacity_kwh}kWh nominellt</span>}{usableKwh && <span className="text-xs text-green-700">{usableKwh}kWh vid {product.dod_percent || 90}% DoD</span>}</div>}
                 {product.category === 'batteri' && (
                   <div className="mt-2 grid grid-cols-2 gap-1 text-[11px] text-muted-foreground">
                     {product.module_capacity_kwh && <span>Modul: {product.module_capacity_kwh} kWh</span>}
