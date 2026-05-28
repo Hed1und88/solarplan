@@ -1,7 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { FileText, AlertTriangle, CheckCircle2, ShieldCheck, Database, Battery, Ruler, Zap } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { FileText, AlertTriangle, CheckCircle2, ShieldCheck, Database, Battery, Ruler, Zap, RefreshCw } from 'lucide-react';
 import { DOCUMENT_TYPE_LABELS, createProductSnapshot, hydrateProductWithMeta, productDocuments, productHasRequiredDocuments } from '@/lib/productDocuments';
 
 function safeJson(raw, fallback = null) {
@@ -101,6 +102,79 @@ function usableBatteryKwh(product = {}) {
   return Math.round(capacity * dod) / 100;
 }
 
+function snapshotFromProduct(products, productId) {
+  const product = productById(products, productId);
+  return product ? createProductSnapshot(product) : null;
+}
+
+function refreshProjectSnapshots(project = {}, products = []) {
+  const patch = {};
+  let updated = 0;
+
+  if (Array.isArray(project.selected_products)) {
+    patch.selected_products = project.selected_products.map(item => {
+      const snapshot = snapshotFromProduct(products, item.product_id);
+      if (!snapshot) return item;
+      updated += 1;
+      return {
+        ...item,
+        product_name: snapshot.name || item.product_name,
+        product_snapshot: snapshot,
+        documents_snapshot: snapshot.documents_snapshot || [],
+        technical_snapshot: snapshot.technical_data_snapshot || {},
+        snapshot_created_at: snapshot.snapshot_created_at,
+      };
+    });
+  }
+
+  const planner = safeJson(project.solar_roof_planner_data || project.panel_layout_data, null);
+  if (planner?.roofs) {
+    const nextPlanner = {
+      ...planner,
+      roofs: planner.roofs.map(roof => {
+        const snapshot = snapshotFromProduct(products, roof.panelProductId);
+        if (!snapshot) return roof;
+        updated += 1;
+        return { ...roof, panelProductSnapshot: snapshot };
+      }),
+    };
+    const serialized = JSON.stringify(nextPlanner);
+    if (project.solar_roof_planner_data !== undefined) patch.solar_roof_planner_data = serialized;
+    else patch.panel_layout_data = serialized;
+  }
+
+  const stringData = safeJson(project.string_layout_data, null);
+  if (stringData) {
+    const nextStringData = {
+      ...stringData,
+      strings: Array.isArray(stringData.strings) ? stringData.strings.map(item => {
+        const snapshot = snapshotFromProduct(products, item.panelProductId);
+        if (!snapshot) return item;
+        updated += 1;
+        return { ...item, panelProductSnapshot: snapshot };
+      }) : stringData.strings,
+      inverterConfigs: Array.isArray(stringData.inverterConfigs) ? stringData.inverterConfigs.map(item => {
+        const snapshot = snapshotFromProduct(products, item.productId);
+        if (!snapshot) return item;
+        updated += 1;
+        return { ...item, productSnapshot: snapshot };
+      }) : stringData.inverterConfigs,
+    };
+    patch.string_layout_data = JSON.stringify(nextStringData);
+  }
+
+  const mounting = safeJson(project.mounting_data, null);
+  if (mounting?.selectedPanelId) {
+    const snapshot = snapshotFromProduct(products, mounting.selectedPanelId);
+    if (snapshot) {
+      updated += 1;
+      patch.mounting_data = JSON.stringify({ ...mounting, selectedPanelSnapshot: snapshot });
+    }
+  }
+
+  return { patch, updated };
+}
+
 function ProductTechSummary({ product }) {
   const data = product.product_data || {};
   if (product.category === 'batteri') {
@@ -159,22 +233,48 @@ function SummaryBox({ icon: Icon, title, items }) {
   );
 }
 
-export default function ProjectDocumentsTab({ project, products = [] }) {
+export default function ProjectDocumentsTab({ project, products = [], onUpdate }) {
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState('');
   const projectProducts = useMemo(() => collectProjectProducts(project, products), [project, products]);
   const missing = projectProducts.filter(product => !productHasRequiredDocuments({ documents_snapshot: product.documents_snapshot }));
+
+  const handleRefreshSnapshots = async () => {
+    if (!onUpdate) return;
+    setRefreshing(true);
+    setRefreshMsg('');
+    const { patch, updated } = refreshProjectSnapshots(project, products);
+    if (!updated || Object.keys(patch).length === 0) {
+      setRefreshMsg('Inga snapshots kunde uppdateras. Kontrollera att produkterna fortfarande finns i Produktsortimentet.');
+      setRefreshing(false);
+      return;
+    }
+    await onUpdate(patch);
+    setRefreshMsg(`${updated} snapshot(s) uppdaterade och sparade i projektet.`);
+    setRefreshing(false);
+  };
 
   return (
     <div className="space-y-4">
       <Card className="border-0 shadow-sm">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <FileText className="h-5 w-5 text-primary" /> Dokument för projektets produkter
-          </CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Grön markering betyder att produktdata finns sparad i projektet. Dokumentstatus visas separat till höger. Om dokument saknas: lägg upp manual/datablad på produkten i Produktsortimentet och spara om produkten i projektet.
-          </p>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <FileText className="h-5 w-5 text-primary" /> Dokument för projektets produkter
+              </CardTitle>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Grön markering betyder att produktdata finns sparad i projektet. Dokumentstatus visas separat till höger. Om dokument saknas: lägg upp manual/datablad på produkten i Produktsortimentet och uppdatera snapshots här.
+              </p>
+            </div>
+            <Button onClick={handleRefreshSnapshots} disabled={refreshing || !products.length || !projectProducts.length || !onUpdate} variant="outline" size="sm" className="gap-2">
+              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+              {refreshing ? 'Uppdaterar...' : 'Uppdatera projektsnapshots'}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-3">
+          {refreshMsg && <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">{refreshMsg}</div>}
           {projectProducts.length === 0 ? (
             <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">
               Inga produkter är kopplade till projektet ännu. Välj panel i Paneler/Montage eller lägg till produkter i Produktfliken.
@@ -225,7 +325,7 @@ export default function ProjectDocumentsTab({ project, products = [] }) {
                           ))}
                         </div>
                       ) : (
-                        <p className="mt-3 rounded-xl bg-muted/40 p-3 text-sm text-muted-foreground">Inga uppladdade dokument hittades för denna produkt. Lägg in manual/datablad i Produktsortimentet och spara om produkten i projektet.</p>
+                        <p className="mt-3 rounded-xl bg-muted/40 p-3 text-sm text-muted-foreground">Inga uppladdade dokument hittades för denna produkt. Lägg in manual/datablad i Produktsortimentet och uppdatera projektsnapshots.</p>
                       )}
                     </div>
                   );
