@@ -4,19 +4,45 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Minus, Save, Trash2 } from 'lucide-react';
+import { Plus, Minus, Save, Trash2, ShieldCheck } from 'lucide-react';
 import ProductVisual from '@/components/products/ProductVisual';
+import { createProductSnapshot, productDocuments } from '@/lib/productDocuments';
 
 const categoryLabels = { solpanel: 'Solpanel', batteri: 'Batteri', vaxelriktare: 'Växelriktare', optimerare: 'Optimerare', kabel: 'Kabel', montagesystem: 'Montagesystem', ovrigt: 'Övrigt' };
 const categoryOrder = ['solpanel', 'vaxelriktare', 'batteri', 'optimerare', 'montagesystem', 'kabel', 'ovrigt'];
 
+function productSnapshotFromSelection(item = {}) {
+  return item.product_snapshot || item.snapshot || item.productSnapshot || null;
+}
+
 function normalizeSelectedProducts(items) {
-  return Array.isArray(items) ? items.map(item => ({
-    product_id: item.product_id,
-    product_name: item.product_name,
-    quantity: Number(item.quantity) || 1,
-    unit_price: Number(item.unit_price) || 0,
-  })).filter(item => item.product_id) : [];
+  return Array.isArray(items) ? items.map(item => {
+    const snapshot = productSnapshotFromSelection(item);
+    return {
+      product_id: item.product_id || snapshot?.product_id || snapshot?.id,
+      product_name: item.product_name || snapshot?.name || '',
+      quantity: Number(item.quantity) || 1,
+      unit_price: Number(item.unit_price) || Number(snapshot?.price) || 0,
+      product_snapshot: snapshot || null,
+      documents_snapshot: Array.isArray(item.documents_snapshot) ? item.documents_snapshot : (Array.isArray(snapshot?.documents_snapshot) ? snapshot.documents_snapshot : []),
+      technical_snapshot: item.technical_snapshot || snapshot?.technical_data_snapshot || null,
+      snapshot_created_at: item.snapshot_created_at || snapshot?.snapshot_created_at || '',
+    };
+  }).filter(item => item.product_id) : [];
+}
+
+function buildSelectedProduct(product, old = {}) {
+  const snapshot = createProductSnapshot(product);
+  return {
+    product_id: product.id,
+    product_name: product.name,
+    quantity: Number(old.quantity) || 1,
+    unit_price: Number(product.price) || Number(old.unit_price) || 0,
+    product_snapshot: snapshot,
+    documents_snapshot: snapshot?.documents_snapshot || productDocuments(product),
+    technical_snapshot: snapshot?.technical_data_snapshot || null,
+    snapshot_created_at: snapshot?.snapshot_created_at || new Date().toISOString(),
+  };
 }
 
 export default function ProductSelectionTab({ project, onUpdate }) {
@@ -36,15 +62,12 @@ export default function ProductSelectionTab({ project, onUpdate }) {
     const existing = selectedProducts.find(sp => sp.product_id === product.id);
     if (existing) {
       setSelectedProducts(prev => prev.map(sp =>
-        sp.product_id === product.id ? { ...sp, quantity: sp.quantity + 1, unit_price: Number(product.price) || sp.unit_price || 0, product_name: product.name } : sp
+        sp.product_id === product.id
+          ? buildSelectedProduct(product, { ...sp, quantity: sp.quantity + 1 })
+          : sp
       ));
     } else {
-      setSelectedProducts(prev => [...prev, {
-        product_id: product.id,
-        product_name: product.name,
-        quantity: 1,
-        unit_price: Number(product.price) || 0,
-      }]);
+      setSelectedProducts(prev => [...prev, buildSelectedProduct(product)]);
     }
   };
 
@@ -82,7 +105,10 @@ export default function ProductSelectionTab({ project, onUpdate }) {
     <div className="space-y-4">
       <Card className="border-0 shadow-sm">
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-lg">Valda produkter</CardTitle>
+          <div>
+            <CardTitle className="text-lg">Valda produkter</CardTitle>
+            <p className="mt-1 text-xs text-muted-foreground">När en produkt sparas i projektet sparas även en snapshot av teknisk data och dokument, så gamla projekt inte tappar data om produktsortimentet ändras senare.</p>
+          </div>
           <Button onClick={handleSave} disabled={saving} className="gap-2" size="sm">
             <Save className="w-4 h-4" /> {saving ? 'Sparar...' : 'Spara'}
           </Button>
@@ -95,8 +121,12 @@ export default function ProductSelectionTab({ project, onUpdate }) {
               {selectedProducts.map(sp => (
                 <div key={sp.product_id} className="flex items-center justify-between p-3 bg-muted/50 rounded-xl">
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium truncate">{sp.product_name}</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-medium truncate">{sp.product_name}</p>
+                      {sp.product_snapshot && <Badge className="bg-green-100 text-green-700 border-green-200 text-xs"><ShieldCheck className="mr-1 h-3 w-3" />Snapshot</Badge>}
+                    </div>
                     <p className="text-sm text-muted-foreground">{sp.unit_price?.toLocaleString('sv-SE')} SEK/st</p>
+                    {sp.snapshot_created_at && <p className="text-[11px] text-muted-foreground">Produktdata låst {new Date(sp.snapshot_created_at).toLocaleString('sv-SE')}</p>}
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
                     <div className="flex items-center gap-2">
