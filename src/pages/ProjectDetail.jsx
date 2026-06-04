@@ -5,7 +5,7 @@ import { useParams, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, Sun, Cable, Battery, ShoppingCart, BarChart2, Wrench, GitBranch, Save, FileText } from 'lucide-react';
+import { ArrowLeft, Sun, Cable, Battery, ShoppingCart, BarChart2, Wrench, GitBranch, Save, FileText, AlertTriangle } from 'lucide-react';
 import SolarDataPanelV2 from '@/components/project/SolarDataPanelV2';
 import ProjectPDFExport from '@/components/project/ProjectPDFExport';
 import ProjectInfoEditor from '@/components/project/ProjectInfoEditor';
@@ -19,6 +19,7 @@ import ProjectDocumentsTab from '@/components/project/ProjectDocumentsTab.jsx';
 import MountingSystemCalculator from '@/components/project/MountingSystemCalculator';
 import SolarRoofPlannerV2 from '@/components/project/SolarRoofPlannerV2';
 import { fetchProjectById, mergeProjectWithBackup, saveProjectPatch, writeProjectBackup } from '@/lib/projectPersistence';
+import { productQualityIssues, productQualityStatus, selectedProductQualityInput } from '@/lib/productQuality';
 
 const statusLabels = { planering: 'Planering', projektering: 'Projektering', offert: 'Offert', installation: 'Installation', klart: 'Klart' };
 const statusColors = { planering: 'bg-blue-100 text-blue-700', projektering: 'bg-amber-100 text-amber-700', offert: 'bg-purple-100 text-purple-700', installation: 'bg-orange-100 text-orange-700', klart: 'bg-green-100 text-green-700' };
@@ -50,6 +51,121 @@ function buildFullProjectSavePatch(project) {
     if (project[field] !== undefined) patch[field] = project[field];
     return patch;
   }, {});
+}
+
+function safeJson(raw, fallback = null) {
+  try { return JSON.parse(raw || ''); } catch { return fallback; }
+}
+
+function productById(products, id) {
+  return products.find(product => String(product.id) === String(id)) || null;
+}
+
+function issueText(issues = []) {
+  if (!issues.length) return '';
+  if (issues.length <= 2) return issues.join(' • ');
+  return `${issues.slice(0, 2).join(' • ')} • +${issues.length - 2} till`;
+}
+
+function pushProjectProductEntry(list, entry) {
+  const key = entry.product_id || entry.product_snapshot?.product_id || entry.product_snapshot?.id || `${entry.name}-${entry.source}`;
+  if (!key) return;
+  const exists = list.some(item => String(item.key) === String(key));
+  if (!exists) list.push({ ...entry, key });
+}
+
+function collectProjectProductEntries(project = {}, products = []) {
+  const entries = [];
+
+  (Array.isArray(project?.selected_products) ? project.selected_products : []).forEach(item => {
+    const sourceProduct = productById(products, item.product_id);
+    pushProjectProductEntry(entries, {
+      source: 'Produktfliken',
+      name: item.product_name || item.product_snapshot?.name || sourceProduct?.name || 'Produkt',
+      product_id: item.product_id,
+      qualityInput: selectedProductQualityInput(item, sourceProduct),
+    });
+  });
+
+  const planner = safeJson(project?.solar_roof_planner_data || project?.panel_layout_data, null);
+  (planner?.roofs || []).forEach(roof => {
+    const sourceProduct = productById(products, roof.panelProductId);
+    const snapshot = roof.panelProductSnapshot || {};
+    pushProjectProductEntry(entries, {
+      source: `Paneler / ${roof.name || 'Tak'}`,
+      name: snapshot.name || sourceProduct?.name || roof.name || 'Panelprodukt',
+      product_id: roof.panelProductId || snapshot.product_id || snapshot.id,
+      product_snapshot: snapshot,
+      qualityInput: selectedProductQualityInput({
+        product_id: roof.panelProductId || snapshot.product_id || snapshot.id,
+        product_name: snapshot.name || sourceProduct?.name,
+        product_snapshot: snapshot,
+        documents_snapshot: snapshot.documents_snapshot,
+        technical_snapshot: snapshot.technical_data_snapshot,
+      }, sourceProduct),
+    });
+  });
+
+  const stringData = safeJson(project?.string_layout_data, null);
+  (stringData?.strings || []).forEach(item => {
+    const sourceProduct = productById(products, item.panelProductId);
+    const snapshot = item.panelProductSnapshot || {};
+    pushProjectProductEntry(entries, {
+      source: `Slingor / ${item.name || 'Slinga'}`,
+      name: snapshot.name || sourceProduct?.name || item.name || 'Panelprodukt',
+      product_id: item.panelProductId || snapshot.product_id || snapshot.id,
+      product_snapshot: snapshot,
+      qualityInput: selectedProductQualityInput({
+        product_id: item.panelProductId || snapshot.product_id || snapshot.id,
+        product_name: snapshot.name || sourceProduct?.name,
+        product_snapshot: snapshot,
+        documents_snapshot: snapshot.documents_snapshot,
+        technical_snapshot: snapshot.technical_data_snapshot,
+      }, sourceProduct),
+    });
+  });
+
+  (stringData?.inverterConfigs || []).forEach((item, index) => {
+    const sourceProduct = productById(products, item.productId);
+    const snapshot = item.productSnapshot || {};
+    pushProjectProductEntry(entries, {
+      source: `Slingor / ${item.name || `Växelriktare ${index + 1}`}`,
+      name: snapshot.name || sourceProduct?.name || item.name || `Växelriktare ${index + 1}`,
+      product_id: item.productId || snapshot.product_id || snapshot.id,
+      product_snapshot: snapshot,
+      qualityInput: selectedProductQualityInput({
+        product_id: item.productId || snapshot.product_id || snapshot.id,
+        product_name: snapshot.name || sourceProduct?.name,
+        product_snapshot: snapshot,
+        documents_snapshot: snapshot.documents_snapshot,
+        technical_snapshot: snapshot.technical_data_snapshot,
+      }, sourceProduct),
+    });
+  });
+
+  const mounting = safeJson(project?.mounting_data, null);
+  if (mounting?.selectedPanelId) {
+    const sourceProduct = productById(products, mounting.selectedPanelId);
+    const snapshot = mounting.selectedPanelSnapshot || {};
+    pushProjectProductEntry(entries, {
+      source: 'Montage',
+      name: snapshot.name || sourceProduct?.name || mounting.selectedPanelName || 'Panelprodukt',
+      product_id: mounting.selectedPanelId || snapshot.product_id || snapshot.id,
+      product_snapshot: snapshot,
+      qualityInput: selectedProductQualityInput({
+        product_id: mounting.selectedPanelId || snapshot.product_id || snapshot.id,
+        product_name: snapshot.name || sourceProduct?.name || mounting.selectedPanelName,
+        product_snapshot: snapshot,
+        documents_snapshot: snapshot.documents_snapshot,
+        technical_snapshot: snapshot.technical_data_snapshot,
+      }, sourceProduct),
+    });
+  }
+
+  return entries.map(entry => {
+    const status = productQualityStatus(entry.qualityInput || {});
+    return { ...entry, status, issues: productQualityIssues(entry.qualityInput || {}) };
+  });
 }
 
 export default function ProjectDetail() {
@@ -94,6 +210,9 @@ export default function ProjectDetail() {
   const saveProject = data => updateMutation.mutateAsync(data || {});
   const project = workingProject || mergeProjectWithBackup(serverProject);
   const saveEntireProject = () => saveProject(buildFullProjectSavePatch(project));
+  const projectProductQuality = collectProjectProductEntries(project, products);
+  const incompleteProjectProducts = projectProductQuality.filter(item => !item.status.complete);
+  const hasIncompleteProjectProducts = incompleteProjectProducts.length > 0;
 
   const selectedPanelProduct = (() => {
     try {
@@ -117,10 +236,32 @@ export default function ProjectDetail() {
       </div>
       <div className="flex items-center gap-2 flex-wrap">
         <Button onClick={saveEntireProject} disabled={updateMutation.isPending} className="gap-2"><Save className="w-4 h-4" />{updateMutation.isPending ? 'Sparar...' : 'Spara allt'}</Button>
-        {project.status === 'projektering' && <Button onClick={() => updateMutation.mutate({ status: 'offert' })} className="gap-2 bg-purple-600 hover:bg-purple-700 text-white">Skicka som offert</Button>}
+        {project.status === 'projektering' && <Button onClick={() => updateMutation.mutate({ status: 'offert' })} disabled={hasIncompleteProjectProducts} title={hasIncompleteProjectProducts ? 'Projektet har ofullständiga produkter och kan inte skickas som offert ännu.' : ''} className="gap-2 bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50">Skicka som offert</Button>}
         <ProjectPDFExport project={project} products={products} />
       </div>
     </div>
+
+    {hasIncompleteProjectProducts && (
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+        <div className="flex items-start gap-3">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+          <div className="min-w-0">
+            <p className="font-semibold">Projektet innehåller {incompleteProjectProducts.length} ofullständig(a) produkt(er)</p>
+            <p className="mt-1 text-sm">Gå till Produkter eller Dokument och uppdatera/fixa produkterna innan projektet skickas som offert.</p>
+            <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+              {incompleteProjectProducts.slice(0, 6).map(item => (
+                <div key={`${item.key}-${item.source}`} className="rounded-xl bg-white/70 px-3 py-2">
+                  <div className="font-medium text-amber-950">{item.name}</div>
+                  <div className="text-amber-800">{issueText(item.issues)}</div>
+                  <div className="text-amber-700">Källa: {item.source}</div>
+                </div>
+              ))}
+            </div>
+            {incompleteProjectProducts.length > 6 && <p className="mt-2 text-xs">+{incompleteProjectProducts.length - 6} ytterligare produkter behöver kontrolleras.</p>}
+          </div>
+        </div>
+      </div>
+    )}
 
     <ProjectInfoEditor project={project} onUpdate={saveProject} isSaving={updateMutation.isPending} />
     <EmergencyRestorePanel project={project} onRestore={saveProject} />
