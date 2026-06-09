@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { AlertTriangle, Cable, Calculator, CheckCircle2, Info, Plus, RefreshCw, Save, Trash2, XCircle } from 'lucide-react';
+import { AlertTriangle, Cable, Calculator, CheckCircle2, Info, Minus, Plus, RefreshCw, Save, Trash2, XCircle } from 'lucide-react';
 import ProductSearchSelect from '@/components/products/ProductSearchSelect';
 import { createProductSnapshot, hydrateProductWithMeta } from '@/lib/productDocuments';
 
@@ -179,33 +179,11 @@ function buildMap(layout, products, fallbackPanelProduct) {
           const override = group.panelOverrides?.[`${row}-${col}`];
           const x = override ? r.x + pos(override.xM) * SCALE : sx + col * (pw + panelGap);
           const y = override ? r.y + pos(override.yM) * SCALE : sy + row * (ph + panelGap);
-          panels.push({
-            id: `r${roofId}-g${group.id || groupIndex}-${row}-${col}`,
-            roofId,
-            groupId,
-            groupName,
-            x,
-            y,
-            w: pw,
-            h: ph,
-            panelProduct: groupProduct,
-            panelProductSnapshot: snapshotProduct(groupProduct),
-            black: { x, y: y + ph / 2 },
-            red: { x: x + pw, y: y + ph / 2 },
-          });
+          panels.push({ id: `r${roofId}-g${group.id || groupIndex}-${row}-${col}`, roofId, groupId, groupName, x, y, w: pw, h: ph, panelProduct: groupProduct, panelProductSnapshot: snapshotProduct(groupProduct), black: { x, y: y + ph / 2 }, red: { x: x + pw, y: y + ph / 2 } });
         }
       }
 
-      panelGroups.push({
-        id: groupId,
-        label: `${roof.name || 'Tak'} / ${groupName}`,
-        roofName: roof.name || 'Tak',
-        groupName,
-        panelCount: rows * cols,
-        panelProduct: groupProduct,
-        panelProductSnapshot: snapshotProduct(groupProduct),
-        panelProductId: productData(groupProduct)?.id || roof.panelProductId || '',
-      });
+      panelGroups.push({ id: groupId, label: `${roof.name || 'Tak'} / ${groupName}`, roofName: roof.name || 'Tak', groupName, panelCount: rows * cols, panelProduct: groupProduct, panelProductSnapshot: snapshotProduct(groupProduct), panelProductId: productData(groupProduct)?.id || roof.panelProductId || '' });
     });
   });
 
@@ -226,21 +204,7 @@ function makeInverterConfig(i, old = {}) {
 
 function makeString(i, old = {}, fallbackInverterId = '') {
   const legacyPvInput = old.pvInput || old.pv_input || old.pv || '';
-  return {
-    id: old.id || uid(),
-    name: old.name || `Slinga ${i + 1}`,
-    color: old.color || COLORS[i % COLORS.length],
-    nodes: old.nodes || [],
-    panel_count: old.panel_count || 0,
-    panelGroupId: old.panelGroupId || '',
-    panelProductId: old.panelProductId || old.panelProductSnapshot?.id || old.panelProductSnapshot?.product_id || '',
-    panelProductSnapshot: old.panelProductSnapshot || null,
-    inverterConfigId: old.inverterConfigId || fallbackInverterId,
-    inverterProductId: old.inverterProductId || '',
-    inverterProductSnapshot: old.inverterProductSnapshot || null,
-    mppt: old.mppt || 1,
-    pvInput: legacyPvInput || old.pvInput || '',
-  };
+  return { id: old.id || uid(), name: old.name || `Slinga ${i + 1}`, color: old.color || COLORS[i % COLORS.length], nodes: old.nodes || [], panel_count: old.panel_count || 0, panelGroupId: old.panelGroupId || '', panelProductId: old.panelProductId || old.panelProductSnapshot?.id || old.panelProductSnapshot?.product_id || '', panelProductSnapshot: old.panelProductSnapshot || null, inverterConfigId: old.inverterConfigId || fallbackInverterId, inverterProductId: old.inverterProductId || '', inverterProductSnapshot: old.inverterProductSnapshot || null, mppt: old.mppt || 1, pvInput: legacyPvInput || old.pvInput || '' };
 }
 
 function countPanels(nodes) {
@@ -266,13 +230,7 @@ function recountString(string) {
 function panelProductForString(string, map, products, fallbackPanelProduct) {
   const firstSelectedPanelId = string?.nodes?.[0]?.panelId;
   const firstSelectedPanel = map.panels.find(panel => panel.id === firstSelectedPanelId);
-  return string?.panelProductSnapshot
-    || firstSelectedPanel?.panelProductSnapshot
-    || firstSelectedPanel?.panelProduct
-    || map.panelGroups.find(group => group.id === string?.panelGroupId)?.panelProductSnapshot
-    || products.find(product => product.id === string?.panelProductId)
-    || fallbackPanelProduct
-    || null;
+  return string?.panelProductSnapshot || firstSelectedPanel?.panelProductSnapshot || firstSelectedPanel?.panelProduct || map.panelGroups.find(group => group.id === string?.panelGroupId)?.panelProductSnapshot || products.find(product => product.id === string?.panelProductId) || fallbackPanelProduct || null;
 }
 
 function inverterProductForConfig(config, inverters) {
@@ -319,7 +277,6 @@ function simulateMppt(inverterProduct, branches, settings) {
   const inverter = normInv(inverterProduct);
   const valid = (branches || []).filter(branch => pos(branch.panelCount) > 0 && normPanel(branch.panelProduct));
   if (!inverter || !valid.length) return null;
-
   const values = valid.map(branch => ({ ...branch, ...branchElectrical(normPanel(branch.panelProduct), branch.panelCount, settings) }));
   const totalImp = values.reduce((sum, item) => sum + item.imp, 0);
   const totalIsc = values.reduce((sum, item) => sum + item.isc, 0);
@@ -328,7 +285,6 @@ function simulateMppt(inverterProduct, branches, settings) {
   const minVmp = Math.min(...values.map(item => item.vmp));
   const maxVmp = Math.max(...values.map(item => item.vmp));
   const pvUsed = [...new Set(values.map(item => item.pvInput).filter(Boolean))].sort((a, b) => Number(a) - Number(b));
-
   const checks = [
     { label: 'Max DC-spänning', ok: inverter.maxv > 0 && maxVoc <= inverter.maxv, nodata: !inverter.maxv, detail: inverter.maxv > 0 ? `Högsta Voc ${round(maxVoc, 1)} V ≤ ${inverter.maxv} V` : 'Produkten saknar max_dc_voltage_v' },
     { label: 'Startspänning', ok: inverter.start > 0 && minVmp >= inverter.start, nodata: !inverter.start, detail: inverter.start > 0 ? `Lägsta Vmp ${round(minVmp, 1)} V ≥ ${inverter.start} V` : 'Produkten saknar startup_voltage_v' },
@@ -338,7 +294,6 @@ function simulateMppt(inverterProduct, branches, settings) {
     { label: 'PV-ingångar', ok: true, nodata: false, detail: pvUsed.length ? `Använder ${pvUsed.map(pv => `PV${pv}`).join(', ')}` : 'Ingen PV-ingång vald' },
     { label: 'DC-effekt', ok: inverter.maxdc > 0 && totalPower / 1000 <= inverter.maxdc, nodata: !inverter.maxdc, detail: inverter.maxdc > 0 ? `${round(totalPower / 1000, 2)} kW ≤ ${inverter.maxdc} kW` : 'Produkten saknar max_dc_power_kw' },
   ];
-
   return { status: checks.filter(check => !check.nodata).every(check => check.ok) ? 'OK' : 'Ej godkänd', checks, branchValues: values, branchCount: values.length, current: totalImp, isc: totalIsc, power: totalPower, vmpMin: minVmp, vmpMax: maxVmp };
 }
 
@@ -360,16 +315,37 @@ function CheckRow({ check }) {
   return <div className={`flex items-start gap-2 rounded-lg border p-2 text-sm ${tone}`}><Icon className="mt-0.5 h-4 w-4 shrink-0" /><div><div className="font-semibold">{check.label}</div><div className="text-xs opacity-90">{check.detail}</div></div></div>;
 }
 
+function StringCountControl({ count, strings, activeId, onChangeCount, onSelectString }) {
+  return (
+    <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <div className="text-sm font-bold text-foreground">1. Välj antal slingor</div>
+          <p className="text-xs text-muted-foreground">Bestäm först hur många slingor projektet ska ha. Därefter väljer du aktiv slinga och klickar panelerna som hör dit.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="outline" size="icon" onClick={() => onChangeCount(Math.max(1, count - 1))} disabled={count <= 1}><Minus className="h-4 w-4" /></Button>
+          <input type="number" min="1" max="80" value={count} onChange={event => onChangeCount(event.target.value)} className="h-10 w-24 rounded-xl border border-border bg-background px-3 text-center text-lg font-black text-foreground" />
+          <Button type="button" variant="outline" size="icon" onClick={() => onChangeCount(Math.min(80, count + 1))}><Plus className="h-4 w-4" /></Button>
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {strings.map((item, index) => (
+          <button key={item.id} type="button" onClick={() => onSelectString(item.id)} className={`rounded-xl border px-3 py-2 text-xs font-semibold ${item.id === activeId ? 'border-primary bg-primary text-white' : 'border-border bg-background text-muted-foreground hover:border-primary/50'}`}>
+            {item.name || `Slinga ${index + 1}`} · {countPanels(item.nodes || [])} paneler
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Canvas({ map, strings, activeId, activeString, onClickPanel }) {
-  const point = node => {
-    const panel = map.panels.find(item => item.id === node.panelId);
-    return panel ? panel[node.terminal] : null;
-  };
+  const point = node => { const panel = map.panels.find(item => item.id === node.panelId); return panel ? panel[node.terminal] : null; };
   const pts = nodes => nodes.map(point).filter(Boolean).map(p => `${p.x},${p.y}`).join(' ');
   const activePanelIds = panelIds(activeString?.nodes || []);
   const panelOwners = new Map();
   strings.forEach(string => panelIds(string.nodes || []).forEach(panelId => { if (!panelOwners.has(panelId) || string.id === activeId) panelOwners.set(panelId, string); }));
-
   return <div className="overflow-auto rounded-2xl border bg-white"><svg viewBox={`0 0 ${map.width} ${map.height}`} className="min-h-[560px] w-full min-w-[900px]">
     <defs><pattern id="string-hatch-v7" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="10" stroke="#e2e8f0" strokeWidth="3" /></pattern></defs>
     {map.roofLayouts.map(r => <g key={r.roof.id || r.roof.name}><text x={r.x} y={r.y - 22} fontSize="18" fontWeight="800">{r.roof.name || 'Tak'}</text><polygon points={roofPoly(r.x, r.y, r.w, r.h, r.roof.shape)} fill="url(#string-hatch-v7)" stroke="#0f172a" strokeWidth="2.5" /></g>)}
@@ -425,15 +401,9 @@ export default function StringMarkingTabV7({ project, onUpdate, selectedProduct:
       const panelProduct = panelProductForString(item, map, panels, fallbackPanelProduct);
       const invCfg = nextConfigs.find(cfg => cfg.id === item.inverterConfigId);
       const inverterProduct = inverterProductForConfig(invCfg, inverters);
-      return recountString({
-        ...item,
-        panelProductId: productData(panelProduct)?.id || item.panelProductId || '',
-        panelProductSnapshot: item.panelProductSnapshot || snapshotProduct(panelProduct),
-        inverterProductId: productData(inverterProduct)?.id || item.inverterProductId || '',
-        inverterProductSnapshot: item.inverterProductSnapshot || snapshotProduct(inverterProduct),
-      });
+      return recountString({ ...item, panelProductId: productData(panelProduct)?.id || item.panelProductId || '', panelProductSnapshot: item.panelProductSnapshot || snapshotProduct(panelProduct), inverterProductId: productData(inverterProduct)?.id || item.inverterProductId || '', inverterProductSnapshot: item.inverterProductSnapshot || snapshotProduct(inverterProduct) });
     });
-    return { version: 11, source: layout.source, panelProductMode: 'manual_panel_click_snapshot', stringCount: overrides.stringCount ?? count, panelProductId: overrides.panelProductId ?? fallbackPanelId, inverterProductId: productData(activeInverterProduct)?.id || '', inverterConfigs: nextConfigs.map(cfg => ({ ...cfg, productSnapshot: cfg.productSnapshot || snapshotProduct(inverterProductForConfig(cfg, inverters)) })), selectedInverterConfigId: overrides.selectedInverterConfigId ?? activeInverterId, selectedMppt: overrides.selectedMppt ?? selectedMppt, selectedPv: overrides.selectedPv ?? selectedPvNumber, settings: overrides.settings ?? settings, savedAt: new Date().toISOString(), autosave: true, strings: normalizedStrings, pvTopology: normalizedStrings.map(item => ({ stringId: item.id, name: item.name, inverterConfigId: item.inverterConfigId || '', mppt: item.mppt || '', pvInput: item.pvInput || '', panelGroupId: item.panelGroupId || '', panelProductId: item.panelProductId || '', panelCount: countPanels(item.nodes || []) || item.panel_count || 0 })) };
+    return { version: 12, source: layout.source, panelProductMode: 'manual_panel_click_snapshot', stringCount: overrides.stringCount ?? count, panelProductId: overrides.panelProductId ?? fallbackPanelId, inverterProductId: productData(activeInverterProduct)?.id || '', inverterConfigs: nextConfigs.map(cfg => ({ ...cfg, productSnapshot: cfg.productSnapshot || snapshotProduct(inverterProductForConfig(cfg, inverters)) })), selectedInverterConfigId: overrides.selectedInverterConfigId ?? activeInverterId, selectedMppt: overrides.selectedMppt ?? selectedMppt, selectedPv: overrides.selectedPv ?? selectedPvNumber, settings: overrides.settings ?? settings, savedAt: new Date().toISOString(), autosave: true, strings: normalizedStrings, pvTopology: normalizedStrings.map(item => ({ stringId: item.id, name: item.name, inverterConfigId: item.inverterConfigId || '', mppt: item.mppt || '', pvInput: item.pvInput || '', panelGroupId: item.panelGroupId || '', panelProductId: item.panelProductId || '', panelCount: countPanels(item.nodes || []) || item.panel_count || 0 })) };
   };
 
   const persist = async (nextStrings = strings, overrides = {}) => {
@@ -501,6 +471,14 @@ export default function StringMarkingTabV7({ project, onUpdate, selectedProduct:
     persist(next, { stringCount: nextCount }).catch(() => {});
   };
 
+  const selectString = id => {
+    setActiveId(id);
+    const s = strings.find(item => item.id === id);
+    if (s?.inverterConfigId) setActiveInverterIdState(s.inverterConfigId);
+    if (s?.pvInput) setSelectedPv(s.pvInput);
+    else if (s?.mppt) setSelectedMppt(s.mppt);
+  };
+
   const setFallbackPanelId = value => { setFallbackPanelIdState(value); persist(strings, { panelProductId: value }).catch(() => {}); };
   const setSettings = nextSettings => { setSettingsState(nextSettings); persist(strings, { settings: nextSettings }).catch(() => {}); };
   const setSelectedMppt = value => { const nextMppt = Number(value) || 1; const firstPv = pvInputsForMppt(nextMppt, topology)[0]; setSelectedMpptState(nextMppt); setSelectedPvState(firstPv); persist(strings, { selectedMppt: nextMppt, selectedPv: firstPv }).catch(() => {}); };
@@ -519,7 +497,6 @@ export default function StringMarkingTabV7({ project, onUpdate, selectedProduct:
     const group = map.panelGroups.find(item => item.id === panel.groupId);
     const panelProduct = panel.panelProductSnapshot || panel.panelProduct || group?.panelProductSnapshot || group?.panelProduct || activePanelProduct || fallbackPanelProduct;
     const invProduct = activeInverterProduct;
-
     const next = strings.map(item => {
       const base = { ...item, nodes: removePanelNodes(item.nodes || [], panel.id) };
       if (item.id !== active.id) return recountString(base);
@@ -530,7 +507,6 @@ export default function StringMarkingTabV7({ project, onUpdate, selectedProduct:
   };
 
   const clearActiveString = () => patchActiveString({ nodes: [], panel_count: 0, panelGroupId: '', panelProductId: '', panelProductSnapshot: null, pvInput: '', mppt: selectedMppt });
-
   const mpptBranches = useMemo(() => strings.filter(item => item.inverterConfigId === activeInverterId && Number(item.mppt || mpptFromPvInput(item.pvInput, topology)) === Number(selectedMppt)).map(item => ({ groupId: item.id, label: `${item.name}${item.pvInput ? ` · PV${item.pvInput}` : ''}`, panelCount: countPanels(item.nodes || []) || item.panel_count || 0, stringId: item.id, pvInput: item.pvInput || '', panelProduct: panelProductForString(item, map, panels, fallbackPanelProduct) })).filter(branch => branch.panelCount > 0), [strings, activeInverterId, selectedMppt, topology, map, panels, fallbackPanelProduct]);
   const result = simulateMppt(activeInverterProduct, mpptBranches, settings);
   const activePanelMissing = missingPanelFields(activePanelProduct);
@@ -542,8 +518,9 @@ export default function StringMarkingTabV7({ project, onUpdate, selectedProduct:
     return <Card className="border-0 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2"><Cable className="h-5 w-5 text-primary" />Slingmarkering</CardTitle></CardHeader><CardContent><div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Ingen panelritning hittades. Skapa panelplacering i projektets flik Paneler först.</div></CardContent></Card>;
   }
 
-  return <div className="space-y-4"><Card className="border-0 shadow-sm"><CardHeader><div className="flex justify-between gap-3"><div><CardTitle className="flex items-center gap-2"><Cable className="h-5 w-5 text-primary" />Slingmarkering</CardTitle><p className="text-sm text-muted-foreground">Välj aktiv slinga, MPPT och PV-ingång. Klicka sedan direkt på de paneler som ska ingå i just den slingan. Appen skapar inte slingan automatiskt från en hel panelgrupp.</p></div><div className="flex flex-col items-end gap-2"><Button variant="outline" size="sm" onClick={() => refetch()}><RefreshCw className="mr-2 h-4 w-4" />Uppdatera produkter</Button>{saveInfo && <span className="text-xs text-muted-foreground">{saving ? 'Sparar...' : saveInfo}</span>}</div></div></CardHeader><CardContent className="space-y-4">
-    <div className="grid gap-3 lg:grid-cols-3"><Input label="Antal slingor" min="1" max="80" value={count} onChange={setStringCount} /><ProductSearchSelect label="Reservsolpanel om tak saknar val" products={panels} value={fallbackPanelId} onChange={setFallbackPanelId} placeholder="Sök/välj solpanel" /><Select label="Aktiv slinga" value={activeId || ''} onChange={value => { setActiveId(value); const s = strings.find(item => item.id === value); if (s?.inverterConfigId) setActiveInverterIdState(s.inverterConfigId); if (s?.pvInput) setSelectedPv(s.pvInput); else if (s?.mppt) setSelectedMppt(s.mppt); }}>{strings.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</Select></div>
+  return <div className="space-y-4"><Card className="border-0 shadow-sm"><CardHeader><div className="flex justify-between gap-3"><div><CardTitle className="flex items-center gap-2"><Cable className="h-5 w-5 text-primary" />Slingmarkering</CardTitle><p className="text-sm text-muted-foreground">Välj antal slingor, välj aktiv slinga, MPPT och PV-ingång. Klicka sedan direkt på de paneler som ska ingå i just den slingan.</p></div><div className="flex flex-col items-end gap-2"><Button variant="outline" size="sm" onClick={() => refetch()}><RefreshCw className="mr-2 h-4 w-4" />Uppdatera produkter</Button>{saveInfo && <span className="text-xs text-muted-foreground">{saving ? 'Sparar...' : saveInfo}</span>}</div></div></CardHeader><CardContent className="space-y-4">
+    <StringCountControl count={count} strings={strings} activeId={activeId} onChangeCount={setStringCount} onSelectString={selectString} />
+    <div className="grid gap-3 lg:grid-cols-2"><ProductSearchSelect label="Reservsolpanel om tak saknar val" products={panels} value={fallbackPanelId} onChange={setFallbackPanelId} placeholder="Sök/välj solpanel" /><Select label="Aktiv slinga" value={activeId || ''} onChange={selectString}>{strings.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</Select></div>
     <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900"><Info className="mr-2 inline h-4 w-4" />Aktiv slinga: <b>{active?.name}</b>. Klicka en panel för att lägga till den. Klicka samma panel igen för att ta bort den. Om panelen redan låg i en annan slinga flyttas den hit så den inte dubbelräknas.</div>
     <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900"><Info className="mr-2 inline h-4 w-4" />Aktiv slinga använder solpanel: <b>{productLabel(activePanelProduct)}</b>. Beräkningen använder sparad panel-snapshot när den finns.</div>
     <InverterManager configs={inverterConfigs} inverters={inverters} activeId={activeInverterId} setActiveId={setActiveInverterId} updateProduct={updateInverterProduct} addInverter={addInverter} removeInverter={removeInverter} />
@@ -554,5 +531,5 @@ export default function StringMarkingTabV7({ project, onUpdate, selectedProduct:
     <Canvas map={map} strings={visibleStrings} activeId={activeId} activeString={active} onClickPanel={togglePanelForActiveString} />
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-muted/30 p-3"><div className="text-sm text-muted-foreground">Aktiv slinga: <b>{active?.name}</b> · {activeInverterConfig?.name} · PV{active?.pvInput || selectedPvNumber || '-'} · MPPT {active?.mppt || selectedMppt} · {activePanelCount || 0} paneler · <b>{productLabel(activePanelProduct)}</b></div><div className="flex gap-2"><Button variant="outline" className="text-red-600" onClick={clearActiveString}><Trash2 className="mr-2 h-4 w-4" />Rensa slinga</Button><Button onClick={() => persist(strings).catch(() => {})} disabled={saving}><Save className="mr-2 h-4 w-4" />{saving ? 'Sparar...' : 'Spara nu'}</Button></div></div>
   </CardContent></Card>
-  <Card className="border-0 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2"><Calculator className="h-5 w-5 text-primary" />Beräkning för {activeInverterConfig?.name} · MPPT {selectedMppt}</CardTitle></CardHeader><CardContent className="space-y-4">{hasMissing && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="mr-2 inline h-4 w-4" />Produktdata saknas för aktiv slinga/växelriktare: {[...activePanelMissing, ...invMissing].join(', ')}.</div>}{result ? <><div className="flex flex-wrap items-center gap-2"><Badge className={result.status === 'OK' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}>{result.status === 'OK' ? <CheckCircle2 className="mr-1 h-3 w-3" /> : <XCircle className="mr-1 h-3 w-3" />}{result.status}</Badge><span className="text-sm text-muted-foreground">{activeInverterConfig?.name} · MPPT {selectedMppt} · {result.branchCount} slinga/slingor</span></div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Metric label="Effekt" value={round(result.power / 1000, 2)} unit="kW" /><Metric label="Vmp-intervall" value={`${round(result.vmpMin, 1)}-${round(result.vmpMax, 1)}`} unit="V" /><Metric label="Imp total" value={round(result.current, 2)} unit="A" /><Metric label="Isc total" value={round(result.isc, 2)} unit="A" /></div><div className="grid gap-2 lg:grid-cols-2">{result.checks.map(check => <CheckRow key={check.label} check={check} />)}</div><div className="rounded-xl border bg-background p-3"><div className="mb-2 text-sm font-semibold">Slingor som ingår</div><div className="grid gap-2 lg:grid-cols-2">{result.branchValues.map(branch => <div key={branch.groupId} className="rounded-lg border border-border p-3 text-sm"><div className="font-semibold text-foreground">{branch.label}</div><div className="text-xs text-muted-foreground">{productLabel(branch.panelProduct)} · {branch.panelCount} paneler i serie · Voc {round(branch.voc, 1)} V · Vmp {round(branch.vmp, 1)} V · Imp {round(branch.imp, 2)} A · Isc {round(branch.isc, 2)} A · Effekt {round(branch.power / 1000, 2)} kW</div></div>)}</div></div></> : <div className="rounded-xl border border-muted bg-muted/30 p-4 text-sm text-muted-foreground">Klicka paneler för aktiv slinga och välj växelriktare, MPPT och PV-ingång för att få beräkning.</div>}</CardContent></Card></div>;
+  <Card className="border-0 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2"><Calculator className="h-5 w-5 text-primary" />Beräkning för {activeInverterConfig?.name} · MPPT {selectedMppt}</CardTitle></CardHeader><CardContent className="space-y-4">{hasMissing && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="mr-2 inline h-4 w-4" />Produktdata saknas för aktiv slinga/växelriktare: {[...activePanelMissing, ...invMissing].join(', ')}.</div>}{result ? <><div className="flex flex-wrap items-center gap-2"><Badge className={result.status === 'OK' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}>{result.status === 'OK' ? <CheckCircle2 className="mr-1 h-3 w-3" /> : <XCircle className="mr-1 h-3 w-3" />}{result.status}</Badge><span className="text-sm text-muted-foreground">{activeInverterConfig?.name} · MPPT {selectedMppt} · {result.branchCount} slinga/slingor</span></div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Metric label="Effekt" value={round(result.power / 1000, 2)} unit="kW" /><Metric label="Vmp-intervall" value={`${round(result.vmpMin, 1)}-${round(result.vmpMax, 1)}`} unit="V" /><Metric label="Imp total" value={round(result.current, 2)} unit="A" /><Metric label="Isc total" value={round(result.isc, 2)} unit="A" /></div><div className="grid gap-2 lg:grid-cols-2">{result.checks.map(check => <CheckRow key={check.label} check={check} />)}</div><div className="rounded-xl border bg-background p-3"><div className="mb-2 text-sm font-semibold">Slingor som ingår</div><div className="grid gap-2 lg:grid-cols-2">{result.branchValues.map(branch => <div key={branch.groupId} className="rounded-lg border border-border p-3 text-sm"><div className="font-semibold text-foreground">{branch.label}</div><div className="text-xs text-muted-foreground">{productLabel(branch.panelProduct)} · {branch.panelCount} paneler i serie · Voc {round(branch.voc, 1)} V · Vmp {round(branch.vmp, 1)} V · Imp {round(branch.imp, 2)} A · Isc {round(branch.isc, 2)} A · Effekt {round(branch.power / 1000, 2)} kW</div></div>)}</div></div></> : <div className="rounded-xl border border-muted bg-muted/30 p-4 text-sm text-muted-foreground">Välj antal slingor, välj aktiv slinga och klicka paneler för att få beräkning.</div>}</CardContent></Card></div>;
 }
