@@ -12,22 +12,13 @@ const COLORS = ['#ef4444', '#2563eb', '#16a34a', '#f59e0b', '#8b5cf6', '#db2777'
 const SCALE = 58;
 const PANEL_FALLBACK = { w: 1.134, h: 1.953 };
 
-const n = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
-const pos = (value, fallback = 0) => n(value, fallback) > 0 ? n(value, fallback) : fallback;
-const round = (value, decimals = 1) => Math.round(n(value) * 10 ** decimals) / 10 ** decimals;
+const num = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+const pos = (value, fallback = 0) => num(value, fallback) > 0 ? num(value, fallback) : fallback;
+const round = (value, decimals = 1) => Math.round(num(value) * 10 ** decimals) / 10 ** decimals;
 const uid = () => `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
-
-function parseJson(raw, fallback) {
-  try { return JSON.parse(raw || ''); } catch { return fallback; }
-}
-
-function localKey(projectId) {
-  return `solarplan:project:${projectId}:string_layout_data`;
-}
-
-function plannerLocalKey(projectId) {
-  return `solarplan:project:${projectId}:solar_roof_planner_data`;
-}
+const parseJson = (raw, fallback) => { try { return JSON.parse(raw || ''); } catch { return fallback; } };
+const stringLocalKey = id => `solarplan:project:${id}:string_layout_data`;
+const plannerLocalKey = id => `solarplan:project:${id}:solar_roof_planner_data`;
 
 function readLocal(key) {
   if (typeof window === 'undefined' || !key) return null;
@@ -36,7 +27,7 @@ function readLocal(key) {
 
 function writeLocal(projectId, data) {
   if (typeof window === 'undefined' || !projectId) return;
-  try { window.localStorage.setItem(localKey(projectId), JSON.stringify(data)); } catch {}
+  try { window.localStorage.setItem(stringLocalKey(projectId), JSON.stringify(data)); } catch {}
 }
 
 function productData(product) {
@@ -59,15 +50,15 @@ function productLabel(product, fallback = 'Produkt saknas') {
 function readPlanner(project) {
   const fromProject = parseJson(project?.solar_roof_planner_data || project?.panel_layout_data, null);
   if (Array.isArray(fromProject?.roofs) && fromProject.roofs.some(roof => (roof.panelGroups || []).length)) return fromProject;
-  const fromBackup = readLocal(plannerLocalKey(project?.id));
-  if (Array.isArray(fromBackup?.roofs) && fromBackup.roofs.some(roof => (roof.panelGroups || []).length)) return fromBackup;
+  const fromLocal = readLocal(plannerLocalKey(project?.id));
+  if (Array.isArray(fromLocal?.roofs) && fromLocal.roofs.some(roof => (roof.panelGroups || []).length)) return fromLocal;
   return { roofs: [] };
 }
 
 function readSaved(project) {
   const fromProject = parseJson(project?.string_layout_data, null);
-  const fromBackup = readLocal(localKey(project?.id));
-  const data = fromProject?.strings ? fromProject : fromBackup;
+  const fromLocal = readLocal(stringLocalKey(project?.id));
+  const data = fromProject?.strings ? fromProject : fromLocal;
   return data?.strings ? data : { stringCount: 1, strings: [], inverterConfigs: [], panelProductId: '', settings: {} };
 }
 
@@ -79,7 +70,9 @@ function panelSize(orientation, product) {
   return String(orientation || '').toLowerCase().includes('ligg') ? { w: base.h, h: base.w } : base;
 }
 
-function roofPolygon(x, y, w, h) {
+function roofPolygon(x, y, w, h, shape) {
+  if (shape === 'Trapets vänster') return `${x + w * 0.18},${y} ${x + w},${y} ${x + w},${y + h} ${x},${y + h}`;
+  if (shape === 'Trapets höger') return `${x},${y} ${x + w * 0.82},${y} ${x + w},${y + h} ${x},${y + h}`;
   return `${x},${y} ${x + w},${y} ${x + w},${y + h} ${x},${y + h}`;
 }
 
@@ -204,17 +197,6 @@ function pointString(points) {
   return points.map(pt => `${pt.x},${pt.y}`).join(' ');
 }
 
-function terminalPoint(panel, plus) {
-  if (!panel) return null;
-  return { x: panel.x + panel.w * (plus ? 0.18 : 0.82), y: panel.y + panel.h * 0.18 };
-}
-
-function Terminal({ panel, plus, color }) {
-  const pt = terminalPoint(panel, plus);
-  if (!pt) return null;
-  return <g><circle cx={pt.x} cy={pt.y} r="10" fill="white" stroke={color} strokeWidth="3" /><text x={pt.x} y={pt.y + 5} textAnchor="middle" fontSize="16" fontWeight="900" fill={color}>{plus ? '+' : '-'}</text></g>;
-}
-
 function getInverterProduct(config, products) {
   return config?.productSnapshot || products.find(p => p.id === config?.productId) || null;
 }
@@ -261,12 +243,12 @@ function calculate(inverterProduct, branches) {
   const minVmp = Math.min(...values.map(v => v.vmp));
   const maxVmp = Math.max(...values.map(v => v.vmp));
   const checks = [
-    { label: 'Max DC-spänning', ok: inv.maxv > 0 && maxVoc <= inv.maxv, nodata: !inv.maxv, detail: inv.maxv ? `Voc ${round(maxVoc, 1)} V ≤ ${inv.maxv} V` : 'Saknas i produktdata' },
-    { label: 'Startspänning', ok: inv.start > 0 && minVmp >= inv.start, nodata: !inv.start, detail: inv.start ? `Vmp ${round(minVmp, 1)} V ≥ ${inv.start} V` : 'Saknas i produktdata' },
+    { label: 'Max DC-spänning', ok: inv.maxv > 0 && maxVoc <= inv.maxv, nodata: !inv.maxv, detail: inv.maxv ? `Voc ${round(maxVoc, 1)} V <= ${inv.maxv} V` : 'Saknas i produktdata' },
+    { label: 'Startspänning', ok: inv.start > 0 && minVmp >= inv.start, nodata: !inv.start, detail: inv.start ? `Vmp ${round(minVmp, 1)} V >= ${inv.start} V` : 'Saknas i produktdata' },
     { label: 'MPPT-område', ok: inv.mpptmin > 0 && inv.mpptmax > 0 && minVmp >= inv.mpptmin && maxVmp <= inv.mpptmax, nodata: !inv.mpptmin || !inv.mpptmax, detail: inv.mpptmin && inv.mpptmax ? `Vmp ${round(minVmp, 1)}-${round(maxVmp, 1)} V inom ${inv.mpptmin}-${inv.mpptmax} V` : 'Saknas i produktdata' },
-    { label: 'MPPT-ström', ok: inv.maxa > 0 && totalImp <= inv.maxa, nodata: !inv.maxa, detail: inv.maxa ? `Imp ${round(totalImp, 2)} A ≤ ${inv.maxa} A` : 'Saknas i produktdata' },
-    { label: 'Kortslutningsström', ok: inv.maxisc > 0 && totalIsc <= inv.maxisc, nodata: !inv.maxisc, detail: inv.maxisc ? `Isc ${round(totalIsc, 2)} A ≤ ${inv.maxisc} A` : 'Saknas i produktdata' },
-    { label: 'DC-effekt', ok: inv.maxdc > 0 && totalPower / 1000 <= inv.maxdc, nodata: !inv.maxdc, detail: inv.maxdc ? `${round(totalPower / 1000, 2)} kW ≤ ${inv.maxdc} kW` : 'Saknas i produktdata' },
+    { label: 'MPPT-ström', ok: inv.maxa > 0 && totalImp <= inv.maxa, nodata: !inv.maxa, detail: inv.maxa ? `Imp ${round(totalImp, 2)} A <= ${inv.maxa} A` : 'Saknas i produktdata' },
+    { label: 'Kortslutningsström', ok: inv.maxisc > 0 && totalIsc <= inv.maxisc, nodata: !inv.maxisc, detail: inv.maxisc ? `Isc ${round(totalIsc, 2)} A <= ${inv.maxisc} A` : 'Saknas i produktdata' },
+    { label: 'DC-effekt', ok: inv.maxdc > 0 && totalPower / 1000 <= inv.maxdc, nodata: !inv.maxdc, detail: inv.maxdc ? `${round(totalPower / 1000, 2)} kW <= ${inv.maxdc} kW` : 'Saknas i produktdata' },
   ];
   return { values, totalPower, totalImp, totalIsc, minVmp, maxVmp, status: checks.filter(c => !c.nodata).every(c => c.ok) ? 'OK' : 'Ej godkänd', checks };
 }
@@ -285,7 +267,7 @@ function StringCountControl({ count, strings, activeId, setCount, selectString }
   return <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><div><div className="text-sm font-bold text-foreground">1. Välj antal slingor</div><p className="text-xs text-muted-foreground">Bestäm hur många slingor projektet ska ha. Klicka sedan vilken slinga du vill markera.</p></div><div className="flex items-center gap-2"><Button variant="outline" size="icon" onClick={() => setCount(Math.max(1, count - 1))} disabled={count <= 1}><Minus className="h-4 w-4" /></Button><input type="number" min="1" max="80" value={count} onChange={e => setCount(e.target.value)} className="h-10 w-24 rounded-xl border border-border bg-background px-3 text-center text-lg font-black" /><Button variant="outline" size="icon" onClick={() => setCount(Math.min(80, count + 1))}><Plus className="h-4 w-4" /></Button></div></div><div className="mt-3 flex flex-wrap gap-2">{strings.map(s => <button key={s.id} onClick={() => selectString(s.id)} className={`rounded-xl border px-3 py-2 text-xs font-semibold ${s.id === activeId ? 'border-primary bg-primary text-white' : 'border-border bg-background text-muted-foreground hover:border-primary/50'}`}>{s.name} · {panelCount(s.nodes)} paneler</button>)}</div></div>;
 }
 
-function Terminal({ panel, plus, color }) {
+function TerminalMarker({ panel, plus, color }) {
   const pt = panel ? { x: panel.x + panel.w * (plus ? 0.18 : 0.82), y: panel.y + panel.h * 0.18 } : null;
   if (!pt) return null;
   return <g><circle cx={pt.x} cy={pt.y} r="10" fill="white" stroke={color} strokeWidth="3" /><text x={pt.x} y={pt.y + 5} textAnchor="middle" fontSize="16" fontWeight="900" fill={color}>{plus ? '+' : '-'}</text></g>;
@@ -295,7 +277,7 @@ function Canvas({ map, strings, activeId, activeString, onPanelClick }) {
   const activePanels = panelSet(activeString?.nodes || []);
   const owners = new Map();
   strings.forEach(s => panelSet(s.nodes || []).forEach(id => { if (!owners.has(id) || s.id === activeId) owners.set(id, s); }));
-  return <div className="overflow-auto rounded-2xl border bg-white"><svg viewBox={`0 0 ${map.width} ${map.height}`} className="min-h-[560px] w-full min-w-[900px]"><defs><pattern id="roof-hatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="10" stroke="#e2e8f0" strokeWidth="3" /></pattern></defs>{map.roofs.map(r => <g key={r.roof.id || r.roof.name}><text x={r.x} y={r.y - 22} fontSize="18" fontWeight="800">{r.roof.name || 'Tak'}</text><polygon points={roofPolygon(r.x, r.y, r.w, r.h)} fill="url(#roof-hatch)" stroke="#0f172a" strokeWidth="2.5" /></g>)}{strings.filter(s => panelCount(s.nodes) >= 2).map(s => { const pts = cablePoints(s, map); const selected = uniquePanelIds(s.nodes).map(id => map.panels.find(p => p.id === id)).filter(Boolean); return <g key={s.id}><polyline points={pointString(pts)} fill="none" stroke={s.color} strokeWidth={s.id === activeId ? 5 : 3} strokeLinecap="round" strokeLinejoin="round" opacity={s.id === activeId ? 1 : 0.55} />{pts.map((pt, i) => <circle key={i} cx={pt.x} cy={pt.y} r={s.id === activeId ? 4 : 3} fill={s.color} stroke="white" />)}{s.id === activeId && <Terminal panel={selected[0]} plus color={s.color} />}{s.id === activeId && <Terminal panel={selected[selected.length - 1]} plus={false} color={s.color} />}</g>; })}{map.panels.map(panel => { const owner = owners.get(panel.id); const selected = activePanels.has(panel.id); const fill = owner ? `${owner.color}22` : '#dbeafe'; const stroke = selected ? activeString?.color || '#2563eb' : owner?.color || '#2563eb'; return <g key={panel.id} onClick={() => onPanelClick(panel)} className="cursor-pointer"><rect x={panel.x} y={panel.y} width={panel.w} height={panel.h} rx="4" fill={fill} stroke={stroke} strokeWidth={selected ? 4 : owner ? 3 : 1.5} /><text x={panel.x + panel.w / 2} y={panel.y + panel.h / 2 + 4} textAnchor="middle" fontSize="10" fontWeight="800" fill="#1d4ed8">{panel.number}</text>{owner && <text x={panel.x + panel.w / 2} y={panel.y + panel.h - 6} textAnchor="middle" fontSize="9" fontWeight="800" fill={owner.color}>{owner.name}</text>}<circle cx={panel.black.x} cy={panel.black.y} r="5" fill="#111827" stroke="white" strokeWidth="1.5" /><circle cx={panel.red.x} cy={panel.red.y} r="5" fill="#dc2626" stroke="white" strokeWidth="1.5" /></g>; })}</svg></div>;
+  return <div className="overflow-auto rounded-2xl border bg-white"><svg viewBox={`0 0 ${map.width} ${map.height}`} className="min-h-[560px] w-full min-w-[900px]"><defs><pattern id="roof-hatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="10" stroke="#e2e8f0" strokeWidth="3" /></pattern></defs>{map.roofs.map(r => <g key={r.roof.id || r.roof.name}><text x={r.x} y={r.y - 22} fontSize="18" fontWeight="800">{r.roof.name || 'Tak'}</text><polygon points={roofPolygon(r.x, r.y, r.w, r.h, r.roof.shape)} fill="url(#roof-hatch)" stroke="#0f172a" strokeWidth="2.5" /></g>)}{strings.filter(s => panelCount(s.nodes) >= 2).map(s => { const pts = cablePoints(s, map); const selected = uniquePanelIds(s.nodes).map(id => map.panels.find(p => p.id === id)).filter(Boolean); return <g key={s.id}><polyline points={pointString(pts)} fill="none" stroke={s.color} strokeWidth={s.id === activeId ? 5 : 3} strokeLinecap="round" strokeLinejoin="round" opacity={s.id === activeId ? 1 : 0.55} />{pts.map((pt, i) => <circle key={i} cx={pt.x} cy={pt.y} r={s.id === activeId ? 4 : 3} fill={s.color} stroke="white" />)}{s.id === activeId && <TerminalMarker panel={selected[0]} plus color={s.color} />}{s.id === activeId && <TerminalMarker panel={selected[selected.length - 1]} plus={false} color={s.color} />}</g>; })}{map.panels.map(panel => { const owner = owners.get(panel.id); const selected = activePanels.has(panel.id); const fill = owner ? `${owner.color}22` : '#dbeafe'; const stroke = selected ? activeString?.color || '#2563eb' : owner?.color || '#2563eb'; return <g key={panel.id} onClick={() => onPanelClick(panel)} className="cursor-pointer"><rect x={panel.x} y={panel.y} width={panel.w} height={panel.h} rx="4" fill={fill} stroke={stroke} strokeWidth={selected ? 4 : owner ? 3 : 1.5} /><text x={panel.x + panel.w / 2} y={panel.y + panel.h / 2 + 4} textAnchor="middle" fontSize="10" fontWeight="800" fill="#1d4ed8">{panel.number}</text>{owner && <text x={panel.x + panel.w / 2} y={panel.y + panel.h - 6} textAnchor="middle" fontSize="9" fontWeight="800" fill={owner.color}>{owner.name}</text>}<circle cx={panel.black.x} cy={panel.black.y} r="5" fill="#111827" stroke="white" strokeWidth="1.5" /><circle cx={panel.red.x} cy={panel.red.y} r="5" fill="#dc2626" stroke="white" strokeWidth="1.5" /></g>; })}</svg></div>;
 }
 
 export default function StringMarkingTabV7({ project, onUpdate, selectedProduct: selectedProductProp }) {
@@ -335,15 +317,15 @@ export default function StringMarkingTabV7({ project, onUpdate, selectedProduct:
       const inverterProduct = getInverterProduct(inverterConfig, inverterProducts);
       return recount({ ...s, panelProductId: productData(panelProduct)?.id || s.panelProductId || '', panelProductSnapshot: s.panelProductSnapshot || snapshotProduct(panelProduct), inverterProductId: productData(inverterProduct)?.id || s.inverterProductId || '', inverterProductSnapshot: s.inverterProductSnapshot || snapshotProduct(inverterProduct) });
     });
-    return { version: 30, source: 'manual_panel_click_orthogonal_daisy_chain', stringCount: overrides.stringCount ?? count, panelProductId: overrides.panelProductId ?? panelProductId, selectedInverterConfigId: overrides.selectedInverterConfigId ?? activeInverterId, selectedMppt: overrides.selectedMppt ?? selectedMppt, selectedPv: overrides.selectedPv ?? selectedPvSafe, inverterConfigs: nextInverters.map(i => ({ ...i, productSnapshot: i.productSnapshot || snapshotProduct(getInverterProduct(i, inverterProducts)) })), strings: normalizedStrings, savedAt: new Date().toISOString() };
+    return { version: 31, source: 'manual_panel_click_orthogonal_daisy_chain', stringCount: overrides.stringCount ?? count, panelProductId: overrides.panelProductId ?? panelProductId, selectedInverterConfigId: overrides.selectedInverterConfigId ?? activeInverterId, selectedMppt: overrides.selectedMppt ?? selectedMppt, selectedPv: overrides.selectedPv ?? selectedPvSafe, inverterConfigs: nextInverters.map(i => ({ ...i, productSnapshot: i.productSnapshot || snapshotProduct(getInverterProduct(i, inverterProducts)) })), strings: normalizedStrings, savedAt: new Date().toISOString() };
   };
 
   const persist = async (nextStrings = strings, overrides = {}) => {
-    const payload = buildPayload(nextStrings, overrides);
-    writeLocal(project?.id, payload);
+    const data = buildPayload(nextStrings, overrides);
+    writeLocal(project?.id, data);
     setSaving(true);
     setSaveInfo('Sparar...');
-    try { await onUpdate?.({ string_layout_data: JSON.stringify(payload) }); setSaveInfo(`Sparat ${new Date().toLocaleTimeString('sv-SE')}`); }
+    try { await onUpdate?.({ string_layout_data: JSON.stringify(data) }); setSaveInfo(`Sparat ${new Date().toLocaleTimeString('sv-SE')}`); }
     catch { setSaveInfo('Lokal backup sparad. Servern svarade inte.'); }
     finally { setSaving(false); }
   };
