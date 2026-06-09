@@ -11,6 +11,8 @@ import { createProductSnapshot, hydrateProductWithMeta } from '@/lib/productDocu
 const COLORS = ['#ef4444', '#2563eb', '#16a34a', '#f59e0b', '#8b5cf6', '#db2777', '#0891b2', '#65a30d'];
 const SCALE = 58;
 const PANEL_FALLBACK = { w: 1.134, h: 1.953 };
+const WEATHER = { Soligt: 1, 'Lätta moln': 0.7, Molnigt: 0.35, Regn: 0.15 };
+const TIME = { '06:00': 0.15, '08:00': 0.45, '10:00': 0.75, '12:00': 1, '14:00': 0.8, '16:00': 0.5, '18:00': 0.2, '20:00': 0.05 };
 
 const num = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const pos = (value, fallback = 0) => num(value, fallback) > 0 ? num(value, fallback) : fallback;
@@ -113,7 +115,8 @@ function buildPanels(planner, products, fallbackPanel) {
             y,
             w: pw,
             h: ph,
-            cable: { x: x + pw / 2, y: y + ph * 0.72 },
+            cablePlus: { x: x + pw / 2, y: y + ph * 0.32 },
+            cableMinus: { x: x + pw / 2, y: y + ph * 0.72 },
             black: { x, y: y + ph / 2 },
             red: { x: x + pw, y: y + ph / 2 },
             panelProduct,
@@ -180,17 +183,29 @@ function removePanel(nodes, panelId) {
   return (nodes || []).filter(node => node.panelId !== panelId);
 }
 
-function cablePoints(string, map) {
-  const selectedPanels = uniquePanelIds(string.nodes || []).map(id => map.panels.find(p => p.id === id)).filter(Boolean);
-  if (!selectedPanels.length) return [];
-  const points = [selectedPanels[0].cable];
-  for (let i = 1; i < selectedPanels.length; i++) {
+function orderedPanels(string, map) {
+  return uniquePanelIds(string.nodes || []).map(id => map.panels.find(p => p.id === id)).filter(Boolean);
+}
+
+function orthogonalPoints(panels, key) {
+  if (!panels.length) return [];
+  const points = [panels[0][key]];
+  for (let i = 1; i < panels.length; i++) {
     const prev = points[points.length - 1];
-    const next = selectedPanels[i].cable;
+    const next = panels[i][key];
     if (Math.abs(prev.x - next.x) > 1 && Math.abs(prev.y - next.y) > 1) points.push({ x: prev.x, y: next.y });
     points.push(next);
   }
   return points;
+}
+
+function cablePaths(string, map) {
+  const panels = orderedPanels(string, map);
+  return {
+    panels,
+    plus: orthogonalPoints(panels, 'cablePlus'),
+    minus: orthogonalPoints([...panels].reverse(), 'cableMinus'),
+  };
 }
 
 function pointString(points) {
@@ -219,7 +234,17 @@ function topology(product) {
 
 function panelElectrical(product) {
   const p = productData(product);
-  return p && { pmax: pos(p.power_watts), voc: pos(p.voc_v), vmp: pos(p.vmp_v), isc: pos(p.isc_a), imp: pos(p.imp_a) };
+  return p && {
+    pmax: pos(p.power_watts),
+    voc: pos(p.voc_v),
+    vmp: pos(p.vmp_v),
+    isc: pos(p.isc_a),
+    imp: pos(p.imp_a),
+    pcoef: num(p.temp_coeff_pmax_percent_c, -0.35),
+    vcoef: num(p.temp_coeff_voc_percent_c, -0.27),
+    icoef: num(p.temp_coeff_isc_percent_c, 0.05),
+    noct: pos(p.noct_c, 45),
+  };
 }
 
 function inverterElectrical(product) {
@@ -228,14 +253,24 @@ function inverterElectrical(product) {
   return p && { maxdc: pos(p.max_dc_power_kw, ac * 1.5), maxv: pos(p.max_dc_voltage_v), start: pos(p.startup_voltage_v), mpptmin: pos(p.mppt_voltage_min_v), mpptmax: pos(p.mppt_voltage_max_v), maxa: pos(p.max_input_current_a), maxisc: pos(p.max_short_circuit_current_a) };
 }
 
-function calculate(inverterProduct, branches) {
+function branchValues(panel, count, settings) {
+  const irradiance = 1000 * (WEATHER[settings.weather] ?? 1) * (TIME[settings.timeOfDay] ?? 1);
+  const cell = num(settings.ambientTemperatureC, 20) + ((panel.noct - 20) / 800) * irradiance;
+  const power = panel.pmax * (irradiance / 1000) * (1 + ((cell - 25) * panel.pcoef) / 100) * count;
+  return {
+    power,
+    voc: panel.voc * (1 + ((cell - 25) * panel.vcoef) / 100) * count,
+    vmp: panel.vmp * (1 + ((cell - 25) * panel.vcoef) / 100) * count,
+    imp: panel.imp,
+    isc: panel.isc * (1 + ((cell - 25) * panel.icoef) / 100),
+  };
+}
+
+function calculate(inverterProduct, branches, settings) {
   const inv = inverterElectrical(inverterProduct);
   const valid = branches.filter(b => b.count > 0 && panelElectrical(b.panelProduct));
   if (!inv || !valid.length) return null;
-  const values = valid.map(b => {
-    const p = panelElectrical(b.panelProduct);
-    return { ...b, power: p.pmax * b.count, voc: p.voc * b.count, vmp: p.vmp * b.count, imp: p.imp, isc: p.isc };
-  });
+  const values = valid.map(b => ({ ...b, ...branchValues(panelElectrical(b.panelProduct), b.count, settings) }));
   const totalPower = values.reduce((s, v) => s + v.power, 0);
   const totalImp = values.reduce((s, v) => s + v.imp, 0);
   const totalIsc = values.reduce((s, v) => s + v.isc, 0);
@@ -268,7 +303,7 @@ function StringCountControl({ count, strings, activeId, setCount, selectString }
 }
 
 function TerminalMarker({ panel, plus, color }) {
-  const pt = panel ? { x: panel.x + panel.w * (plus ? 0.18 : 0.82), y: panel.y + panel.h * 0.18 } : null;
+  const pt = panel ? { x: panel.x + panel.w * (plus ? 0.18 : 0.82), y: panel.y + panel.h * 0.16 } : null;
   if (!pt) return null;
   return <g><circle cx={pt.x} cy={pt.y} r="10" fill="white" stroke={color} strokeWidth="3" /><text x={pt.x} y={pt.y + 5} textAnchor="middle" fontSize="16" fontWeight="900" fill={color}>{plus ? '+' : '-'}</text></g>;
 }
@@ -277,7 +312,7 @@ function Canvas({ map, strings, activeId, activeString, onPanelClick }) {
   const activePanels = panelSet(activeString?.nodes || []);
   const owners = new Map();
   strings.forEach(s => panelSet(s.nodes || []).forEach(id => { if (!owners.has(id) || s.id === activeId) owners.set(id, s); }));
-  return <div className="overflow-auto rounded-2xl border bg-white"><svg viewBox={`0 0 ${map.width} ${map.height}`} className="min-h-[560px] w-full min-w-[900px]"><defs><pattern id="roof-hatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="10" stroke="#e2e8f0" strokeWidth="3" /></pattern></defs>{map.roofs.map(r => <g key={r.roof.id || r.roof.name}><text x={r.x} y={r.y - 22} fontSize="18" fontWeight="800">{r.roof.name || 'Tak'}</text><polygon points={roofPolygon(r.x, r.y, r.w, r.h, r.roof.shape)} fill="url(#roof-hatch)" stroke="#0f172a" strokeWidth="2.5" /></g>)}{strings.filter(s => panelCount(s.nodes) >= 2).map(s => { const pts = cablePoints(s, map); const selected = uniquePanelIds(s.nodes).map(id => map.panels.find(p => p.id === id)).filter(Boolean); return <g key={s.id}><polyline points={pointString(pts)} fill="none" stroke={s.color} strokeWidth={s.id === activeId ? 5 : 3} strokeLinecap="round" strokeLinejoin="round" opacity={s.id === activeId ? 1 : 0.55} />{pts.map((pt, i) => <circle key={i} cx={pt.x} cy={pt.y} r={s.id === activeId ? 4 : 3} fill={s.color} stroke="white" />)}{s.id === activeId && <TerminalMarker panel={selected[0]} plus color={s.color} />}{s.id === activeId && <TerminalMarker panel={selected[selected.length - 1]} plus={false} color={s.color} />}</g>; })}{map.panels.map(panel => { const owner = owners.get(panel.id); const selected = activePanels.has(panel.id); const fill = owner ? `${owner.color}22` : '#dbeafe'; const stroke = selected ? activeString?.color || '#2563eb' : owner?.color || '#2563eb'; return <g key={panel.id} onClick={() => onPanelClick(panel)} className="cursor-pointer"><rect x={panel.x} y={panel.y} width={panel.w} height={panel.h} rx="4" fill={fill} stroke={stroke} strokeWidth={selected ? 4 : owner ? 3 : 1.5} /><text x={panel.x + panel.w / 2} y={panel.y + panel.h / 2 + 4} textAnchor="middle" fontSize="10" fontWeight="800" fill="#1d4ed8">{panel.number}</text>{owner && <text x={panel.x + panel.w / 2} y={panel.y + panel.h - 6} textAnchor="middle" fontSize="9" fontWeight="800" fill={owner.color}>{owner.name}</text>}<circle cx={panel.black.x} cy={panel.black.y} r="5" fill="#111827" stroke="white" strokeWidth="1.5" /><circle cx={panel.red.x} cy={panel.red.y} r="5" fill="#dc2626" stroke="white" strokeWidth="1.5" /></g>; })}</svg></div>;
+  return <div className="overflow-auto rounded-2xl border bg-white"><svg viewBox={`0 0 ${map.width} ${map.height}`} className="min-h-[560px] w-full min-w-[900px]"><defs><pattern id="roof-hatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="10" stroke="#e2e8f0" strokeWidth="3" /></pattern></defs>{map.roofs.map(r => <g key={r.roof.id || r.roof.name}><text x={r.x} y={r.y - 22} fontSize="18" fontWeight="800">{r.roof.name || 'Tak'}</text><polygon points={roofPolygon(r.x, r.y, r.w, r.h, r.roof.shape)} fill="url(#roof-hatch)" stroke="#0f172a" strokeWidth="2.5" /></g>)}{strings.filter(s => panelCount(s.nodes) >= 2).map(s => { const paths = cablePaths(s, map); const selected = paths.panels; return <g key={s.id}><polyline points={pointString(paths.plus)} fill="none" stroke={s.color} strokeWidth={s.id === activeId ? 4 : 2.5} strokeLinecap="round" strokeLinejoin="round" opacity={s.id === activeId ? 1 : 0.55} /><polyline points={pointString(paths.minus)} fill="none" stroke={s.color} strokeWidth={s.id === activeId ? 4 : 2.5} strokeLinecap="round" strokeLinejoin="round" opacity={s.id === activeId ? 0.75 : 0.4} strokeDasharray="7 5" />{paths.plus.map((pt, i) => <circle key={`p-${i}`} cx={pt.x} cy={pt.y} r={s.id === activeId ? 3.5 : 2.5} fill={s.color} stroke="white" />)}{paths.minus.map((pt, i) => <circle key={`m-${i}`} cx={pt.x} cy={pt.y} r={s.id === activeId ? 3.5 : 2.5} fill="white" stroke={s.color} strokeWidth="2" />)}{s.id === activeId && <TerminalMarker panel={selected[0]} plus color={s.color} />}{s.id === activeId && <TerminalMarker panel={selected[selected.length - 1]} plus={false} color={s.color} />}</g>; })}{map.panels.map(panel => { const owner = owners.get(panel.id); const selected = activePanels.has(panel.id); const fill = owner ? `${owner.color}22` : '#dbeafe'; const stroke = selected ? activeString?.color || '#2563eb' : owner?.color || '#2563eb'; return <g key={panel.id} onClick={() => onPanelClick(panel)} className="cursor-pointer"><rect x={panel.x} y={panel.y} width={panel.w} height={panel.h} rx="4" fill={fill} stroke={stroke} strokeWidth={selected ? 4 : owner ? 3 : 1.5} /><text x={panel.x + panel.w / 2} y={panel.y + panel.h / 2 + 4} textAnchor="middle" fontSize="10" fontWeight="800" fill="#1d4ed8">{panel.number}</text>{owner && <text x={panel.x + panel.w / 2} y={panel.y + panel.h - 6} textAnchor="middle" fontSize="9" fontWeight="800" fill={owner.color}>{owner.name}</text>}<circle cx={panel.black.x} cy={panel.black.y} r="5" fill="#111827" stroke="white" strokeWidth="1.5" /><circle cx={panel.red.x} cy={panel.red.y} r="5" fill="#dc2626" stroke="white" strokeWidth="1.5" /></g>; })}</svg></div>;
 }
 
 export default function StringMarkingTabV7({ project, onUpdate, selectedProduct: selectedProductProp }) {
@@ -297,6 +332,7 @@ export default function StringMarkingTabV7({ project, onUpdate, selectedProduct:
   const [activeId, setActiveId] = useState(strings[0]?.id || null);
   const [selectedMppt, setSelectedMppt] = useState(Number(saved.selectedMppt || 1));
   const [selectedPv, setSelectedPv] = useState(Number(saved.selectedPv || 1));
+  const [settings, setSettingsState] = useState({ weather: saved.settings?.weather || 'Soligt', timeOfDay: saved.settings?.timeOfDay || '12:00', ambientTemperatureC: saved.settings?.ambientTemperatureC ?? 20 });
   const [saveInfo, setSaveInfo] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -317,7 +353,7 @@ export default function StringMarkingTabV7({ project, onUpdate, selectedProduct:
       const inverterProduct = getInverterProduct(inverterConfig, inverterProducts);
       return recount({ ...s, panelProductId: productData(panelProduct)?.id || s.panelProductId || '', panelProductSnapshot: s.panelProductSnapshot || snapshotProduct(panelProduct), inverterProductId: productData(inverterProduct)?.id || s.inverterProductId || '', inverterProductSnapshot: s.inverterProductSnapshot || snapshotProduct(inverterProduct) });
     });
-    return { version: 31, source: 'manual_panel_click_orthogonal_daisy_chain', stringCount: overrides.stringCount ?? count, panelProductId: overrides.panelProductId ?? panelProductId, selectedInverterConfigId: overrides.selectedInverterConfigId ?? activeInverterId, selectedMppt: overrides.selectedMppt ?? selectedMppt, selectedPv: overrides.selectedPv ?? selectedPvSafe, inverterConfigs: nextInverters.map(i => ({ ...i, productSnapshot: i.productSnapshot || snapshotProduct(getInverterProduct(i, inverterProducts)) })), strings: normalizedStrings, savedAt: new Date().toISOString() };
+    return { version: 32, source: 'manual_panel_click_two_wire_daisy_chain', stringCount: overrides.stringCount ?? count, panelProductId: overrides.panelProductId ?? panelProductId, selectedInverterConfigId: overrides.selectedInverterConfigId ?? activeInverterId, selectedMppt: overrides.selectedMppt ?? selectedMppt, selectedPv: overrides.selectedPv ?? selectedPvSafe, settings: overrides.settings ?? settings, inverterConfigs: nextInverters.map(i => ({ ...i, productSnapshot: i.productSnapshot || snapshotProduct(getInverterProduct(i, inverterProducts)) })), strings: normalizedStrings, savedAt: new Date().toISOString() };
   };
 
   const persist = async (nextStrings = strings, overrides = {}) => {
@@ -331,6 +367,7 @@ export default function StringMarkingTabV7({ project, onUpdate, selectedProduct:
   };
 
   const replaceStrings = next => { const normalized = next.map(recount); setStrings(normalized); persist(normalized).catch(() => {}); };
+  const setSettings = patch => { const next = { ...settings, ...patch }; setSettingsState(next); persist(strings, { settings: next }).catch(() => {}); };
 
   const setCount = value => {
     const nextCount = Math.max(1, Math.min(80, Number(value) || 1));
@@ -398,21 +435,22 @@ export default function StringMarkingTabV7({ project, onUpdate, selectedProduct:
   };
 
   const branches = strings.filter(s => s.inverterConfigId === activeInverterId && Number(s.mppt) === Number(selectedMppt)).map(s => ({ id: s.id, label: `${s.name}${s.pvInput ? ` - PV${s.pvInput}` : ''}`, count: panelCount(s.nodes), panelProduct: getPanelProductForString(s, map, panelProducts, fallbackPanel) })).filter(b => b.count > 0);
-  const result = calculate(activeInverterProduct, branches);
+  const result = calculate(activeInverterProduct, branches, settings);
   const activeCount = panelCount(active?.nodes || []);
 
   if (!map.panels.length) return <Card className="border-0 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2"><Cable className="h-5 w-5 text-primary" />Slingmarkering</CardTitle></CardHeader><CardContent><div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Ingen panelritning hittades. Skapa panelplacering i fliken Paneler först.</div></CardContent></Card>;
 
   return <div className="space-y-4">
-    <Card className="border-0 shadow-sm"><CardHeader><div className="flex justify-between gap-3"><div><CardTitle className="flex items-center gap-2"><Cable className="h-5 w-5 text-primary" />Slingmarkering</CardTitle><p className="text-sm text-muted-foreground">Första panelen du klickar blir +. Sista panelen blir -. Kabeln ritas med 90-graders daisy-chain, utan diagonala hopp.</p></div><div className="flex flex-col items-end gap-2"><Button variant="outline" size="sm" onClick={() => refetch()}><RefreshCw className="mr-2 h-4 w-4" />Uppdatera produkter</Button>{saveInfo && <span className="text-xs text-muted-foreground">{saving ? 'Sparar...' : saveInfo}</span>}</div></div></CardHeader><CardContent className="space-y-4">
+    <Card className="border-0 shadow-sm"><CardHeader><div className="flex justify-between gap-3"><div><CardTitle className="flex items-center gap-2"><Cable className="h-5 w-5 text-primary" />Slingmarkering</CardTitle><p className="text-sm text-muted-foreground">Första panelen du klickar blir +. Sista panelen blir -. Slingan visas som tvåledar/daisy-chain: plusledare och minusledare.</p></div><div className="flex flex-col items-end gap-2"><Button variant="outline" size="sm" onClick={() => refetch()}><RefreshCw className="mr-2 h-4 w-4" />Uppdatera produkter</Button>{saveInfo && <span className="text-xs text-muted-foreground">{saving ? 'Sparar...' : saveInfo}</span>}</div></div></CardHeader><CardContent className="space-y-4">
       <StringCountControl count={count} strings={strings} activeId={activeId} setCount={setCount} selectString={selectString} />
       <div className="grid gap-3 lg:grid-cols-2"><ProductSearchSelect label="Reservsolpanel om tak saknar val" products={panelProducts} value={panelProductId} onChange={value => { setPanelProductId(value); persist(strings, { panelProductId: value }).catch(() => {}); }} placeholder="Sök/välj solpanel" /><label className="space-y-1 text-xs font-medium text-muted-foreground"><span>Aktiv slinga</span><select value={activeId || ''} onChange={e => selectString(e.target.value)} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground">{strings.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label></div>
-      <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900"><Info className="mr-2 inline h-4 w-4" />Klicka panelerna i den ordning kabeln ska gå. Vill du göra om en slinga: tryck Rensa slinga och klicka om.</div>
+      <div className="grid gap-3 lg:grid-cols-3"><label className="space-y-1 text-xs font-medium text-muted-foreground"><span>Väder</span><select value={settings.weather} onChange={e => setSettings({ weather: e.target.value })} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground">{Object.keys(WEATHER).map(w => <option key={w} value={w}>{w}</option>)}</select></label><label className="space-y-1 text-xs font-medium text-muted-foreground"><span>Tid</span><select value={settings.timeOfDay} onChange={e => setSettings({ timeOfDay: e.target.value })} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground">{Object.keys(TIME).map(t => <option key={t} value={t}>{t}</option>)}</select></label><label className="space-y-1 text-xs font-medium text-muted-foreground"><span>Temperatur °C</span><input type="number" value={settings.ambientTemperatureC} onChange={e => setSettings({ ambientTemperatureC: Number(e.target.value) })} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground" /></label></div>
+      <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900"><Info className="mr-2 inline h-4 w-4" />Klicka panelerna i den ordning kabeln ska gå. Två linjer visas: heldragen plusledare och streckad minusledare.</div>
       <div className="rounded-xl border p-3"><div className="mb-2 flex items-center justify-between"><div className="text-sm font-semibold">Växelriktare</div><Button size="sm" variant="outline" onClick={addInverter}><Plus className="mr-2 h-4 w-4" />Lägg till växelriktare</Button></div><div className="grid gap-3 lg:grid-cols-2">{inverters.map((config, index) => <div key={config.id} className={`rounded-xl border p-3 ${config.id === activeInverterId ? 'border-primary bg-primary/5' : 'border-border'}`}><div className="mb-2 flex items-center justify-between"><button className="font-bold" onClick={() => setActiveInverterId(config.id)}>{config.name || `Växelriktare ${index + 1}`}</button>{inverters.length > 1 && <Button variant="ghost" size="icon" className="text-red-600" onClick={() => removeInverter(config.id)}><Trash2 className="h-4 w-4" /></Button>}</div><ProductSearchSelect label="Växelriktare" products={inverterProducts} value={config.productId || ''} onChange={updateInverterProduct} placeholder="Sök/välj växelriktare" /><p className="mt-2 text-xs text-muted-foreground">{productLabel(getInverterProduct(config, inverterProducts), 'Växelriktare')}</p></div>)}</div></div>
       <div className="grid gap-3 lg:grid-cols-2"><label className="space-y-1 text-xs font-medium text-muted-foreground"><span>MPPT</span><select value={selectedMppt} onChange={e => { const next = Number(e.target.value); const firstPv = topology(activeInverterProduct).mppts.find(m => m.mppt === next)?.pvInputs?.[0] || 1; setSelectedMppt(next); setSelectedPv(firstPv); persist(strings, { selectedMppt: next, selectedPv: firstPv }).catch(() => {}); }} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground">{topology(activeInverterProduct).mppts.map(m => <option key={m.mppt} value={m.mppt}>MPPT {m.mppt}</option>)}</select></label><label className="space-y-1 text-xs font-medium text-muted-foreground"><span>PV-ingång</span><select value={selectedPvSafe} onChange={e => { const pv = Number(e.target.value); setSelectedPv(pv); persist(strings, { selectedPv: pv }).catch(() => {}); }} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground">{pvOptions.map(pv => <option key={pv} value={pv}>PV {pv}</option>)}</select></label></div>
       <Canvas map={map} strings={strings} activeId={activeId} activeString={active} onPanelClick={togglePanel} />
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-muted/30 p-3"><div className="text-sm text-muted-foreground">Aktiv slinga: <b>{active?.name}</b> - {activeCount} paneler - MPPT {selectedMppt} - PV{selectedPvSafe}</div><div className="flex gap-2"><Button variant="outline" className="text-red-600" onClick={clearActive}><Trash2 className="mr-2 h-4 w-4" />Rensa slinga</Button><Button onClick={() => persist(strings)} disabled={saving}><Save className="mr-2 h-4 w-4" />{saving ? 'Sparar...' : 'Spara nu'}</Button></div></div>
     </CardContent></Card>
-    <Card className="border-0 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2"><Calculator className="h-5 w-5 text-primary" />Beräkning</CardTitle></CardHeader><CardContent className="space-y-4">{result ? <><Badge className={result.status === 'OK' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}>{result.status === 'OK' ? <CheckCircle2 className="mr-1 h-3 w-3" /> : <XCircle className="mr-1 h-3 w-3" />}{result.status}</Badge><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Metric label="Effekt" value={round(result.totalPower / 1000, 2)} unit="kW" /><Metric label="Vmp" value={`${round(result.minVmp, 1)}-${round(result.maxVmp, 1)}`} unit="V" /><Metric label="Imp" value={round(result.totalImp, 2)} unit="A" /><Metric label="Isc" value={round(result.totalIsc, 2)} unit="A" /></div><div className="grid gap-2 lg:grid-cols-2">{result.checks.map(check => <CheckRow key={check.label} check={check} />)}</div></> : <div className="rounded-xl border border-muted bg-muted/30 p-4 text-sm text-muted-foreground">Klicka paneler och välj växelriktare för att få beräkning.</div>}</CardContent></Card>
+    <Card className="border-0 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2"><Calculator className="h-5 w-5 text-primary" />Beräkning</CardTitle></CardHeader><CardContent className="space-y-4">{result ? <><Badge className={result.status === 'OK' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}>{result.status === 'OK' ? <CheckCircle2 className="mr-1 h-3 w-3" /> : <XCircle className="mr-1 h-3 w-3" />}{result.status}</Badge><div className="text-xs text-muted-foreground">Väder: {settings.weather} · Tid: {settings.timeOfDay} · Temperatur: {settings.ambientTemperatureC} °C</div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Metric label="Effekt" value={round(result.totalPower / 1000, 2)} unit="kW" /><Metric label="Vmp" value={`${round(result.minVmp, 1)}-${round(result.maxVmp, 1)}`} unit="V" /><Metric label="Imp" value={round(result.totalImp, 2)} unit="A" /><Metric label="Isc" value={round(result.totalIsc, 2)} unit="A" /></div><div className="grid gap-2 lg:grid-cols-2">{result.checks.map(check => <CheckRow key={check.label} check={check} />)}</div></> : <div className="rounded-xl border border-muted bg-muted/30 p-4 text-sm text-muted-foreground">Klicka paneler och välj växelriktare för att få beräkning.</div>}</CardContent></Card>
   </div>;
 }
