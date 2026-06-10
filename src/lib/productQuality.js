@@ -122,10 +122,20 @@ export function productQualityIssues(rawProduct = {}) {
   return issues;
 }
 
+function firstNonEmptyDocuments(...sources) {
+  return sources.find(source => Array.isArray(source) && source.length > 0) || [];
+}
+
 export function selectedProductQualityInput(selected = {}, sourceProduct = null) {
   const snapshot = selected.product_snapshot || selected.snapshot || selected.productSnapshot || {};
   const technical = selected.technical_snapshot || snapshot.technical_data_snapshot || {};
-  const docs = selected.documents_snapshot || snapshot.documents_snapshot || sourceProduct?.documents_snapshot || sourceProduct?.documents || [];
+  const docs = firstNonEmptyDocuments(
+    selected.documents_snapshot,
+    snapshot.documents_snapshot,
+    sourceProduct?.documents_snapshot,
+    sourceProduct?.documents,
+    sourceProduct?.product_documents,
+  );
   return {
     ...(sourceProduct || {}),
     ...snapshot,
