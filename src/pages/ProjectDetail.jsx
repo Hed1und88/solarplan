@@ -61,6 +61,11 @@ function productById(products, id) {
   return products.find(product => String(product.id) === String(id)) || null;
 }
 
+function productIsActive(product = {}) {
+  const status = String(product.status || product.state || '').toLowerCase();
+  return !product.deleted && !product.archived && !product.is_deleted && !product.removed && !['deleted', 'archived', 'inactive', 'removed'].includes(status);
+}
+
 function issueText(issues = []) {
   if (!issues.length) return '';
   if (issues.length <= 2) return issues.join(' • ');
@@ -68,20 +73,23 @@ function issueText(issues = []) {
 }
 
 function pushProjectProductEntry(list, entry) {
-  const key = entry.product_id || entry.product_snapshot?.product_id || entry.product_snapshot?.id || `${entry.name}-${entry.source}`;
-  if (!key) return;
+  const key = entry.product_id || entry.product_snapshot?.product_id || entry.product_snapshot?.id;
+  if (!key || !entry.sourceProduct) return;
   const exists = list.some(item => String(item.key) === String(key));
   if (!exists) list.push({ ...entry, key });
 }
 
 function collectProjectProductEntries(project = {}, products = []) {
+  const activeProducts = products.filter(productIsActive);
   const entries = [];
 
   (Array.isArray(project?.selected_products) ? project.selected_products : []).forEach(item => {
-    const sourceProduct = productById(products, item.product_id);
+    const sourceProduct = productById(activeProducts, item.product_id);
+    if (!sourceProduct) return;
     pushProjectProductEntry(entries, {
       source: 'Produktfliken',
-      name: item.product_name || item.product_snapshot?.name || sourceProduct?.name || 'Produkt',
+      sourceProduct,
+      name: item.product_name || item.product_snapshot?.name || sourceProduct.name || 'Produkt',
       product_id: item.product_id,
       qualityInput: selectedProductQualityInput(item, sourceProduct),
     });
@@ -89,16 +97,19 @@ function collectProjectProductEntries(project = {}, products = []) {
 
   const planner = safeJson(project?.solar_roof_planner_data || project?.panel_layout_data, null);
   (planner?.roofs || []).forEach(roof => {
-    const sourceProduct = productById(products, roof.panelProductId);
+    const productId = roof.panelProductId || roof.panelProductSnapshot?.product_id || roof.panelProductSnapshot?.id;
+    const sourceProduct = productById(activeProducts, productId);
+    if (!sourceProduct) return;
     const snapshot = roof.panelProductSnapshot || {};
     pushProjectProductEntry(entries, {
       source: `Paneler / ${roof.name || 'Tak'}`,
-      name: snapshot.name || sourceProduct?.name || roof.name || 'Panelprodukt',
-      product_id: roof.panelProductId || snapshot.product_id || snapshot.id,
+      sourceProduct,
+      name: snapshot.name || sourceProduct.name || 'Panelprodukt',
+      product_id: productId,
       product_snapshot: snapshot,
       qualityInput: selectedProductQualityInput({
-        product_id: roof.panelProductId || snapshot.product_id || snapshot.id,
-        product_name: snapshot.name || sourceProduct?.name,
+        product_id: productId,
+        product_name: snapshot.name || sourceProduct.name,
         product_snapshot: snapshot,
         documents_snapshot: snapshot.documents_snapshot,
         technical_snapshot: snapshot.technical_data_snapshot,
@@ -107,35 +118,20 @@ function collectProjectProductEntries(project = {}, products = []) {
   });
 
   const stringData = safeJson(project?.string_layout_data, null);
-  (stringData?.strings || []).forEach(item => {
-    const sourceProduct = productById(products, item.panelProductId);
-    const snapshot = item.panelProductSnapshot || {};
-    pushProjectProductEntry(entries, {
-      source: `Slingor / ${item.name || 'Slinga'}`,
-      name: snapshot.name || sourceProduct?.name || item.name || 'Panelprodukt',
-      product_id: item.panelProductId || snapshot.product_id || snapshot.id,
-      product_snapshot: snapshot,
-      qualityInput: selectedProductQualityInput({
-        product_id: item.panelProductId || snapshot.product_id || snapshot.id,
-        product_name: snapshot.name || sourceProduct?.name,
-        product_snapshot: snapshot,
-        documents_snapshot: snapshot.documents_snapshot,
-        technical_snapshot: snapshot.technical_data_snapshot,
-      }, sourceProduct),
-    });
-  });
-
   (stringData?.inverterConfigs || []).forEach((item, index) => {
-    const sourceProduct = productById(products, item.productId);
+    const productId = item.productId || item.productSnapshot?.product_id || item.productSnapshot?.id;
+    const sourceProduct = productById(activeProducts, productId);
+    if (!sourceProduct) return;
     const snapshot = item.productSnapshot || {};
     pushProjectProductEntry(entries, {
       source: `Slingor / ${item.name || `Växelriktare ${index + 1}`}`,
-      name: snapshot.name || sourceProduct?.name || item.name || `Växelriktare ${index + 1}`,
-      product_id: item.productId || snapshot.product_id || snapshot.id,
+      sourceProduct,
+      name: snapshot.name || sourceProduct.name || item.name || `Växelriktare ${index + 1}`,
+      product_id: productId,
       product_snapshot: snapshot,
       qualityInput: selectedProductQualityInput({
-        product_id: item.productId || snapshot.product_id || snapshot.id,
-        product_name: snapshot.name || sourceProduct?.name,
+        product_id: productId,
+        product_name: snapshot.name || sourceProduct.name,
         product_snapshot: snapshot,
         documents_snapshot: snapshot.documents_snapshot,
         technical_snapshot: snapshot.technical_data_snapshot,
@@ -145,21 +141,24 @@ function collectProjectProductEntries(project = {}, products = []) {
 
   const mounting = safeJson(project?.mounting_data, null);
   if (mounting?.selectedPanelId) {
-    const sourceProduct = productById(products, mounting.selectedPanelId);
-    const snapshot = mounting.selectedPanelSnapshot || {};
-    pushProjectProductEntry(entries, {
-      source: 'Montage',
-      name: snapshot.name || sourceProduct?.name || mounting.selectedPanelName || 'Panelprodukt',
-      product_id: mounting.selectedPanelId || snapshot.product_id || snapshot.id,
-      product_snapshot: snapshot,
-      qualityInput: selectedProductQualityInput({
+    const sourceProduct = productById(activeProducts, mounting.selectedPanelId);
+    if (sourceProduct) {
+      const snapshot = mounting.selectedPanelSnapshot || {};
+      pushProjectProductEntry(entries, {
+        source: 'Montage',
+        sourceProduct,
+        name: snapshot.name || sourceProduct.name || mounting.selectedPanelName || 'Panelprodukt',
         product_id: mounting.selectedPanelId || snapshot.product_id || snapshot.id,
-        product_name: snapshot.name || sourceProduct?.name || mounting.selectedPanelName,
         product_snapshot: snapshot,
-        documents_snapshot: snapshot.documents_snapshot,
-        technical_snapshot: snapshot.technical_data_snapshot,
-      }, sourceProduct),
-    });
+        qualityInput: selectedProductQualityInput({
+          product_id: mounting.selectedPanelId || snapshot.product_id || snapshot.id,
+          product_name: snapshot.name || sourceProduct.name || mounting.selectedPanelName,
+          product_snapshot: snapshot,
+          documents_snapshot: snapshot.documents_snapshot,
+          technical_snapshot: snapshot.technical_data_snapshot,
+        }, sourceProduct),
+      });
+    }
   }
 
   return entries.map(entry => {
