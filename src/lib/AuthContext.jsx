@@ -2,6 +2,7 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { appParams } from '@/lib/app-params';
 import { createAxiosClient } from '@base44/sdk/dist/utils/axios-client';
+import { ensureSuperAdminClaims } from '@/lib/superAdmin';
 
 const AuthContext = createContext();
 
@@ -92,7 +93,8 @@ export const AuthProvider = ({ children }) => {
       // Now check if the user is authenticated
       setIsLoadingAuth(true);
       const currentUser = await base44.auth.me();
-      setUser(currentUser);
+      const userWithClaims = await ensureSuperAdminClaims(base44, currentUser);
+      setUser(userWithClaims);
       setIsAuthenticated(true);
       setIsLoadingAuth(false);
     } catch (error) {
