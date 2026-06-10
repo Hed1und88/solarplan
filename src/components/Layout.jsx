@@ -22,8 +22,14 @@ export default function Layout() {
   return (
     <div className="flex h-screen bg-background overflow-hidden">
       <aside className="hidden lg:flex fixed inset-y-0 left-0 z-50 w-64 bg-sidebar flex-col">
-        <div className="flex items-center px-4 py-3 border-b border-sidebar-border">
-          <img src="https://media.base44.com/images/public/69d685f7c2da2257faa73124/82fc4e45e_Screenshot_20260408_224436_com_android_chrome_ChromeTabbedActivity.jpg" alt="NEPAB Logo" className="h-14 w-auto object-contain" />
+        <div className="flex items-center gap-3 px-4 py-4 border-b border-sidebar-border bg-slate-950/40">
+          <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl bg-slate-900 ring-1 ring-sky-400/25">
+            <img src="/lyntra-solutions-mark.png" alt="Lyntra Solutions Logo" className="h-12 w-12 object-contain" />
+          </div>
+          <div className="min-w-0 leading-tight">
+            <div className="text-[21px] font-black uppercase tracking-[0.08em] text-white">Lyntra</div>
+            <div className="text-[14px] font-black uppercase tracking-[0.12em] text-sky-300">Solutions AB</div>
+          </div>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">
           {navItems.map(({ path, icon: Icon, label }) => {
@@ -36,7 +42,13 @@ export default function Layout() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden lg:ml-64">
         <header className="lg:hidden flex items-center justify-between bg-card border-b border-border" style={{ paddingTop: 'env(safe-area-inset-top)', paddingLeft: 'max(16px, env(safe-area-inset-left))', paddingRight: 'max(16px, env(safe-area-inset-right))', paddingBottom: '10px', minHeight: 56 }}>
           {!onRoot ? <button onClick={() => navigate(-1)} className="flex items-center gap-1 text-primary font-medium text-sm p-1.5 rounded-lg active:bg-muted"><ChevronLeft className="w-5 h-5" /> Tillbaka</button> : <div className="w-20" />}
-          <img src="https://media.base44.com/images/public/69d685f7c2da2257faa73124/82fc4e45e_Screenshot_20260408_224436_com_android_chrome_ChromeTabbedActivity.jpg" alt="NEPAB Logo" className="h-8 w-auto object-contain" />
+          <div className="flex items-center gap-2">
+            <img src="/lyntra-solutions-mark.png" alt="Lyntra Solutions Logo" className="h-8 w-8 object-contain" />
+            <div className="leading-none">
+              <div className="text-[14px] font-black uppercase tracking-[0.08em] text-slate-950">Lyntra</div>
+              <div className="text-[10px] font-black uppercase tracking-[0.12em] text-sky-700">Solutions AB</div>
+            </div>
+          </div>
           <div className="w-20" />
         </header>
         <main className="flex-1 overflow-y-auto pb-20 lg:pb-0">
