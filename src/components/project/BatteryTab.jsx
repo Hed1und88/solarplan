@@ -1,7 +1,5 @@
-/* eslint-disable react/no-unknown-property */
-import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { Canvas } from '@react-three/fiber';
-import { Billboard, ContactShadows, Edges, Grid, Line, OrbitControls, Text } from '@react-three/drei';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import * as THREE from 'three';
 import { base44 } from '@/api/base44Client';
 import { hydrateProductWithMeta } from '@/lib/productDocuments';
 import { useQuery } from '@tanstack/react-query';
@@ -268,154 +266,352 @@ function getStudioIssues(devices, roomHeight) {
   return issues;
 }
 
-function Wall3D({ wall, roomHeight }) {
+function disposeObject(object) {
+  object.traverse((child) => {
+    if (child.geometry) child.geometry.dispose();
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    materials.filter(Boolean).forEach((material) => {
+      if (material.map) material.map.dispose();
+      material.dispose();
+    });
+  });
+}
+
+function addEdges(mesh, color = '#ffffff') {
+  const edges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(mesh.geometry),
+    new THREE.LineBasicMaterial({ color }),
+  );
+  mesh.add(edges);
+  return edges;
+}
+
+function createLabelSprite(text, color = '#cbd5e1') {
+  const canvas = document.createElement('canvas');
+  canvas.width = 640;
+  canvas.height = 192;
+  const ctx = canvas.getContext('2d');
+  const lines = String(text || '').split('\n');
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = 'rgba(2, 6, 23, 0.78)';
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(18, 18, canvas.width - 36, canvas.height - 36, 18);
+  ctx.fill();
+  ctx.stroke();
+  ctx.font = '600 30px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = color;
+  lines.forEach((line, index) => {
+    ctx.fillText(line, canvas.width / 2, canvas.height / 2 + (index - (lines.length - 1) / 2) * 38);
+  });
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
+  sprite.scale.set(1.45, 0.44, 1);
+  return sprite;
+}
+
+function createWallObject(wall, roomHeight) {
   const length = wallLength(wall);
   const centerX = (wall.x1 + wall.x2) / 2;
   const centerZ = (wall.z1 + wall.z2) / 2;
   const angle = -Math.atan2(wall.z2 - wall.z1, wall.x2 - wall.x1);
-
-  return (
-    <mesh position={[centerX, roomHeight / 2, centerZ]} rotation={[0, angle, 0]} receiveShadow>
-      <boxGeometry args={[length, roomHeight, WALL_THICKNESS_M]} />
-      <meshStandardMaterial color="#1e293b" roughness={0.7} metalness={0.05} transparent opacity={0.88} />
-      <Edges color="#64748b" />
-    </mesh>
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(length, roomHeight, WALL_THICKNESS_M),
+    new THREE.MeshStandardMaterial({
+      color: '#1e293b',
+      roughness: 0.7,
+      metalness: 0.05,
+      transparent: true,
+      opacity: 0.88,
+    }),
   );
+  mesh.position.set(centerX, roomHeight / 2, centerZ);
+  mesh.rotation.y = angle;
+  mesh.receiveShadow = true;
+  addEdges(mesh, '#64748b');
+  return mesh;
 }
 
-function Device3D({ device, isSelected, onSelect }) {
+function createDeviceObject(device, isSelected) {
+  const group = new THREE.Group();
   const clearance = device.clearance || {};
   const clearanceWidth = device.width + (clearance.left || 0) + (clearance.right || 0);
   const clearanceHeight = device.height + (clearance.top || 0) + (clearance.bottom || 0);
   const clearanceDepth = device.depth + (clearance.front || 0) + (clearance.back || 0);
   const clearanceOffsetY = ((clearance.top || 0) - (clearance.bottom || 0)) / 2;
   const clearanceOffsetZ = ((clearance.front || 0) - (clearance.back || 0)) / 2;
-  const labelY = device.height / 2 + 0.22;
 
-  return (
-    <group
-      position={[device.x, device.y + device.height / 2, device.z]}
-      rotation={[0, numberOr(device.rotationY, 0), 0]}
-      onClick={(event) => {
-        event.stopPropagation();
-        onSelect();
-      }}
-    >
-      {isSelected && (
-        <mesh position={[0, clearanceOffsetY, clearanceOffsetZ]}>
-          <boxGeometry args={[clearanceWidth, clearanceHeight, clearanceDepth]} />
-          <meshBasicMaterial color="#f97316" wireframe transparent opacity={0.28} depthWrite={false} />
-        </mesh>
-      )}
+  group.position.set(device.x, device.y + device.height / 2, device.z);
+  group.rotation.y = numberOr(device.rotationY, 0);
+  group.userData.deviceId = device.instanceId;
 
-      {isSelected && (
-        <mesh position={[0, -device.height / 2 + 0.006, clearanceOffsetZ]} rotation={[-Math.PI / 2, 0, 0]}>
-          <planeGeometry args={[clearanceWidth, clearanceDepth]} />
-          <meshBasicMaterial color="#f97316" transparent opacity={0.12} depthWrite={false} />
-        </mesh>
-      )}
+  if (isSelected) {
+    const clearanceMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(clearanceWidth, clearanceHeight, clearanceDepth),
+      new THREE.MeshBasicMaterial({
+        color: '#f97316',
+        wireframe: true,
+        transparent: true,
+        opacity: 0.28,
+        depthWrite: false,
+      }),
+    );
+    clearanceMesh.position.set(0, clearanceOffsetY, clearanceOffsetZ);
+    group.add(clearanceMesh);
 
-      <mesh castShadow receiveShadow>
-        <boxGeometry args={[device.width, device.height, device.depth]} />
-        <meshStandardMaterial color={device.color} roughness={0.38} metalness={0.28} />
-        <Edges color="#ffffff" />
-      </mesh>
+    const floorZone = new THREE.Mesh(
+      new THREE.PlaneGeometry(clearanceWidth, clearanceDepth),
+      new THREE.MeshBasicMaterial({ color: '#f97316', transparent: true, opacity: 0.12, depthWrite: false }),
+    );
+    floorZone.rotation.x = -Math.PI / 2;
+    floorZone.position.set(0, -device.height / 2 + 0.006, clearanceOffsetZ);
+    group.add(floorZone);
+  }
 
-      {device.type === 'inverter' && (
-        <mesh position={[0, 0.02, device.depth / 2 + 0.006]}>
-          <boxGeometry args={[device.width * 0.72, device.height * 0.58, 0.012]} />
-          <meshStandardMaterial color="#0f172a" roughness={0.45} metalness={0.2} />
-        </mesh>
-      )}
-
-      {device.type === 'battery' && (
-        <>
-          <mesh position={[0, device.height * 0.18, device.depth / 2 + 0.006]}>
-            <boxGeometry args={[device.width * 0.82, 0.018, 0.012]} />
-            <meshStandardMaterial color="#bbf7d0" roughness={0.5} />
-          </mesh>
-          <mesh position={[0, -device.height * 0.18, device.depth / 2 + 0.006]}>
-            <boxGeometry args={[device.width * 0.82, 0.018, 0.012]} />
-            <meshStandardMaterial color="#bbf7d0" roughness={0.5} />
-          </mesh>
-        </>
-      )}
-
-      <Billboard position={[0, labelY, 0]}>
-        <Text
-          text={`${shortLabel(device.productName)}\n${formatMeters(device.width)} x ${formatMeters(device.height)} x ${formatMeters(device.depth)}`}
-          fontSize={0.095}
-          color={isSelected ? '#f97316' : '#cbd5e1'}
-          anchorX="center"
-          anchorY="middle"
-          textAlign="center"
-        />
-      </Billboard>
-
-      {isSelected && device.y > 0 && (
-        <group position={[-device.width / 2 - 0.14, -device.height / 2, device.depth / 2 + 0.08]}>
-          <Line points={[[0, 0, 0], [0, -device.y, 0]]} color="#38bdf8" lineWidth={1.5} />
-          <Billboard position={[0, -device.y / 2, 0]}>
-            <Text text={formatMeters(device.y)} fontSize={0.085} color="#38bdf8" anchorX="center" anchorY="middle" />
-          </Billboard>
-        </group>
-      )}
-    </group>
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(device.width, device.height, device.depth),
+    new THREE.MeshStandardMaterial({ color: device.color, roughness: 0.38, metalness: 0.28 }),
   );
+  body.castShadow = true;
+  body.receiveShadow = true;
+  body.userData.deviceId = device.instanceId;
+  addEdges(body, '#ffffff');
+  group.add(body);
+
+  if (device.type === 'inverter') {
+    const screen = new THREE.Mesh(
+      new THREE.BoxGeometry(device.width * 0.72, device.height * 0.58, 0.012),
+      new THREE.MeshStandardMaterial({ color: '#0f172a', roughness: 0.45, metalness: 0.2 }),
+    );
+    screen.position.set(0, 0.02, device.depth / 2 + 0.006);
+    group.add(screen);
+  }
+
+  if (device.type === 'battery') {
+    [device.height * 0.18, -device.height * 0.18].forEach((y) => {
+      const seam = new THREE.Mesh(
+        new THREE.BoxGeometry(device.width * 0.82, 0.018, 0.012),
+        new THREE.MeshStandardMaterial({ color: '#bbf7d0', roughness: 0.5 }),
+      );
+      seam.position.set(0, y, device.depth / 2 + 0.006);
+      group.add(seam);
+    });
+  }
+
+  const label = createLabelSprite(
+    `${shortLabel(device.productName)}\n${formatMeters(device.width)} x ${formatMeters(device.height)} x ${formatMeters(device.depth)}`,
+    isSelected ? '#f97316' : '#cbd5e1',
+  );
+  label.position.set(0, device.height / 2 + 0.22, 0);
+  group.add(label);
+
+  if (isSelected && device.y > 0) {
+    const points = [
+      new THREE.Vector3(-device.width / 2 - 0.14, -device.height / 2, device.depth / 2 + 0.08),
+      new THREE.Vector3(-device.width / 2 - 0.14, -device.height / 2 - device.y, device.depth / 2 + 0.08),
+    ];
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(points),
+      new THREE.LineBasicMaterial({ color: '#38bdf8' }),
+    );
+    group.add(line);
+
+    const heightLabel = createLabelSprite(formatMeters(device.y), '#38bdf8');
+    heightLabel.scale.set(0.75, 0.24, 1);
+    heightLabel.position.set(-device.width / 2 - 0.14, -device.height / 2 - device.y / 2, device.depth / 2 + 0.08);
+    group.add(heightLabel);
+  }
+
+  return group;
 }
 
 function StudioScene({ walls, devices, selectedDeviceId, roomHeight, onSelectDevice, onClearSelection }) {
-  return (
-    <Canvas camera={{ position: [5.4, 5.2, 7.5], fov: 42 }} shadows onPointerMissed={onClearSelection}>
-      <color attach="background" args={['#05070c']} />
-      <ambientLight intensity={0.58} />
-      <directionalLight position={[7, 10, 6]} intensity={1.2} castShadow shadow-mapSize={[2048, 2048]} />
-      <pointLight position={[-4, 4, -5]} intensity={0.55} color="#38bdf8" />
+  const containerRef = useRef(null);
+  const sceneRef = useRef(null);
+  const cameraRef = useRef(null);
+  const rendererRef = useRef(null);
+  const objectRootRef = useRef(null);
+  const callbacksRef = useRef({ onSelectDevice, onClearSelection });
 
-      <Suspense fallback={null}>
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.01, 0]} receiveShadow>
-          <planeGeometry args={[DRAW_WIDTH_M, DRAW_DEPTH_M]} />
-          <meshStandardMaterial color="#0b1120" roughness={0.86} metalness={0.02} />
-        </mesh>
+  useEffect(() => {
+    callbacksRef.current = { onSelectDevice, onClearSelection };
+  }, [onSelectDevice, onClearSelection]);
 
-        {walls.map((wall) => (
-          <Wall3D key={wall.id} wall={wall} roomHeight={roomHeight} />
-        ))}
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return undefined;
 
-        {devices.map((device) => (
-          <Device3D
-            key={device.instanceId}
-            device={device}
-            isSelected={selectedDeviceId === device.instanceId}
-            onSelect={() => onSelectDevice(device.instanceId)}
-          />
-        ))}
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#05070c');
+    const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.domElement.className = 'h-full w-full';
+    renderer.domElement.style.display = 'block';
+    renderer.domElement.style.cursor = 'grab';
+    container.appendChild(renderer.domElement);
 
-        <Grid
-          position={[0, 0, 0]}
-          args={[DRAW_WIDTH_M, DRAW_DEPTH_M]}
-          cellSize={0.5}
-          cellThickness={0.55}
-          cellColor="#1e293b"
-          sectionSize={2.5}
-          sectionThickness={1}
-          sectionColor="#475569"
-          fadeDistance={16}
-          infiniteGrid={false}
-        />
-        <ContactShadows position={[0, 0, 0]} opacity={0.55} blur={2.2} far={7} color="#000000" />
-      </Suspense>
+    scene.add(new THREE.AmbientLight('#ffffff', 0.58));
+    const keyLight = new THREE.DirectionalLight('#ffffff', 1.2);
+    keyLight.position.set(7, 10, 6);
+    keyLight.castShadow = true;
+    scene.add(keyLight);
+    const blueLight = new THREE.PointLight('#38bdf8', 0.55);
+    blueLight.position.set(-4, 4, -5);
+    scene.add(blueLight);
 
-      <OrbitControls
-        enableDamping
-        dampingFactor={0.04}
-        minDistance={2.4}
-        maxDistance={16}
-        maxPolarAngle={Math.PI / 2.05}
-        makeDefault
-      />
-    </Canvas>
-  );
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(DRAW_WIDTH_M, DRAW_DEPTH_M),
+      new THREE.MeshStandardMaterial({ color: '#0b1120', roughness: 0.86, metalness: 0.02 }),
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.y = -0.01;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    const grid = new THREE.GridHelper(Math.max(DRAW_WIDTH_M, DRAW_DEPTH_M), Math.max(DRAW_WIDTH_M, DRAW_DEPTH_M) * 2, '#475569', '#1e293b');
+    grid.position.y = 0.004;
+    scene.add(grid);
+
+    const objectRoot = new THREE.Group();
+    scene.add(objectRoot);
+
+    const orbit = {
+      radius: 9.3,
+      theta: Math.PI / 4,
+      phi: 0.86,
+      target: new THREE.Vector3(0, 1.15, 0),
+    };
+
+    const updateCamera = () => {
+      const x = orbit.target.x + orbit.radius * Math.sin(orbit.phi) * Math.sin(orbit.theta);
+      const y = orbit.target.y + orbit.radius * Math.cos(orbit.phi);
+      const z = orbit.target.z + orbit.radius * Math.sin(orbit.phi) * Math.cos(orbit.theta);
+      camera.position.set(x, y, z);
+      camera.lookAt(orbit.target);
+    };
+
+    const resize = () => {
+      const { width, height } = container.getBoundingClientRect();
+      if (!width || !height) return;
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      updateCamera();
+    };
+
+    const pointerState = { down: false, moved: false, x: 0, y: 0 };
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+
+    const handlePointerDown = (event) => {
+      pointerState.down = true;
+      pointerState.moved = false;
+      pointerState.x = event.clientX;
+      pointerState.y = event.clientY;
+      renderer.domElement.setPointerCapture?.(event.pointerId);
+      renderer.domElement.style.cursor = 'grabbing';
+    };
+
+    const handlePointerMove = (event) => {
+      if (!pointerState.down) return;
+      const dx = event.clientX - pointerState.x;
+      const dy = event.clientY - pointerState.y;
+      if (Math.abs(dx) + Math.abs(dy) > 4) pointerState.moved = true;
+
+      if (event.shiftKey) {
+        orbit.target.x -= dx * 0.01;
+        orbit.target.z += dy * 0.01;
+      } else {
+        orbit.theta -= dx * 0.006;
+        orbit.phi = Math.max(0.2, Math.min(Math.PI / 2.05, orbit.phi + dy * 0.006));
+      }
+
+      pointerState.x = event.clientX;
+      pointerState.y = event.clientY;
+      updateCamera();
+    };
+
+    const handlePointerUp = (event) => {
+      pointerState.down = false;
+      renderer.domElement.releasePointerCapture?.(event.pointerId);
+      renderer.domElement.style.cursor = 'grab';
+
+      if (pointerState.moved) return;
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(pointer, camera);
+      const hit = raycaster.intersectObjects(objectRoot.children, true)
+        .map((item) => {
+          let object = item.object;
+          while (object && !object.userData.deviceId) object = object.parent;
+          return object?.userData.deviceId;
+        })
+        .find(Boolean);
+
+      if (hit) callbacksRef.current.onSelectDevice(hit);
+      else callbacksRef.current.onClearSelection();
+    };
+
+    const handleWheel = (event) => {
+      event.preventDefault();
+      orbit.radius = Math.max(2.4, Math.min(16, orbit.radius + event.deltaY * 0.008));
+      updateCamera();
+    };
+
+    const observer = new ResizeObserver(resize);
+    observer.observe(container);
+    renderer.domElement.addEventListener('pointerdown', handlePointerDown);
+    renderer.domElement.addEventListener('pointermove', handlePointerMove);
+    renderer.domElement.addEventListener('pointerup', handlePointerUp);
+    renderer.domElement.addEventListener('wheel', handleWheel, { passive: false });
+
+    let frameId = 0;
+    const render = () => {
+      frameId = window.requestAnimationFrame(render);
+      renderer.render(scene, camera);
+    };
+
+    sceneRef.current = scene;
+    cameraRef.current = camera;
+    rendererRef.current = renderer;
+    objectRootRef.current = objectRoot;
+    resize();
+    render();
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      observer.disconnect();
+      renderer.domElement.removeEventListener('pointerdown', handlePointerDown);
+      renderer.domElement.removeEventListener('pointermove', handlePointerMove);
+      renderer.domElement.removeEventListener('pointerup', handlePointerUp);
+      renderer.domElement.removeEventListener('wheel', handleWheel);
+      disposeObject(scene);
+      renderer.dispose();
+      renderer.domElement.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    const root = objectRootRef.current;
+    if (!root) return;
+
+    root.children.forEach(disposeObject);
+    root.clear();
+
+    walls.forEach((wall) => root.add(createWallObject(wall, roomHeight)));
+    devices.forEach((device) => root.add(createDeviceObject(device, selectedDeviceId === device.instanceId)));
+  }, [walls, devices, selectedDeviceId, roomHeight]);
+
+  return <div ref={containerRef} className="h-full min-h-[680px] w-full" />;
 }
 
 function NumberField({ label, value, onChange, step = NUDGE_STEP_M, disabled = false, suffix = 'm' }) {
