@@ -136,9 +136,14 @@ function orderedPanels(string, map) {
   return ids(string.nodes).map(id => map.panels.find(panel => panel.id === id)).filter(Boolean);
 }
 
-function outside(panel, polarity, side) {
+function outsideStart(panel, polarity) {
   const base = polarity === 'plus' ? panel.plus : panel.minus;
-  return { x: side === 'left' ? panel.x - OUT : panel.x + panel.w + OUT, y: base.y };
+  return { x: panel.x - OUT, y: base.y };
+}
+
+function terminalPoint(panel, polarity, side = 'inside') {
+  if (side === 'left') return outsideStart(panel, polarity);
+  return polarity === 'plus' ? panel.plus : panel.minus;
 }
 
 function orth(points) {
@@ -157,15 +162,14 @@ function cablePath(string, map) {
   const panels = orderedPanels(string, map);
   if (!panels.length) return { panels: [], plus: [], minus: [], startPolarity: string.startPolarity || 'plus' };
   const first = panels[0];
-  const last = panels[panels.length - 1];
   const startPolarity = string.startPolarity === 'minus' ? 'minus' : 'plus';
   const plusBase = orth(panels.map(panel => panel.plus));
   const minusBase = orth(panels.map(panel => panel.minus));
   return {
     panels,
     startPolarity,
-    plus: startPolarity === 'plus' ? [outside(first, 'plus', 'left'), ...plusBase] : [...plusBase, outside(last, 'plus', 'right')],
-    minus: startPolarity === 'minus' ? [outside(first, 'minus', 'left'), ...minusBase] : [...minusBase, outside(last, 'minus', 'right')],
+    plus: startPolarity === 'plus' ? [outsideStart(first, 'plus'), ...plusBase] : plusBase,
+    minus: startPolarity === 'minus' ? [outsideStart(first, 'minus'), ...minusBase] : minusBase,
   };
 }
 
@@ -173,9 +177,10 @@ function pointText(points) {
   return points.map(point => `${point.x},${point.y}`).join(' ');
 }
 
-function Terminal({ panel, plus, side, selected, onClick }) {
+function Terminal({ panel, plus, side = 'inside', selected, onClick }) {
   if (!panel) return null;
-  const point = outside(panel, plus ? 'plus' : 'minus', side);
+  const polarity = plus ? 'plus' : 'minus';
+  const point = terminalPoint(panel, polarity, side);
   const color = plus ? PLUS : MINUS;
   return (
     <g onClick={event => { event.stopPropagation(); onClick?.(); }} className="cursor-pointer">
@@ -211,7 +216,7 @@ function Canvas({ map, strings, activeId, activeString, onPanelClick, onStartPol
             {!startPlus && path.minus.map((point, index) => <circle key={`m-${index}`} cx={point.x} cy={point.y} r={isActive ? 3.5 : 2.5} fill={MINUS} stroke="white" strokeWidth="1.5" />)}
             {isActive && <Terminal panel={startPanel} plus selected={startPlus} side="left" onClick={() => onStartPolarity(string.id, 'plus')} />}
             {isActive && <Terminal panel={startPanel} plus={false} selected={!startPlus} side="left" onClick={() => onStartPolarity(string.id, 'minus')} />}
-            {isActive && <Terminal panel={endPanel} plus={!startPlus} selected side="right" />}
+            {isActive && <Terminal panel={endPanel} plus={!startPlus} selected />}
           </g>;
         })}
         {map.panels.map(panel => {
@@ -242,8 +247,8 @@ export default function StringMarkingTabV7({ project, onUpdate }) {
   const active = strings.find(string => string.id === activeId) || strings[0];
 
   const buildPayload = (nextStrings = strings, overrides = {}) => ({
-    version: 50,
-    source: 'stable_external_start_string_tab',
+    version: 51,
+    source: 'stable_start_only_external_string_tab',
     stringCount: overrides.stringCount ?? countValue,
     settings: overrides.settings ?? settings,
     strings: nextStrings.map(recount),
@@ -309,5 +314,5 @@ export default function StringMarkingTabV7({ project, onUpdate }) {
     return <Card className="border-0 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2"><Cable className="h-5 w-5 text-primary" />Slingmarkering</CardTitle></CardHeader><CardContent><div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Ingen panelritning hittades. Skapa panelplacering i fliken Paneler först.</div></CardContent></Card>;
   }
 
-  return <div className="space-y-4"><Card className="border-0 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2"><Cable className="h-5 w-5 text-primary" />Slingmarkering</CardTitle><p className="text-sm text-muted-foreground">Starten ligger utanför första panelen. Klicka + eller - utanför panelen för att välja startpol.</p></CardHeader><CardContent className="space-y-4"><div className="rounded-2xl border border-primary/20 bg-primary/5 p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><div><div className="text-sm font-bold">1. Välj antal slingor</div><p className="text-xs text-muted-foreground">Välj antal slingor och klicka panelerna manuellt.</p></div><div className="flex items-center gap-2"><Button variant="outline" size="icon" onClick={() => setCountValue(Math.max(1, countValue - 1))} disabled={countValue <= 1}><Minus className="h-4 w-4" /></Button><input type="number" min="1" max="80" value={countValue} onChange={event => setCountValue(event.target.value)} className="h-10 w-24 rounded-xl border border-border bg-background px-3 text-center text-lg font-black" /><Button variant="outline" size="icon" onClick={() => setCountValue(Math.min(80, countValue + 1))}><Plus className="h-4 w-4" /></Button></div></div><div className="mt-3 flex flex-wrap gap-2">{strings.map(string => <button key={string.id} onClick={() => setActiveId(string.id)} className={`rounded-xl border px-3 py-2 text-xs font-semibold ${string.id === activeId ? 'border-primary bg-primary text-white' : 'border-border bg-background text-muted-foreground'}`}>{string.name} · {count(string.nodes)} paneler · start {string.startPolarity === 'minus' ? '-' : '+'}</button>)}</div></div><div className="grid gap-3 lg:grid-cols-3"><label className="space-y-1 text-xs font-medium text-muted-foreground"><span>Väder</span><select value={settings.weather} onChange={event => patchSettings({ weather: event.target.value })} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm">{WEATHER.map(item => <option key={item} value={item}>{item}</option>)}</select></label><label className="space-y-1 text-xs font-medium text-muted-foreground"><span>Tid</span><select value={settings.timeOfDay} onChange={event => patchSettings({ timeOfDay: event.target.value })} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm">{TIMES.map(item => <option key={item} value={item}>{item}</option>)}</select></label><label className="space-y-1 text-xs font-medium text-muted-foreground"><span>Temperatur °C</span><input type="number" value={settings.ambientTemperatureC} onChange={event => patchSettings({ ambientTemperatureC: Number(event.target.value) })} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" /></label></div><div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">Klicka panelerna i kabelordning. + och - ligger utanför panelen och tar inte bort panelen ur slingan.</div><Canvas map={map} strings={strings} activeId={activeId} activeString={active} onPanelClick={togglePanel} onStartPolarity={setStartPolarity} /><div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-muted/30 p-3"><div className="text-sm text-muted-foreground">Aktiv slinga: <b>{active?.name}</b> · {count(active?.nodes)} paneler · start {active?.startPolarity === 'minus' ? '-' : '+'}</div><div className="flex gap-2"><Button variant="outline" className="text-red-600" onClick={clearActive}><Trash2 className="mr-2 h-4 w-4" />Rensa slinga</Button><Button onClick={() => persist(strings)} disabled={saving}><Save className="mr-2 h-4 w-4" />{saving ? 'Sparar...' : 'Spara nu'}</Button></div>{saveInfo && <div className="w-full text-xs text-muted-foreground">{saveInfo}</div>}</div></CardContent></Card></div>;
+  return <div className="space-y-4"><Card className="border-0 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2"><Cable className="h-5 w-5 text-primary" />Slingmarkering</CardTitle><p className="text-sm text-muted-foreground">Starten ligger utanför första panelen. Slutet ligger på sista panelens anslutning.</p></CardHeader><CardContent className="space-y-4"><div className="rounded-2xl border border-primary/20 bg-primary/5 p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><div><div className="text-sm font-bold">1. Välj antal slingor</div><p className="text-xs text-muted-foreground">Välj antal slingor och klicka panelerna manuellt.</p></div><div className="flex items-center gap-2"><Button variant="outline" size="icon" onClick={() => setCountValue(Math.max(1, countValue - 1))} disabled={countValue <= 1}><Minus className="h-4 w-4" /></Button><input type="number" min="1" max="80" value={countValue} onChange={event => setCountValue(event.target.value)} className="h-10 w-24 rounded-xl border border-border bg-background px-3 text-center text-lg font-black" /><Button variant="outline" size="icon" onClick={() => setCountValue(Math.min(80, countValue + 1))}><Plus className="h-4 w-4" /></Button></div></div><div className="mt-3 flex flex-wrap gap-2">{strings.map(string => <button key={string.id} onClick={() => setActiveId(string.id)} className={`rounded-xl border px-3 py-2 text-xs font-semibold ${string.id === activeId ? 'border-primary bg-primary text-white' : 'border-border bg-background text-muted-foreground'}`}>{string.name} · {count(string.nodes)} paneler · start {string.startPolarity === 'minus' ? '-' : '+'}</button>)}</div></div><div className="grid gap-3 lg:grid-cols-3"><label className="space-y-1 text-xs font-medium text-muted-foreground"><span>Väder</span><select value={settings.weather} onChange={event => patchSettings({ weather: event.target.value })} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm">{WEATHER.map(item => <option key={item} value={item}>{item}</option>)}</select></label><label className="space-y-1 text-xs font-medium text-muted-foreground"><span>Tid</span><select value={settings.timeOfDay} onChange={event => patchSettings({ timeOfDay: event.target.value })} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm">{TIMES.map(item => <option key={item} value={item}>{item}</option>)}</select></label><label className="space-y-1 text-xs font-medium text-muted-foreground"><span>Temperatur °C</span><input type="number" value={settings.ambientTemperatureC} onChange={event => patchSettings({ ambientTemperatureC: Number(event.target.value) })} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" /></label></div><div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">Klicka panelerna i kabelordning. + och - för start ligger utanför första panelen, men slutet ligger kvar på sista panelen.</div><Canvas map={map} strings={strings} activeId={activeId} activeString={active} onPanelClick={togglePanel} onStartPolarity={setStartPolarity} /><div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-muted/30 p-3"><div className="text-sm text-muted-foreground">Aktiv slinga: <b>{active?.name}</b> · {count(active?.nodes)} paneler · start {active?.startPolarity === 'minus' ? '-' : '+'}</div><div className="flex gap-2"><Button variant="outline" className="text-red-600" onClick={clearActive}><Trash2 className="mr-2 h-4 w-4" />Rensa slinga</Button><Button onClick={() => persist(strings)} disabled={saving}><Save className="mr-2 h-4 w-4" />{saving ? 'Sparar...' : 'Spara nu'}</Button></div>{saveInfo && <div className="w-full text-xs text-muted-foreground">{saveInfo}</div>}</div></CardContent></Card></div>;
 }
