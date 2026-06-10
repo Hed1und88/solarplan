@@ -9,6 +9,7 @@ const PROJECT_SERVER_FIELDS = new Set([
   'roof_height_m',
   'roof_image_url',
   'panel_layout_data',
+  'solar_roof_planner_data',
   'existing_installation_image_url',
   'string_layout_data',
   'battery_image_url',
@@ -18,10 +19,26 @@ const PROJECT_SERVER_FIELDS = new Set([
   'selected_products',
   'total_cost',
   'notes',
+  'company_id',
+  'companyId',
+  'organization_id',
+  'organizationId',
+  'tenant_id',
+  'tenantId',
+  'owner_company_id',
+  'ownerCompanyId',
+  'owner_email',
+  'owner_role',
+  'created_by_email',
+  'employee_can_edit',
+  'wholesaler_emails',
+  'allowed_wholesaler_emails',
+  'guest_emails',
 ]);
 
 const JSON_STRING_FIELDS = new Set([
   'panel_layout_data',
+  'solar_roof_planner_data',
   'string_layout_data',
   'battery_layout_data',
   'mounting_data',
@@ -51,8 +68,6 @@ function normalizeJsonStringField(value) {
 function normalizeProjectPatchForServer(patch = {}) {
   const normalized = { ...(patch || {}) };
 
-  // Project schema has panel_layout_data, while the UI works with solar_roof_planner_data.
-  // Store the same payload in panel_layout_data so panel planning survives a real server save.
   if (normalized.solar_roof_planner_data !== undefined && normalized.panel_layout_data === undefined) {
     normalized.panel_layout_data = normalized.solar_roof_planner_data;
   }
