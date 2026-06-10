@@ -1,21 +1,24 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Cable, Layers, Minus, Plus, Save, Trash2 } from 'lucide-react';
+import { Cable, Hand, Layers, Minus, MousePointer2, Move, Plus, Save, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
 
-const SCALE = 58;
+const DEFAULT_SCALE = 58;
 const PLUS = '#ef4444';
 const MINUS = '#334155';
 const OUT = 36;
 const WIRE = 8;
+const PANEL_GAP_M = 0.03;
 const COLORS = ['#ef4444', '#2563eb', '#16a34a', '#f59e0b', '#8b5cf6', '#db2777'];
 const WEATHER = ['Soligt', 'Lätta moln', 'Molnigt', 'Regn'];
 const TIMES = ['06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00'];
+const DEFAULT_PANEL = { id: 'standard', name: 'Standardpanel 500 W', model: 'Standardpanel 500 W', width_mm: 1134, height_mm: 1953, power_watts: 500 };
 
 const num = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const pos = (value, fallback = 0) => num(value, fallback) > 0 ? num(value, fallback) : fallback;
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const uid = () => `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
 const json = (raw, fallback) => { try { return JSON.parse(raw || ''); } catch { return fallback; } };
 const stringKey = id => `solarplan:project:${id}:string_layout_data`;
@@ -26,17 +29,31 @@ function readLocal(key) {
   try { return JSON.parse(window.localStorage.getItem(key) || 'null'); } catch { return null; }
 }
 
-function writeLocal(id, payload) {
+function writeStringLocal(id, payload) {
   if (typeof window === 'undefined' || !id) return;
   try { window.localStorage.setItem(stringKey(id), JSON.stringify(payload)); } catch {}
 }
 
+function writePlannerLocal(id, payload) {
+  if (typeof window === 'undefined' || !id) return;
+  try { window.localStorage.setItem(plannerKey(id), JSON.stringify(payload)); } catch {}
+}
+
+function hasPanelGroups(data) {
+  return data?.roofs?.some(roof => (roof.panelGroups || []).length);
+}
+
 function readPlanner(project) {
   const fromProject = json(project?.solar_roof_planner_data || project?.panel_layout_data, null);
-  if (Array.isArray(fromProject?.roofs) && fromProject.roofs.some(r => (r.panelGroups || []).length)) return fromProject;
   const fromLocal = readLocal(plannerKey(project?.id));
-  if (Array.isArray(fromLocal?.roofs) && fromLocal.roofs.some(r => (r.panelGroups || []).length)) return fromLocal;
-  return { roofs: [] };
+  if (hasPanelGroups(localDataSafe(fromLocal)) && !hasPanelGroups(fromProject)) return fromLocal;
+  if (Array.isArray(fromProject?.roofs) && fromProject.roofs.length) return fromProject;
+  if (Array.isArray(fromLocal?.roofs) && fromLocal.roofs.length) return fromLocal;
+  return { version: 7, scaleType: 'meter', railMode: 'per-panel', roofs: [] };
+}
+
+function localDataSafe(data) {
+  return data && typeof data === 'object' ? data : null;
 }
 
 function readSaved(project) {
@@ -46,43 +63,75 @@ function readSaved(project) {
   return data?.strings ? data : { stringCount: 1, strings: [], settings: {} };
 }
 
+function panelProductForRoof(roof, products, group = null) {
+  return group?.panelProductSnapshot || group?.panelProduct || roof?.panelProductSnapshot || products.find(product => product.id === (group?.panelProductId || roof?.panelProductId)) || DEFAULT_PANEL;
+}
+
 function productSize(product, orientation) {
-  const data = product || {};
-  const w = pos(data.width_mm, 1134) / 1000;
-  const h = pos(data.height_mm, 1953) / 1000;
+  const data = product || DEFAULT_PANEL;
+  const w = pos(data.width_mm, DEFAULT_PANEL.width_mm) / 1000;
+  const h = pos(data.height_mm, DEFAULT_PANEL.height_mm) / 1000;
   return String(orientation || '').toLowerCase().includes('ligg') ? { w: h, h: w } : { w, h };
+}
+
+function groupPhysicalSize(group, roof, products) {
+  const size = productSize(panelProductForRoof(roof, products, group), group.orientation);
+  const cols = Math.max(1, Math.round(pos(group.cols, 1)));
+  const rows = Math.max(1, Math.round(pos(group.rows, 1)));
+  return {
+    w: cols * size.w + Math.max(0, cols - 1) * PANEL_GAP_M,
+    h: rows * size.h + Math.max(0, rows - 1) * PANEL_GAP_M,
+  };
+}
+
+function getPanelBasePosition(group, roof, products, row, col) {
+  const size = productSize(panelProductForRoof(roof, products, group), group.orientation);
+  const key = `${row}-${col}`;
+  const override = group.panelOverrides?.[key];
+  if (override) return { xM: num(override.xM), yM: num(override.yM), overridden: true };
+  return {
+    xM: num(group.xM) + col * (size.w + PANEL_GAP_M),
+    yM: num(group.yM) + row * (size.h + PANEL_GAP_M),
+    overridden: false,
+  };
 }
 
 function roofPoints(x, y, w, h) {
   return `${x},${y} ${x + w},${y} ${x + w},${y + h} ${x},${y + h}`;
 }
 
-function buildMap(plan, products) {
+function buildMap(plan, products, scale) {
   const roofs = [];
   const panels = [];
   let y = 82;
   (plan.roofs || []).forEach((roof, roofIndex) => {
-    const roofId = String(roof.id || `roof-${roofIndex}`);
-    const box = { roof, x: 76, y, w: pos(roof.widthM, 8) * SCALE, h: pos(roof.roofFallM, 6) * SCALE };
+    const roofId = roof.id ?? `roof-${roofIndex}`;
+    const box = { roof, roofId, x: 76, y, w: pos(roof.widthM, 8) * scale, h: pos(roof.roofFallM, 6) * scale };
     roofs.push(box);
     y += box.h + 104;
     (roof.panelGroups || []).forEach((group, groupIndex) => {
-      const product = group.panelProductSnapshot || group.panelProduct || products.find(p => p.id === group.panelProductId) || null;
+      const product = panelProductForRoof(roof, products, group);
       const size = productSize(product, group.orientation);
-      const pw = size.w * SCALE;
-      const ph = size.h * SCALE;
-      const sx = box.x + pos(group.xM) * SCALE;
-      const sy = box.y + pos(group.yM) * SCALE;
+      const pw = size.w * scale;
+      const ph = size.h * scale;
       const rows = Math.max(1, Math.round(pos(group.rows, 1)));
       const cols = Math.max(1, Math.round(pos(group.cols, 1)));
       for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
-          const override = group.panelOverrides?.[`${row}-${col}`];
-          const px = override ? box.x + pos(override.xM) * SCALE : sx + col * (pw + 0.035 * SCALE);
-          const py = override ? box.y + pos(override.yM) * SCALE : sy + row * (ph + 0.035 * SCALE);
+          const p = getPanelBasePosition(group, roof, products, row, col);
+          const px = box.x + p.xM * scale;
+          const py = box.y + p.yM * scale;
           panels.push({
-            id: `${roofId}-${group.id || groupIndex}-${row}-${col}`,
+            id: `${String(roofId)}-${group.id || groupIndex}-${row}-${col}`,
             number: panels.length + 1,
+            roofId,
+            groupId: group.id,
+            groupIndex,
+            groupName: group.name || `Panelgrupp ${groupIndex + 1}`,
+            row,
+            col,
+            xM: p.xM,
+            yM: p.yM,
             x: px,
             y: py,
             w: pw,
@@ -191,40 +240,105 @@ function Terminal({ panel, plus, side = 'inside', selected, onClick }) {
   );
 }
 
-function PanelModule({ panel, owner, selected, activeString, onClick }) {
+function PanelModule({ panel, owner, selected, activeString, tool, dragOffset, onPanelClick, onPanelPointerDown }) {
   const stroke = selected ? activeString?.color || '#ef4444' : owner?.color || '#64748b';
-  const status = owner ? owner.name : 'LEDIG';
+  const status = owner ? owner.name : panel.groupName;
   const tagColor = owner ? owner.color : '#64748b';
+  const x = panel.x + (dragOffset?.dx || 0);
+  const y = panel.y + (dragOffset?.dy || 0);
+  const moving = tool === 'panel' || tool === 'group';
 
   return (
-    <g onClick={() => onClick(panel)} className="cursor-pointer">
-      <rect x={panel.x - 2} y={panel.y - 2} width={panel.w + 4} height={panel.h + 4} rx="7" fill="#cbd5e1" stroke="#94a3b8" strokeWidth="1" />
-      <rect x={panel.x} y={panel.y} width={panel.w} height={panel.h} rx="5" fill="url(#pv-panel-glass)" stroke={stroke} strokeWidth={selected ? 3 : owner ? 2.2 : 1.4} />
-      <rect x={panel.x + 4} y={panel.y + 4} width={Math.max(0, panel.w - 8)} height={Math.max(0, panel.h - 8)} rx="3" fill="url(#pv-cell-grid)" opacity="0.82" />
-      <line x1={panel.x + panel.w * 0.33} y1={panel.y + 5} x2={panel.x + panel.w * 0.33} y2={panel.y + panel.h - 5} stroke="#e2e8f0" strokeWidth="0.6" opacity="0.18" />
-      <line x1={panel.x + panel.w * 0.66} y1={panel.y + 5} x2={panel.x + panel.w * 0.66} y2={panel.y + panel.h - 5} stroke="#e2e8f0" strokeWidth="0.6" opacity="0.18" />
-      <rect x={panel.x + panel.w / 2 - 7} y={panel.y + panel.h - 5} width="14" height="7" rx="1.5" fill="#020617" opacity="0.88" />
-      <circle cx={panel.black.x} cy={panel.black.y} r="4.5" fill="#020617" stroke="#cbd5e1" strokeWidth="1.2" />
-      <circle cx={panel.red.x} cy={panel.red.y} r="4.5" fill="#ef4444" stroke="#fee2e2" strokeWidth="1.2" />
-      <g transform={`translate(${panel.x + 9}, ${panel.y + 10})`}>
+    <g onPointerDown={event => moving && onPanelPointerDown(event, panel)} onClick={() => tool === 'string' && onPanelClick(panel)} className={moving ? 'cursor-move' : 'cursor-pointer'}>
+      <rect x={x - 2} y={y - 2} width={panel.w + 4} height={panel.h + 4} rx="7" fill="#cbd5e1" stroke="#94a3b8" strokeWidth="1" />
+      <rect x={x} y={y} width={panel.w} height={panel.h} rx="5" fill="url(#pv-panel-glass)" stroke={stroke} strokeWidth={selected ? 3 : owner ? 2.2 : 1.4} />
+      <rect x={x + 4} y={y + 4} width={Math.max(0, panel.w - 8)} height={Math.max(0, panel.h - 8)} rx="3" fill="url(#pv-cell-grid)" opacity="0.82" />
+      <line x1={x + panel.w * 0.33} y1={y + 5} x2={x + panel.w * 0.33} y2={y + panel.h - 5} stroke="#e2e8f0" strokeWidth="0.6" opacity="0.18" />
+      <line x1={x + panel.w * 0.66} y1={y + 5} x2={x + panel.w * 0.66} y2={y + panel.h - 5} stroke="#e2e8f0" strokeWidth="0.6" opacity="0.18" />
+      <rect x={x + panel.w / 2 - 7} y={y + panel.h - 5} width="14" height="7" rx="1.5" fill="#020617" opacity="0.88" />
+      <circle cx={x} cy={y + panel.h / 2} r="4.5" fill="#020617" stroke="#cbd5e1" strokeWidth="1.2" />
+      <circle cx={x + panel.w} cy={y + panel.h / 2} r="4.5" fill="#ef4444" stroke="#fee2e2" strokeWidth="1.2" />
+      <g transform={`translate(${x + 9}, ${y + 10})`}>
         <rect width="26" height="16" rx="4" fill="#ffffff" opacity="0.14" />
         <text x="13" y="12" textAnchor="middle" fontFamily="monospace" fontSize="10" fontWeight="900" fill="#f8fafc">{String(panel.number).padStart(2, '0')}</text>
       </g>
-      <text x={panel.x + panel.w / 2} y={panel.y + panel.h - 12} textAnchor="middle" fontSize="9" fontWeight="900" fill={tagColor}>{status}</text>
+      <text x={x + panel.w / 2} y={y + panel.h - 12} textAnchor="middle" fontSize="9" fontWeight="900" fill={tagColor}>{status}</text>
     </g>
   );
 }
 
-function Canvas({ map, strings, activeId, activeString, onPanelClick, onStartPolarity }) {
+function Canvas({ map, strings, activeId, activeString, tool, scale, setScale, onPanelClick, onStartPolarity, onMovePanel, onMoveGroup }) {
   const selectedIds = new Set(ids(activeString?.nodes || []));
   const owners = new Map();
+  const scrollRef = useRef(null);
+  const [drag, setDrag] = useState(null);
+  const [pan, setPan] = useState(null);
+
   strings.forEach(string => ids(string.nodes).forEach(id => {
     if (!owners.has(id) || string.id === activeId) owners.set(id, string);
   }));
 
+  const pointFromEvent = event => {
+    const svg = event.currentTarget.ownerSVGElement || event.currentTarget;
+    const pt = svg.createSVGPoint();
+    pt.x = event.clientX;
+    pt.y = event.clientY;
+    return pt.matrixTransform(svg.getScreenCTM().inverse());
+  };
+
+  const startMove = (event, panel) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.currentTarget.setPointerCapture) event.currentTarget.setPointerCapture(event.pointerId);
+    const point = pointFromEvent(event);
+    setDrag({ panel, mode: tool, startX: point.x, startY: point.y, dxM: 0, dyM: 0 });
+  };
+
+  const startPan = event => {
+    if (tool !== 'pan' || event.target?.tagName !== 'svg') return;
+    const el = scrollRef.current;
+    if (!el) return;
+    setPan({ x: event.clientX, y: event.clientY, left: el.scrollLeft, top: el.scrollTop });
+  };
+
+  const onPointerMove = event => {
+    if (drag) {
+      const point = pointFromEvent(event);
+      setDrag(current => current ? { ...current, dxM: (point.x - current.startX) / scale, dyM: (point.y - current.startY) / scale } : current);
+      return;
+    }
+    if (pan && scrollRef.current) {
+      scrollRef.current.scrollLeft = pan.left - (event.clientX - pan.x);
+      scrollRef.current.scrollTop = pan.top - (event.clientY - pan.y);
+    }
+  };
+
+  const endPointer = () => {
+    if (drag) {
+      if (Math.abs(drag.dxM) > 0.005 || Math.abs(drag.dyM) > 0.005) {
+        if (drag.mode === 'panel') onMovePanel(drag.panel, drag.dxM, drag.dyM);
+        if (drag.mode === 'group') onMoveGroup(drag.panel, drag.dxM, drag.dyM);
+      }
+      setDrag(null);
+    }
+    if (pan) setPan(null);
+  };
+
+  const previewOffset = panel => {
+    if (!drag) return { dx: 0, dy: 0 };
+    if (drag.mode === 'panel' && drag.panel.id === panel.id) return { dx: drag.dxM * scale, dy: drag.dyM * scale };
+    if (drag.mode === 'group' && drag.panel.groupId === panel.groupId && drag.panel.roofId === panel.roofId) return { dx: drag.dxM * scale, dy: drag.dyM * scale };
+    return { dx: 0, dy: 0 };
+  };
+
   return (
-    <div className="overflow-auto rounded-2xl border border-slate-200 bg-white shadow-inner">
-      <svg viewBox={`0 0 ${map.width} ${map.height}`} className="min-h-[620px] w-full min-w-[980px]">
+    <div ref={scrollRef} className="relative overflow-auto rounded-2xl border border-slate-200 bg-white shadow-inner">
+      <div className="absolute right-3 top-3 z-10 flex gap-2 print:hidden">
+        <button onClick={() => setScale(value => Math.min(120, value + 8))} className="rounded bg-white p-2 shadow"><ZoomIn className="h-4 w-4" /></button>
+        <button onClick={() => setScale(value => Math.max(28, value - 8))} className="rounded bg-white p-2 shadow"><ZoomOut className="h-4 w-4" /></button>
+        <button onClick={() => setScale(DEFAULT_SCALE)} className="rounded bg-white px-3 py-2 text-xs font-bold shadow">100%</button>
+      </div>
+      <svg viewBox={`0 0 ${map.width} ${map.height}`} className="block min-h-[620px] w-full min-w-[980px] touch-none" onPointerDown={startPan} onPointerMove={onPointerMove} onPointerUp={endPointer} onPointerCancel={endPointer} onPointerLeave={endPointer}>
         <defs>
           <pattern id="cad-grid" width="32" height="32" patternUnits="userSpaceOnUse">
             <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#e2e8f0" strokeWidth="1" opacity="0.7" />
@@ -278,7 +392,7 @@ function Canvas({ map, strings, activeId, activeString, onPanelClick, onStartPol
         {map.panels.map(panel => {
           const owner = owners.get(panel.id);
           const selected = selectedIds.has(panel.id);
-          return <PanelModule key={panel.id} panel={panel} owner={owner} selected={selected} activeString={activeString} onClick={onPanelClick} />;
+          return <PanelModule key={panel.id} panel={panel} owner={owner} selected={selected} activeString={activeString} tool={tool} dragOffset={previewOffset(panel)} onPanelClick={onPanelClick} onPanelPointerDown={startMove} />;
         })}
       </svg>
     </div>
@@ -287,10 +401,12 @@ function Canvas({ map, strings, activeId, activeString, onPanelClick, onStartPol
 
 export default function StringMarkingTabV7({ project, onUpdate }) {
   const saved = readSaved(project);
-  const plan = useMemo(() => readPlanner(project), [project]);
+  const [plannerData, setPlannerData] = useState(() => readPlanner(project));
   const { data: products = [] } = useQuery({ queryKey: ['products-for-string-marking-stable'], queryFn: () => base44.entities.Product.list('-created_date') });
   const panelProducts = products.filter(product => product.category === 'solpanel' && product.is_active !== false);
-  const map = useMemo(() => buildMap(plan, panelProducts), [plan, panelProducts]);
+  const [scale, setScale] = useState(DEFAULT_SCALE);
+  const [tool, setTool] = useState('string');
+  const map = useMemo(() => buildMap(plannerData, panelProducts, scale), [plannerData, panelProducts, scale]);
   const [countValue, setCountState] = useState(Math.max(1, saved.stringCount || 1));
   const [strings, setStrings] = useState(() => Array.from({ length: Math.max(1, saved.stringCount || 1) }, (_, index) => makeString(index, saved.strings?.[index])));
   const [activeId, setActiveId] = useState(strings[0]?.id || null);
@@ -301,17 +417,17 @@ export default function StringMarkingTabV7({ project, onUpdate }) {
   const active = strings.find(string => string.id === activeId) || strings[0];
 
   const buildPayload = (nextStrings = strings, overrides = {}) => ({
-    version: 52,
-    source: 'virto_inspired_real_panel_string_tab',
+    version: 53,
+    source: 'virto_inspired_real_panel_string_tab_with_move_zoom',
     stringCount: overrides.stringCount ?? countValue,
     settings: overrides.settings ?? settings,
     strings: nextStrings.map(recount),
     savedAt: new Date().toISOString(),
   });
 
-  const persist = async (nextStrings = strings, overrides = {}) => {
+  const persistStrings = async (nextStrings = strings, overrides = {}) => {
     const payload = buildPayload(nextStrings, overrides);
-    writeLocal(project?.id, payload);
+    writeStringLocal(project?.id, payload);
     setSaving(true);
     setSaveInfo('Sparar...');
     try {
@@ -324,10 +440,26 @@ export default function StringMarkingTabV7({ project, onUpdate }) {
     }
   };
 
+  const persistPlanner = async nextPlan => {
+    const payload = { version: nextPlan.version || 7, scaleType: nextPlan.scaleType || 'meter', railMode: nextPlan.railMode || 'per-panel', roofs: nextPlan.roofs || [] };
+    setPlannerData(payload);
+    writePlannerLocal(project?.id, payload);
+    setSaving(true);
+    setSaveInfo('Sparar panelplacering...');
+    try {
+      await onUpdate?.({ solar_roof_planner_data: JSON.stringify(payload) });
+      setSaveInfo(`Panelplacering sparad ${new Date().toLocaleTimeString('sv-SE')}`);
+    } catch {
+      setSaveInfo('Panelplacering sparad lokalt. Servern svarade inte.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const replaceStrings = next => {
     const normalized = next.map(recount);
     setStrings(normalized);
-    persist(normalized).catch(() => {});
+    persistStrings(normalized).catch(() => {});
   };
 
   const setCountValue = value => {
@@ -336,13 +468,13 @@ export default function StringMarkingTabV7({ project, onUpdate }) {
     setCountState(nextCount);
     setStrings(next);
     if (!next.some(string => string.id === activeId)) setActiveId(next[0]?.id || null);
-    persist(next, { stringCount: nextCount }).catch(() => {});
+    persistStrings(next, { stringCount: nextCount }).catch(() => {});
   };
 
   const patchSettings = patch => {
     const next = { ...settings, ...patch };
     setSettings(next);
-    persist(strings, { settings: next }).catch(() => {});
+    persistStrings(strings, { settings: next }).catch(() => {});
   };
 
   const togglePanel = panel => {
@@ -364,6 +496,45 @@ export default function StringMarkingTabV7({ project, onUpdate }) {
 
   const clearActive = () => active?.id && replaceStrings(strings.map(string => string.id === active.id ? recount({ ...string, nodes: [] }) : string));
 
+  const updateGroup = (roofId, groupId, updater) => {
+    const next = {
+      ...plannerData,
+      roofs: (plannerData.roofs || []).map(roof => String(roof.id) === String(roofId)
+        ? { ...roof, panelGroups: (roof.panelGroups || []).map(group => String(group.id) === String(groupId) ? updater(group, roof) : group) }
+        : roof),
+    };
+    persistPlanner(next).catch(() => {});
+  };
+
+  const movePanel = (panel, dxM, dyM) => {
+    updateGroup(panel.roofId, panel.groupId, (group, roof) => {
+      const size = productSize(panelProductForRoof(roof, panelProducts, group), group.orientation);
+      const key = `${panel.row}-${panel.col}`;
+      const current = getPanelBasePosition(group, roof, panelProducts, panel.row, panel.col);
+      return {
+        ...group,
+        panelOverrides: {
+          ...(group.panelOverrides || {}),
+          [key]: {
+            xM: clamp(num(current.xM) + dxM, 0, Math.max(0, pos(roof.widthM, 8) - size.w)),
+            yM: clamp(num(current.yM) + dyM, 0, Math.max(0, pos(roof.roofFallM, 6) - size.h)),
+          },
+        },
+      };
+    });
+  };
+
+  const moveGroup = (panel, dxM, dyM) => {
+    updateGroup(panel.roofId, panel.groupId, (group, roof) => {
+      const size = groupPhysicalSize(group, roof, panelProducts);
+      return {
+        ...group,
+        xM: clamp(num(group.xM) + dxM, 0, Math.max(0, pos(roof.widthM, 8) - size.w)),
+        yM: clamp(num(group.yM) + dyM, 0, Math.max(0, pos(roof.roofFallM, 6) - size.h)),
+      };
+    });
+  };
+
   if (!map.panels.length) {
     return (
       <Card className="border-slate-200 shadow-sm">
@@ -384,21 +555,28 @@ export default function StringMarkingTabV7({ project, onUpdate }) {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <CardTitle className="flex items-center gap-2 text-slate-950"><Cable className="h-5 w-5 text-slate-900" />Slingor - CAD stringing</CardTitle>
-              <p className="mt-1 text-sm text-slate-500">Klicka riktiga paneler i kabelordning. Starten ligger utanför första panelen och slutet på sista panelens anslutning.</p>
+              <p className="mt-1 text-sm text-slate-500">Stränga paneler, zooma/panorera ritningen eller flytta paneler/grupper. Flytt sparas tillbaka till Paneler-fliken.</p>
             </div>
             <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
               <Layers className="h-4 w-4" />
-              Lager: paneler, takgräns, DC+, DC-, terminaler
+              Zoom {scale} px/m · Lager: paneler, takgräns, DC+, DC-, terminaler
             </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4 p-4">
-          <div className="grid gap-4 xl:grid-cols-[220px_1fr_260px]">
+          <div className="grid gap-4 xl:grid-cols-[240px_1fr_270px]">
             <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-3">
               <div>
                 <div className="text-xs font-black uppercase tracking-wide text-slate-500">Verktyg</div>
-                <div className="mt-1 text-sm font-bold text-slate-900">Välj antal slingor</div>
+                <div className="mt-1 text-sm font-bold text-slate-900">Arbetsläge</div>
               </div>
+              <div className="grid gap-2">
+                <Button size="sm" variant={tool === 'string' ? 'default' : 'outline'} onClick={() => setTool('string')}><MousePointer2 className="mr-2 h-4 w-4" />Stränga</Button>
+                <Button size="sm" variant={tool === 'panel' ? 'default' : 'outline'} onClick={() => setTool('panel')}><Move className="mr-2 h-4 w-4" />Flytta panel</Button>
+                <Button size="sm" variant={tool === 'group' ? 'default' : 'outline'} onClick={() => setTool('group')}><Move className="mr-2 h-4 w-4" />Flytta grupp</Button>
+                <Button size="sm" variant={tool === 'pan' ? 'default' : 'outline'} onClick={() => setTool('pan')}><Hand className="mr-2 h-4 w-4" />Panorera</Button>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-2 text-xs text-slate-600">Stränga = klicka paneler. Flytta panel/grupp = dra panelen. Panorera = dra tom rityta eller använd scroll.</div>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="icon" onClick={() => setCountValue(Math.max(1, countValue - 1))} disabled={countValue <= 1}><Minus className="h-4 w-4" /></Button>
                 <input type="number" min="1" max="80" value={countValue} onChange={event => setCountValue(event.target.value)} className="h-10 w-20 rounded-xl border border-slate-300 bg-white px-2 text-center text-lg font-black text-slate-900" />
@@ -414,7 +592,7 @@ export default function StringMarkingTabV7({ project, onUpdate }) {
               </div>
             </div>
 
-            <Canvas map={map} strings={strings} activeId={activeId} activeString={active} onPanelClick={togglePanel} onStartPolarity={setStartPolarity} />
+            <Canvas map={map} strings={strings} activeId={activeId} activeString={active} tool={tool} scale={scale} setScale={setScale} onPanelClick={togglePanel} onStartPolarity={setStartPolarity} onMovePanel={movePanel} onMoveGroup={moveGroup} />
 
             <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-3">
               <div>
@@ -425,9 +603,9 @@ export default function StringMarkingTabV7({ project, onUpdate }) {
               <label className="space-y-1 text-xs font-semibold text-slate-500"><span>Väder</span><select value={settings.weather} onChange={event => patchSettings({ weather: event.target.value })} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900">{WEATHER.map(item => <option key={item} value={item}>{item}</option>)}</select></label>
               <label className="space-y-1 text-xs font-semibold text-slate-500"><span>Tid</span><select value={settings.timeOfDay} onChange={event => patchSettings({ timeOfDay: event.target.value })} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900">{TIMES.map(item => <option key={item} value={item}>{item}</option>)}</select></label>
               <label className="space-y-1 text-xs font-semibold text-slate-500"><span>Temperatur °C</span><input type="number" value={settings.ambientTemperatureC} onChange={event => patchSettings({ ambientTemperatureC: Number(event.target.value) })} className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900" /></label>
-              <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-900">Panelerna är riktiga objekt från panelritningen, inte statiska blå CAD-rutor.</div>
+              <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs text-blue-900">Flytt sparas i samma <b>solar_roof_planner_data</b> som Paneler-fliken använder.</div>
               <Button variant="outline" className="w-full text-red-600" onClick={clearActive}><Trash2 className="mr-2 h-4 w-4" />Rensa slinga</Button>
-              <Button className="w-full" onClick={() => persist(strings)} disabled={saving}><Save className="mr-2 h-4 w-4" />{saving ? 'Sparar...' : 'Spara nu'}</Button>
+              <Button className="w-full" onClick={() => persistStrings(strings)} disabled={saving}><Save className="mr-2 h-4 w-4" />{saving ? 'Sparar...' : 'Spara nu'}</Button>
               {saveInfo && <div className="text-xs text-slate-500">{saveInfo}</div>}
             </div>
           </div>
