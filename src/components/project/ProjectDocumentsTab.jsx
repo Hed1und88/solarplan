@@ -9,8 +9,13 @@ function safeJson(raw, fallback = null) {
   try { return JSON.parse(raw || ''); } catch { return fallback; }
 }
 
+function productIsActive(product = {}) {
+  const status = String(product.status || product.state || '').toLowerCase();
+  return !product.deleted && !product.archived && !product.is_deleted && !product.removed && !['deleted', 'archived', 'inactive', 'removed'].includes(status);
+}
+
 function productById(products, id) {
-  return products.find(product => String(product.id) === String(id)) || null;
+  return products.find(product => String(product.id) === String(id) && productIsActive(product)) || null;
 }
 
 function norm(value) {
@@ -43,17 +48,18 @@ function mergeProductData(base = {}, fallbackProduct = null) {
 }
 
 function normalizeProjectProduct(entry = {}, fallbackProduct = null, source = 'Projekt') {
+  if (!fallbackProduct) return null;
   const snapshot = entry.product_snapshot || entry.panelProductSnapshot || entry.snapshot || null;
-  const base = snapshot || (fallbackProduct ? createProductSnapshot(fallbackProduct) : null) || entry;
+  const base = snapshot || createProductSnapshot(fallbackProduct) || entry;
   const productData = mergeProductData(base, fallbackProduct);
   const docs = productDocuments({ ...productData, documents_snapshot: entry.documents_snapshot || base.documents_snapshot });
   const item = {
-    id: entry.product_id || entry.panelProductId || productData.product_id || productData.id || fallbackProduct?.id || '',
-    product_id: entry.product_id || entry.panelProductId || productData.product_id || productData.id || fallbackProduct?.id || '',
-    name: entry.product_name || productData.name || fallbackProduct?.name || 'Produkt',
-    brand: productData.brand || fallbackProduct?.brand || '',
-    model: productData.model || fallbackProduct?.model || '',
-    category: productData.category || fallbackProduct?.category || 'ovrigt',
+    id: entry.product_id || entry.panelProductId || productData.product_id || productData.id || fallbackProduct.id || '',
+    product_id: entry.product_id || entry.panelProductId || productData.product_id || productData.id || fallbackProduct.id || '',
+    name: entry.product_name || productData.name || fallbackProduct.name || 'Produkt',
+    brand: productData.brand || fallbackProduct.brand || '',
+    model: productData.model || fallbackProduct.model || '',
+    category: productData.category || fallbackProduct.category || 'ovrigt',
     sources: [source],
     source,
     hasSnapshot: Boolean(snapshot || entry.product_snapshot || entry.documents_snapshot?.length),
@@ -83,6 +89,7 @@ function mergeDuplicate(existing, incoming) {
 }
 
 function pushUnique(list, entry) {
+  if (!entry?.product_id) return;
   const key = entry.product_key || productKey(entry);
   const index = list.findIndex(item => (item.product_key || productKey(item)) === key);
   if (index === -1) list.push({ ...entry, product_key: key });
@@ -93,30 +100,30 @@ function collectProjectProducts(project = {}, products = []) {
   const list = [];
 
   (Array.isArray(project?.selected_products) ? project.selected_products : []).forEach(item => {
-    pushUnique(list, normalizeProjectProduct(item, productById(products, item.product_id), 'Produktfliken'));
+    const product = productById(products, item.product_id);
+    pushUnique(list, normalizeProjectProduct(item, product, 'Produktfliken'));
   });
 
   const planner = safeJson(project?.solar_roof_planner_data || project?.panel_layout_data, null);
   (planner?.roofs || []).forEach(roof => {
-    if (!roof?.panelProductId && !roof?.panelProductSnapshot) return;
-    pushUnique(list, normalizeProjectProduct({ product_id: roof.panelProductId, product_name: roof.panelProductSnapshot?.name || roof.name, product_snapshot: roof.panelProductSnapshot }, productById(products, roof.panelProductId), `Paneler / ${roof.name || 'Tak'}`));
+    const productId = roof.panelProductId || roof.panelProductSnapshot?.product_id || roof.panelProductSnapshot?.id;
+    const product = productById(products, productId);
+    if (!product) return;
+    pushUnique(list, normalizeProjectProduct({ product_id: productId, product_name: roof.panelProductSnapshot?.name || product.name, product_snapshot: roof.panelProductSnapshot }, product, `Paneler / ${roof.name || 'Tak'}`));
   });
 
   const stringData = safeJson(project?.string_layout_data, null);
-  (stringData?.strings || []).forEach(item => {
-    if (!item?.panelProductId && !item?.panelProductSnapshot) return;
-    pushUnique(list, normalizeProjectProduct({ product_id: item.panelProductId, product_name: item.panelProductSnapshot?.name || item.name, product_snapshot: item.panelProductSnapshot }, productById(products, item.panelProductId), `Slingor / ${item.name || 'Slinga'}`));
-  });
-
   (stringData?.inverterConfigs || []).forEach((cfg, index) => {
-    if (!cfg?.productId) return;
-    const fallback = productById(products, cfg.productId);
-    pushUnique(list, normalizeProjectProduct({ product_id: cfg.productId, product_name: cfg.name || `Växelriktare ${index + 1}`, product_snapshot: fallback ? createProductSnapshot(fallback) : null }, fallback, `Slingor / ${cfg.name || `Växelriktare ${index + 1}`}`));
+    const productId = cfg.productId || cfg.productSnapshot?.product_id || cfg.productSnapshot?.id;
+    const product = productById(products, productId);
+    if (!product) return;
+    pushUnique(list, normalizeProjectProduct({ product_id: productId, product_name: cfg.productSnapshot?.name || cfg.name || product.name || `Växelriktare ${index + 1}`, product_snapshot: cfg.productSnapshot }, product, `Slingor / ${cfg.name || `Växelriktare ${index + 1}`}`));
   });
 
   const mounting = safeJson(project?.mounting_data, null);
   if (mounting?.selectedPanelId) {
-    pushUnique(list, normalizeProjectProduct({ product_id: mounting.selectedPanelId, product_name: mounting.selectedPanelName }, productById(products, mounting.selectedPanelId), 'Montage'));
+    const product = productById(products, mounting.selectedPanelId);
+    pushUnique(list, normalizeProjectProduct({ product_id: mounting.selectedPanelId, product_name: mounting.selectedPanelName, product_snapshot: mounting.selectedPanelSnapshot }, product, 'Montage'));
   }
 
   return list;
@@ -171,12 +178,6 @@ function refreshProjectSnapshots(project = {}, products = []) {
   if (stringData) {
     const nextStringData = {
       ...stringData,
-      strings: Array.isArray(stringData.strings) ? stringData.strings.map(item => {
-        const snapshot = snapshotFromProduct(products, item.panelProductId);
-        if (!snapshot) return item;
-        updated += 1;
-        return { ...item, panelProductSnapshot: snapshot };
-      }) : stringData.strings,
       inverterConfigs: Array.isArray(stringData.inverterConfigs) ? stringData.inverterConfigs.map(item => {
         const snapshot = snapshotFromProduct(products, item.productId);
         if (!snapshot) return item;
@@ -252,15 +253,15 @@ export default function ProjectDocumentsTab({ project, products = [], onUpdate }
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <CardTitle className="flex items-center gap-2 text-lg"><FileText className="h-5 w-5 text-primary" /> Dokument för projektets produkter</CardTitle>
-              <p className="mt-1 text-sm text-muted-foreground">Samma produkt visas bara en gång även om den används i flera delar av projektet. Källorna samlas på samma produktkort.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Endast aktiva produkter som fortfarande finns i Produktsortimentet visas. Slingor räknas inte som produkter.</p>
             </div>
             <Button onClick={handleRefreshSnapshots} disabled={refreshing || !products.length || !projectProducts.length || !onUpdate} variant="outline" size="sm" className="gap-2"><RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />{refreshing ? 'Uppdaterar...' : 'Uppdatera projektsnapshots'}</Button>
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
           {refreshMsg && <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">{refreshMsg}</div>}
-          {projectProducts.length === 0 ? <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">Inga produkter är kopplade till projektet ännu. Välj panel i Paneler/Montage eller lägg till produkter i Produktfliken.</div> : <>
-            {missing.length > 0 && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="mr-2 inline h-4 w-4" />{missing.length} unik(a) produkt(er) saknar manual eller datablad. Produktdata kan vara sparad, men dokumenten saknas på produkten eller i projektets snapshot.</div>}
+          {projectProducts.length === 0 ? <div className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">Inga aktiva produkter är kopplade till projektet ännu. Välj panel i Paneler/Montage eller lägg till produkter i Produktfliken.</div> : <>
+            {missing.length > 0 && <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="mr-2 inline h-4 w-4" />{missing.length} unik(a) produkt(er) saknar manual eller datablad.</div>}
             <div className="space-y-3">
               {projectProducts.map(product => {
                 const docs = product.documents_snapshot || [];
