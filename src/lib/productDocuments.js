@@ -147,11 +147,20 @@ export function normalizeDocuments(documents = []) {
 }
 
 export function productDocuments(product = {}) {
-  if (Array.isArray(product?.documents_snapshot)) return normalizeDocuments(product.documents_snapshot);
-  if (Array.isArray(product?.documents)) return normalizeDocuments(product.documents);
-  if (Array.isArray(product?.product_documents)) return normalizeDocuments(product.product_documents);
-  const meta = productMeta(product);
-  return normalizeDocuments(meta.documents || []);
+  const docs = [
+    ...normalizeDocuments(product?.documents_snapshot || []),
+    ...normalizeDocuments(product?.documents || []),
+    ...normalizeDocuments(product?.product_documents || []),
+    ...normalizeDocuments(productMeta(product).documents || []),
+  ];
+
+  const seen = new Set();
+  return docs.filter(doc => {
+    const key = [doc.type, doc.file_url, doc.name].map(value => String(value || '').trim().toLowerCase()).join('|');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export function productHasRequiredDocuments(product = {}) {
@@ -271,11 +280,6 @@ export function selectedProjectProductIds(project = {}) {
 
   try {
     const strings = JSON.parse(project?.string_layout_data || '{}');
-    (strings?.strings || []).forEach(item => {
-      if (item.panelProductId) ids.add(item.panelProductId);
-      if (item.panelProductSnapshot?.id) ids.add(item.panelProductSnapshot.id);
-      if (item.panelProductSnapshot?.product_id) ids.add(item.panelProductSnapshot.product_id);
-    });
     (strings?.inverterConfigs || []).forEach(item => item?.productId && ids.add(item.productId));
   } catch {}
 
