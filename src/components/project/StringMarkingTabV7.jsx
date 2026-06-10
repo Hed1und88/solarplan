@@ -7,7 +7,7 @@ import { Cable, Minus, Plus, Save, Trash2 } from 'lucide-react';
 
 const SCALE = 58;
 const PLUS = '#ef4444';
-const MINUS = '#111827';
+const MINUS = '#e2e8f0';
 const OUT = 36;
 const WIRE = 8;
 const COLORS = ['#ef4444', '#2563eb', '#16a34a', '#f59e0b', '#8b5cf6', '#db2777'];
@@ -184,8 +184,10 @@ function Terminal({ panel, plus, side = 'inside', selected, onClick }) {
   const color = plus ? PLUS : MINUS;
   return (
     <g onClick={event => { event.stopPropagation(); onClick?.(); }} className="cursor-pointer">
-      <circle cx={point.x} cy={point.y} r={selected ? 12 : 10} fill="white" stroke={color} strokeWidth={selected ? 4 : 2.5} />
-      <text x={point.x} y={point.y + 5} textAnchor="middle" fontSize="17" fontWeight="900" fill={color}>{plus ? '+' : '-'}</text>
+      <circle cx={point.x} cy={point.y} r={selected ? 13 : 11} fill="none" stroke={color} strokeWidth={selected ? 1.4 : 1} opacity="0.32" filter="url(#terminal-glow)" />
+      <circle cx={point.x} cy={point.y} r={selected ? 9 : 7.5} fill="#020617" stroke={color} strokeWidth={selected ? 2.2 : 1.4} />
+      <circle cx={point.x} cy={point.y} r={selected ? 4.5 : 3.5} fill={color} opacity={selected ? 0.95 : 0.72} />
+      <text x={point.x} y={point.y + 4.5} textAnchor="middle" fontSize="12" fontWeight="900" fill={plus ? '#fee2e2' : '#020617'}>{plus ? '+' : '-'}</text>
     </g>
   );
 }
@@ -198,10 +200,43 @@ function Canvas({ map, strings, activeId, activeString, onPanelClick, onStartPol
   }));
 
   return (
-    <div className="overflow-auto rounded-2xl border bg-white">
-      <svg viewBox={`0 0 ${map.width} ${map.height}`} className="min-h-[560px] w-full min-w-[900px]">
-        <defs><pattern id="roof-hatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="10" stroke="#e2e8f0" strokeWidth="3" /></pattern></defs>
-        {map.roofs.map(roof => <g key={roof.roof.id || roof.roof.name}><text x={roof.x} y={roof.y - 22} fontSize="18" fontWeight="800">{roof.roof.name || 'Tak'}</text><polygon points={roofPoints(roof.x, roof.y, roof.w, roof.h)} fill="url(#roof-hatch)" stroke="#0f172a" strokeWidth="2.5" /></g>)}
+    <div className="overflow-auto rounded-3xl border border-slate-800 bg-slate-950 shadow-inner shadow-cyan-950/40">
+      <svg viewBox={`0 0 ${map.width} ${map.height}`} className="min-h-[560px] w-full min-w-[900px] bg-slate-950">
+        <defs>
+          <pattern id="tech-grid" width="32" height="32" patternUnits="userSpaceOnUse">
+            <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#1e293b" strokeWidth="1" opacity="0.75" />
+          </pattern>
+          <pattern id="roof-hatch" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <line x1="0" y1="0" x2="0" y2="14" stroke="#334155" strokeWidth="2" opacity="0.7" />
+          </pattern>
+          <linearGradient id="panel-idle" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#172554" />
+            <stop offset="52%" stopColor="#0f172a" />
+            <stop offset="100%" stopColor="#111827" />
+          </linearGradient>
+          <filter id="panel-soft-shadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="3" stdDeviation="3" floodColor="#38bdf8" floodOpacity="0.20" />
+          </filter>
+          <filter id="cable-glow" x="-35%" y="-35%" width="170%" height="170%">
+            <feDropShadow dx="0" dy="0" stdDeviation="2.4" floodColor="#38bdf8" floodOpacity="0.32" />
+          </filter>
+          <filter id="terminal-glow" x="-70%" y="-70%" width="240%" height="240%">
+            <feDropShadow dx="0" dy="0" stdDeviation="2.8" floodColor="#f8fafc" floodOpacity="0.38" />
+          </filter>
+        </defs>
+        <rect width={map.width} height={map.height} fill="#020617" />
+        <rect width={map.width} height={map.height} fill="url(#tech-grid)" opacity="0.78" />
+        <circle cx={map.width * 0.16} cy="70" r="220" fill="#0ea5e9" opacity="0.06" />
+        <circle cx={map.width * 0.86} cy={map.height * 0.62} r="280" fill="#ef4444" opacity="0.035" />
+
+        {map.roofs.map(roof => (
+          <g key={roof.roof.id || roof.roof.name}>
+            <text x={roof.x} y={roof.y - 22} fontSize="18" fontWeight="900" fill="#e2e8f0">{roof.roof.name || 'Tak'}</text>
+            <polygon points={roofPoints(roof.x, roof.y, roof.w, roof.h)} fill="url(#roof-hatch)" stroke="#475569" strokeWidth="1.4" opacity="0.95" />
+            <polygon points={roofPoints(roof.x + 4, roof.y + 4, Math.max(0, roof.w - 8), Math.max(0, roof.h - 8))} fill="none" stroke="#0f172a" strokeWidth="1" opacity="0.9" />
+          </g>
+        ))}
+
         {strings.map(string => {
           const path = cablePath(string, map);
           if (!path.panels.length) return null;
@@ -209,22 +244,38 @@ function Canvas({ map, strings, activeId, activeString, onPanelClick, onStartPol
           const startPlus = path.startPolarity === 'plus';
           const startPanel = path.panels[0];
           const endPanel = path.panels[path.panels.length - 1];
-          return <g key={string.id}>
-            <polyline points={pointText(path.plus)} fill="none" stroke={PLUS} strokeWidth={isActive ? 4 : 2.5} strokeLinecap="round" strokeLinejoin="round" opacity={isActive ? 1 : 0.55} />
-            <polyline points={pointText(path.minus)} fill="none" stroke={MINUS} strokeWidth={isActive ? 4 : 2.5} strokeLinecap="round" strokeLinejoin="round" opacity={isActive ? 0.9 : 0.55} />
-            {startPlus && path.plus.map((point, index) => <circle key={`p-${index}`} cx={point.x} cy={point.y} r={isActive ? 3.5 : 2.5} fill={PLUS} stroke="white" />)}
-            {!startPlus && path.minus.map((point, index) => <circle key={`m-${index}`} cx={point.x} cy={point.y} r={isActive ? 3.5 : 2.5} fill={MINUS} stroke="white" strokeWidth="1.5" />)}
-            {isActive && <Terminal panel={startPanel} plus selected={startPlus} side="left" onClick={() => onStartPolarity(string.id, 'plus')} />}
-            {isActive && <Terminal panel={startPanel} plus={false} selected={!startPlus} side="left" onClick={() => onStartPolarity(string.id, 'minus')} />}
-            {isActive && <Terminal panel={endPanel} plus={!startPlus} selected />}
-          </g>;
+          return (
+            <g key={string.id}>
+              <polyline points={pointText(path.plus)} fill="none" stroke={PLUS} strokeWidth={isActive ? 5 : 3.2} strokeLinecap="round" strokeLinejoin="round" opacity={isActive ? 0.18 : 0.08} filter="url(#cable-glow)" />
+              <polyline points={pointText(path.plus)} fill="none" stroke={PLUS} strokeWidth={isActive ? 2.25 : 1.35} strokeLinecap="round" strokeLinejoin="round" opacity={isActive ? 0.95 : 0.46} />
+              <polyline points={pointText(path.minus)} fill="none" stroke={MINUS} strokeWidth={isActive ? 5 : 3.2} strokeLinecap="round" strokeLinejoin="round" opacity={isActive ? 0.16 : 0.08} filter="url(#cable-glow)" />
+              <polyline points={pointText(path.minus)} fill="none" stroke={MINUS} strokeWidth={isActive ? 2.25 : 1.35} strokeLinecap="round" strokeLinejoin="round" opacity={isActive ? 0.88 : 0.4} />
+              {startPlus && path.plus.map((point, index) => <circle key={`p-${index}`} cx={point.x} cy={point.y} r={isActive ? 2.3 : 1.5} fill={PLUS} opacity={isActive ? 0.95 : 0.5} />)}
+              {!startPlus && path.minus.map((point, index) => <circle key={`m-${index}`} cx={point.x} cy={point.y} r={isActive ? 2.3 : 1.5} fill={MINUS} opacity={isActive ? 0.9 : 0.45} />)}
+              {isActive && <Terminal panel={startPanel} plus selected={startPlus} side="left" onClick={() => onStartPolarity(string.id, 'plus')} />}
+              {isActive && <Terminal panel={startPanel} plus={false} selected={!startPlus} side="left" onClick={() => onStartPolarity(string.id, 'minus')} />}
+              {isActive && <Terminal panel={endPanel} plus={!startPlus} selected />}
+            </g>
+          );
         })}
+
         {map.panels.map(panel => {
           const owner = owners.get(panel.id);
           const selected = selectedIds.has(panel.id);
-          const fill = owner ? `${owner.color}22` : '#dbeafe';
-          const stroke = selected ? activeString?.color || '#2563eb' : owner?.color || '#2563eb';
-          return <g key={panel.id} onClick={() => onPanelClick(panel)} className="cursor-pointer"><rect x={panel.x} y={panel.y} width={panel.w} height={panel.h} rx="4" fill={fill} stroke={stroke} strokeWidth={selected ? 4 : owner ? 3 : 1.5} /><text x={panel.x + panel.w / 2} y={panel.y + panel.h / 2 + 4} textAnchor="middle" fontSize="10" fontWeight="800" fill="#1d4ed8">{panel.number}</text>{owner && <text x={panel.x + panel.w / 2} y={panel.y + panel.h - 6} textAnchor="middle" fontSize="9" fontWeight="800" fill={owner.color}>{owner.name}</text>}<circle cx={panel.black.x} cy={panel.black.y} r="5" fill="#111827" stroke="white" strokeWidth="1.5" /><circle cx={panel.red.x} cy={panel.red.y} r="5" fill="#dc2626" stroke="white" strokeWidth="1.5" /></g>;
+          const fill = owner ? `${owner.color}2f` : 'url(#panel-idle)';
+          const stroke = selected ? activeString?.color || '#38bdf8' : owner?.color || '#38bdf8';
+          const labelFill = selected || owner ? '#f8fafc' : '#94a3b8';
+          return (
+            <g key={panel.id} onClick={() => onPanelClick(panel)} className="cursor-pointer">
+              <rect x={panel.x} y={panel.y} width={panel.w} height={panel.h} rx="6" fill={fill} stroke={stroke} strokeWidth={selected ? 2.8 : owner ? 2 : 1.1} filter={selected || owner ? 'url(#panel-soft-shadow)' : undefined} />
+              <rect x={panel.x + 4} y={panel.y + 4} width={Math.max(0, panel.w - 8)} height={Math.max(0, panel.h - 8)} rx="4" fill="none" stroke="#ffffff" strokeWidth="1" opacity="0.07" />
+              <line x1={panel.x + 8} y1={panel.y + 8} x2={panel.x + panel.w - 8} y2={panel.y + 8} stroke="#93c5fd" strokeWidth="1" opacity="0.16" />
+              <text x={panel.x + panel.w / 2} y={panel.y + panel.h / 2 + 4} textAnchor="middle" fontSize="10" fontWeight="900" fill={labelFill}>{panel.number}</text>
+              {owner && <text x={panel.x + panel.w / 2} y={panel.y + panel.h - 6} textAnchor="middle" fontSize="9" fontWeight="900" fill={owner.color}>{owner.name}</text>}
+              <circle cx={panel.black.x} cy={panel.black.y} r="4.2" fill="#020617" stroke="#cbd5e1" strokeWidth="1.2" />
+              <circle cx={panel.red.x} cy={panel.red.y} r="4.2" fill="#ef4444" stroke="#fee2e2" strokeWidth="1.2" />
+            </g>
+          );
         })}
       </svg>
     </div>
@@ -311,8 +362,96 @@ export default function StringMarkingTabV7({ project, onUpdate }) {
   const clearActive = () => active?.id && replaceStrings(strings.map(string => string.id === active.id ? recount({ ...string, nodes: [] }) : string));
 
   if (!map.panels.length) {
-    return <Card className="border-0 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2"><Cable className="h-5 w-5 text-primary" />Slingmarkering</CardTitle></CardHeader><CardContent><div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Ingen panelritning hittades. Skapa panelplacering i fliken Paneler först.</div></CardContent></Card>;
+    return (
+      <Card className="overflow-hidden border-slate-800 bg-slate-950 text-slate-100 shadow-xl">
+        <CardHeader className="border-b border-slate-800 bg-slate-900/70">
+          <CardTitle className="flex items-center gap-2">
+            <Cable className="h-5 w-5 text-cyan-300" />
+            Slingmarkering
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-4">
+          <div className="rounded-2xl border border-amber-400/30 bg-amber-500/10 p-4 text-sm text-amber-100">Ingen panelritning hittades. Skapa panelplacering i fliken Paneler först.</div>
+        </CardContent>
+      </Card>
+    );
   }
 
-  return <div className="space-y-4"><Card className="border-0 shadow-sm"><CardHeader><CardTitle className="flex items-center gap-2"><Cable className="h-5 w-5 text-primary" />Slingmarkering</CardTitle><p className="text-sm text-muted-foreground">Starten ligger utanför första panelen. Slutet ligger på sista panelens anslutning.</p></CardHeader><CardContent className="space-y-4"><div className="rounded-2xl border border-primary/20 bg-primary/5 p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><div><div className="text-sm font-bold">1. Välj antal slingor</div><p className="text-xs text-muted-foreground">Välj antal slingor och klicka panelerna manuellt.</p></div><div className="flex items-center gap-2"><Button variant="outline" size="icon" onClick={() => setCountValue(Math.max(1, countValue - 1))} disabled={countValue <= 1}><Minus className="h-4 w-4" /></Button><input type="number" min="1" max="80" value={countValue} onChange={event => setCountValue(event.target.value)} className="h-10 w-24 rounded-xl border border-border bg-background px-3 text-center text-lg font-black" /><Button variant="outline" size="icon" onClick={() => setCountValue(Math.min(80, countValue + 1))}><Plus className="h-4 w-4" /></Button></div></div><div className="mt-3 flex flex-wrap gap-2">{strings.map(string => <button key={string.id} onClick={() => setActiveId(string.id)} className={`rounded-xl border px-3 py-2 text-xs font-semibold ${string.id === activeId ? 'border-primary bg-primary text-white' : 'border-border bg-background text-muted-foreground'}`}>{string.name} · {count(string.nodes)} paneler · start {string.startPolarity === 'minus' ? '-' : '+'}</button>)}</div></div><div className="grid gap-3 lg:grid-cols-3"><label className="space-y-1 text-xs font-medium text-muted-foreground"><span>Väder</span><select value={settings.weather} onChange={event => patchSettings({ weather: event.target.value })} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm">{WEATHER.map(item => <option key={item} value={item}>{item}</option>)}</select></label><label className="space-y-1 text-xs font-medium text-muted-foreground"><span>Tid</span><select value={settings.timeOfDay} onChange={event => patchSettings({ timeOfDay: event.target.value })} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm">{TIMES.map(item => <option key={item} value={item}>{item}</option>)}</select></label><label className="space-y-1 text-xs font-medium text-muted-foreground"><span>Temperatur °C</span><input type="number" value={settings.ambientTemperatureC} onChange={event => patchSettings({ ambientTemperatureC: Number(event.target.value) })} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" /></label></div><div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">Klicka panelerna i kabelordning. + och - för start ligger utanför första panelen, men slutet ligger kvar på sista panelen.</div><Canvas map={map} strings={strings} activeId={activeId} activeString={active} onPanelClick={togglePanel} onStartPolarity={setStartPolarity} /><div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-muted/30 p-3"><div className="text-sm text-muted-foreground">Aktiv slinga: <b>{active?.name}</b> · {count(active?.nodes)} paneler · start {active?.startPolarity === 'minus' ? '-' : '+'}</div><div className="flex gap-2"><Button variant="outline" className="text-red-600" onClick={clearActive}><Trash2 className="mr-2 h-4 w-4" />Rensa slinga</Button><Button onClick={() => persist(strings)} disabled={saving}><Save className="mr-2 h-4 w-4" />{saving ? 'Sparar...' : 'Spara nu'}</Button></div>{saveInfo && <div className="w-full text-xs text-muted-foreground">{saveInfo}</div>}</div></CardContent></Card></div>;
+  return (
+    <div className="space-y-4">
+      <Card className="overflow-hidden border-slate-800 bg-slate-950 text-slate-100 shadow-2xl shadow-slate-950/40">
+        <CardHeader className="border-b border-slate-800 bg-slate-900/80">
+          <CardTitle className="flex items-center gap-2">
+            <Cable className="h-5 w-5 text-cyan-300" />
+            Slingmarkering
+          </CardTitle>
+          <p className="text-sm text-slate-400">Starten ligger utanför första panelen. Slutet ligger på sista panelens anslutning.</p>
+        </CardHeader>
+        <CardContent className="space-y-4 bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.10),_transparent_32%),linear-gradient(180deg,_#020617,_#0f172a)] p-4">
+          <div className="rounded-3xl border border-cyan-400/20 bg-slate-900/75 p-4 shadow-inner shadow-cyan-950/40 backdrop-blur">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div className="text-sm font-black tracking-wide text-slate-100">1. Välj antal slingor</div>
+                <p className="text-xs text-slate-400">Välj antal slingor och klicka panelerna manuellt.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="icon" onClick={() => setCountValue(Math.max(1, countValue - 1))} disabled={countValue <= 1} className="border-slate-700 bg-slate-950 text-slate-100 hover:bg-slate-800">
+                  <Minus className="h-4 w-4" />
+                </Button>
+                <input type="number" min="1" max="80" value={countValue} onChange={event => setCountValue(event.target.value)} className="h-10 w-24 rounded-xl border border-cyan-400/30 bg-slate-950 px-3 text-center text-lg font-black text-cyan-100 outline-none ring-cyan-400/20 focus:ring-2" />
+                <Button variant="outline" size="icon" onClick={() => setCountValue(Math.min(80, countValue + 1))} className="border-slate-700 bg-slate-950 text-slate-100 hover:bg-slate-800">
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {strings.map(string => (
+                <button key={string.id} onClick={() => setActiveId(string.id)} className={`rounded-xl border px-3 py-2 text-xs font-bold transition ${string.id === activeId ? 'border-cyan-300 bg-cyan-400/15 text-cyan-100 shadow-lg shadow-cyan-950/40' : 'border-slate-700 bg-slate-950/80 text-slate-400 hover:border-slate-500 hover:text-slate-200'}`}>
+                  {string.name} · {count(string.nodes)} paneler · start {string.startPolarity === 'minus' ? '-' : '+'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-3">
+            <label className="space-y-1 text-xs font-semibold text-slate-400">
+              <span>Väder</span>
+              <select value={settings.weather} onChange={event => patchSettings({ weather: event.target.value })} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400">
+                {WEATHER.map(item => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </label>
+            <label className="space-y-1 text-xs font-semibold text-slate-400">
+              <span>Tid</span>
+              <select value={settings.timeOfDay} onChange={event => patchSettings({ timeOfDay: event.target.value })} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400">
+                {TIMES.map(item => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </label>
+            <label className="space-y-1 text-xs font-semibold text-slate-400">
+              <span>Temperatur °C</span>
+              <input type="number" value={settings.ambientTemperatureC} onChange={event => patchSettings({ ambientTemperatureC: Number(event.target.value) })} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-cyan-400" />
+            </label>
+          </div>
+
+          <div className="rounded-2xl border border-blue-300/20 bg-blue-400/10 p-3 text-sm text-blue-100">Klicka panelerna i kabelordning. + och - för start ligger utanför första panelen, men slutet ligger kvar på sista panelen.</div>
+
+          <Canvas map={map} strings={strings} activeId={activeId} activeString={active} onPanelClick={togglePanel} onStartPolarity={setStartPolarity} />
+
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-800 bg-slate-900/80 p-3 shadow-inner shadow-slate-950/30">
+            <div className="text-sm text-slate-300">Aktiv slinga: <b className="text-slate-100">{active?.name}</b> · {count(active?.nodes)} paneler · start {active?.startPolarity === 'minus' ? '-' : '+'}</div>
+            <div className="flex gap-2">
+              <Button variant="outline" className="border-red-400/30 bg-red-500/10 text-red-200 hover:bg-red-500/20" onClick={clearActive}>
+                <Trash2 className="mr-2 h-4 w-4" />
+                Rensa slinga
+              </Button>
+              <Button onClick={() => persist(strings)} disabled={saving} className="bg-cyan-400 text-slate-950 hover:bg-cyan-300">
+                <Save className="mr-2 h-4 w-4" />
+                {saving ? 'Sparar...' : 'Spara nu'}
+              </Button>
+            </div>
+            {saveInfo && <div className="w-full text-xs text-slate-400">{saveInfo}</div>}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
