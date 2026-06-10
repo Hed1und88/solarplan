@@ -42,10 +42,6 @@
       "type": "string",
       "description": "JSON-data f\u00f6r panelplacering p\u00e5 taket"
     },
-    "solar_roof_planner_data": {
-      "type": "string",
-      "description": "JSON-data f\u00f6r tak, panelgrupper och montageritning i projektplaneraren"
-    },
     "existing_installation_image_url": {
       "type": "string",
       "description": "Bild p\u00e5 befintlig anl\u00e4ggning"

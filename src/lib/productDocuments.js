@@ -101,12 +101,31 @@ export function splitProductDescription(description = '') {
 }
 
 export function buildProductDescription(cleanDescription = '', meta = {}) {
+  // Store only minimal document data to avoid exceeding field size limits
+  const minimalDocuments = (meta?.documents || [])
+    .filter(doc => doc?.file_url)
+    .map(doc => ({
+      id: doc.id,
+      type: normalizeDocumentType(doc.type || doc.document_type),
+      name: doc.name || doc.title || '',
+      file_url: doc.file_url || doc.url || '',
+    }));
+
   const normalizedMeta = {
     ...(meta || {}),
-    documents: normalizeDocuments(meta?.documents || []),
+    documents: minimalDocuments,
     updatedAt: new Date().toISOString(),
   };
-  return `${String(cleanDescription || '').trim()}${META_START}${JSON.stringify(normalizedMeta)}${META_END}`.trim();
+
+  // Remove redundant/large fields that are already stored as top-level product fields
+  delete normalizedMeta.name;
+  delete normalizedMeta.brand;
+  delete normalizedMeta.model;
+  delete normalizedMeta.category;
+  delete normalizedMeta.price;
+
+  const clean = String(cleanDescription || '').trim().slice(0, 500);
+  return `${clean}${META_START}${JSON.stringify(normalizedMeta)}${META_END}`.trim();
 }
 
 export function productMeta(product = {}) {
