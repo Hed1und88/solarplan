@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function SolarRoofBlueprint() {
+export default function SolarRoofEngineerView() {
   // Definitioner för panelerna (4 kolumner x 3 rader)
   // Positioner beräknade exakt för att ligga i ett perfekt CAD-grid
   const panels = [
