@@ -73,10 +73,21 @@ function autoSourceLabel(source) {
   return 'Auto';
 }
 
+function matchesSearch(product = {}, search = '') {
+  if (!search) return true;
+  const haystack = [product.name, product.brand, product.model, product.article_number, product.category]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return haystack.includes(search);
+}
+
 export default function ProductSelectionTab({ project, onUpdate }) {
   const [selectedProducts, setSelectedProducts] = useState(() => normalizeSelectedProducts(project.selected_products));
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeCategory, setActiveCategory] = useState('all');
 
   useEffect(() => {
     setSelectedProducts(normalizeSelectedProducts(project.selected_products));
@@ -152,13 +163,20 @@ export default function ProductSelectionTab({ project, onUpdate }) {
   const incompleteSelected = selectedQualityRows.filter(row => !row.status.complete && !row.sp.auto_generated);
 
   const totalCost = selectedProducts.reduce((sum, sp) => sum + (Number(sp.unit_price) || 0) * (Number(sp.quantity) || 0), 0);
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredProducts = products.filter(product => {
+    const category = product.category || 'ovrigt';
+    const categoryMatch = activeCategory === 'all' || category === activeCategory;
+    return categoryMatch && matchesSearch(product, normalizedSearch);
+  });
   const groupedProducts = categoryOrder
     .map(category => ({
       category,
       label: categoryLabels[category] || categoryLabels.ovrigt,
-      items: products.filter(product => (product.category || 'ovrigt') === category),
+      items: filteredProducts.filter(product => (product.category || 'ovrigt') === category),
+      total: products.filter(product => (product.category || 'ovrigt') === category).length,
     }))
-    .filter(group => group.items.length);
+    .filter(group => group.items.length || activeCategory === group.category);
 
   const handleSave = async () => {
     setSaving(true);
@@ -246,8 +264,33 @@ export default function ProductSelectionTab({ project, onUpdate }) {
           <CardTitle className="text-lg">Produktsortiment</CardTitle>
         </CardHeader>
         <CardContent>
+          <div className="mb-4 space-y-3">
+            <input
+              type="search"
+              value={searchTerm}
+              onChange={event => setSearchTerm(event.target.value)}
+              placeholder="Sök produkt, varumärke eller modell..."
+              className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+            />
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => setActiveCategory('all')} className={`rounded-full border px-3 py-1.5 text-xs font-medium ${activeCategory === 'all' ? 'bg-primary text-white border-primary' : 'bg-background text-muted-foreground border-border'}`}>
+                Alla ({products.length})
+              </button>
+              {categoryOrder.map(category => {
+                const count = products.filter(product => (product.category || 'ovrigt') === category).length;
+                return (
+                  <button key={category} type="button" onClick={() => setActiveCategory(category)} className={`rounded-full border px-3 py-1.5 text-xs font-medium ${activeCategory === category ? 'bg-primary text-white border-primary' : 'bg-background text-muted-foreground border-border'}`}>
+                    {categoryLabels[category] || categoryLabels.ovrigt} ({count})
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-xs text-muted-foreground">Visar {filteredProducts.length} av {products.length} produkter</p>
+          </div>
           <div className="space-y-6">
-            {groupedProducts.map(group => (
+            {filteredProducts.length === 0 ? (
+              <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground">Inga produkter matchar sökningen.</p>
+            ) : groupedProducts.map(group => (
               <section key={group.category} className="space-y-3">
                 <div className="flex items-center justify-between border-b pb-2">
                   <h3 className="text-sm font-semibold text-foreground">{group.label}</h3>
