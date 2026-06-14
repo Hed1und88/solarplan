@@ -24,6 +24,21 @@ const META_FIELDS = [
   'weight_kg',
 ];
 
+const DOCUMENT_REQUIRED_CATEGORIES = new Set([
+  'solpanel',
+  'vaxelriktare',
+  'batteri',
+  'optimerare',
+  'elbilsladdare',
+  'varmepump',
+  'värmepump',
+]);
+
+export function productRequiresDocuments(rawProduct = {}) {
+  const category = String(rawProduct?.category || '').trim().toLowerCase();
+  return DOCUMENT_REQUIRED_CATEGORIES.has(category);
+}
+
 export function hasProductValue(value) {
   if (value === null || value === undefined || value === '') return false;
   if (typeof value === 'number') return Number.isFinite(value) && value > 0;
@@ -86,6 +101,7 @@ export function requiredProductTechnicalFields(rawProduct = {}) {
 export function productQualityStatus(rawProduct = {}) {
   const product = hydrateProductQualityData(rawProduct);
   const docs = productDocuments(product);
+  const requiresDocuments = productRequiresDocuments(product);
   const hasManual = docs.some(doc => doc.type === 'manual');
   const hasDatasheet = docs.some(doc => doc.type === 'datasheet');
   const missingTechnical = requiredProductTechnicalFields(product)
@@ -93,13 +109,14 @@ export function productQualityStatus(rawProduct = {}) {
     .map(([, label]) => label);
   const clamp = resolveProductClampZone(product);
   const needsClamp = product.category === 'solpanel';
-  const docsOk = hasManual && hasDatasheet;
+  const docsOk = !requiresDocuments || (hasManual && hasDatasheet);
   const technicalOk = missingTechnical.length === 0;
   const clampOk = !needsClamp || clamp.hasProductZone;
 
   return {
     product,
     docs,
+    requiresDocuments,
     hasManual,
     hasDatasheet,
     docsOk,
@@ -115,8 +132,8 @@ export function productQualityStatus(rawProduct = {}) {
 export function productQualityIssues(rawProduct = {}) {
   const status = productQualityStatus(rawProduct);
   const issues = [];
-  if (!status.hasDatasheet) issues.push('Datablad saknas');
-  if (!status.hasManual) issues.push('Manual saknas');
+  if (status.requiresDocuments && !status.hasDatasheet) issues.push('Datablad saknas');
+  if (status.requiresDocuments && !status.hasManual) issues.push('Manual saknas');
   if (!status.technicalOk) issues.push(`Teknisk data saknas: ${status.missingTechnical.join(', ')}`);
   if (status.needsClamp && !status.clampOk) issues.push('Klämzon saknas');
   return issues;
