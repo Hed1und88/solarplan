@@ -151,6 +151,15 @@ function qualityMatches(filter, product, status) {
   return true;
 }
 
+function productMatchesSearch(product = {}, search = '') {
+  if (!search) return true;
+  const haystack = [product.name, product.brand, product.model, product.article_number, product.category]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return haystack.includes(search);
+}
+
 function countBy(products, predicate) {
   return products.reduce((sum, item) => sum + (predicate(item) ? 1 : 0), 0);
 }
@@ -171,6 +180,8 @@ export default function Products() {
   const [editProduct, setEditProduct] = useState(null);
   const [filterCat, setFilterCat] = useState('alla');
   const [filterQuality, setFilterQuality] = useState('alla');
+  const [filterBrand, setFilterBrand] = useState('alla');
+  const [searchTerm, setSearchTerm] = useState('');
   const [fixMode, setFixMode] = useState(false);
   const [fixMessage, setFixMessage] = useState('');
 
@@ -196,10 +207,17 @@ export default function Products() {
   });
 
   const productRows = buildRows(products);
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const mountingBrands = Array.from(new Set(productRows
+    .filter(({ product }) => product.category === 'montagesystem' && product.brand)
+    .map(({ product }) => product.brand.trim())
+    .filter(Boolean)))
+    .sort((a, b) => a.localeCompare(b, 'sv'));
 
   const filteredRows = productRows.filter(({ product, status }) => {
     const catOk = filterCat === 'alla' || product.category === filterCat;
-    return catOk && qualityMatches(filterQuality, product, status);
+    const brandOk = filterCat !== 'montagesystem' || filterBrand === 'alla' || product.brand === filterBrand;
+    return catOk && brandOk && productMatchesSearch(product, normalizedSearch) && qualityMatches(filterQuality, product, status);
   });
 
   const fixRows = filteredRows.filter(row => !row.status.complete);
@@ -223,7 +241,8 @@ export default function Products() {
   const openNextFixProduct = (freshProducts, savedProductId) => {
     const freshRows = buildRows(freshProducts).filter(({ product, status }) => {
       const catOk = filterCat === 'alla' || product.category === filterCat;
-      return catOk && qualityMatches(filterQuality, product, status) && !status.complete;
+      const brandOk = filterCat !== 'montagesystem' || filterBrand === 'alla' || product.brand === filterBrand;
+      return catOk && brandOk && productMatchesSearch(product, normalizedSearch) && qualityMatches(filterQuality, product, status) && !status.complete;
     });
     const currentIndex = freshRows.findIndex(row => row.rawProduct.id === savedProductId);
     const next = currentIndex >= 0 ? freshRows[currentIndex + 1] : freshRows[0];
@@ -285,13 +304,30 @@ export default function Products() {
         <QualityStat label="Saknar batteridata" value={stats.missingBatteryData} tone="red" onClick={() => setFilterQuality('saknar_batteridata')} />
       </div>
 
-      <div className="flex gap-2 flex-wrap mb-3">
-        {['alla', ...Object.keys(categoryConfig)].map(cat => <button key={cat} onClick={() => setFilterCat(cat)} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${filterCat === cat ? 'bg-primary text-white border-primary' : 'bg-card text-muted-foreground border-border hover:border-primary/50'}`}>{cat === 'alla' ? 'Alla kategorier' : categoryConfig[cat].label}</button>)}
+      <div className="mb-3">
+        <input
+          type="search"
+          value={searchTerm}
+          onChange={event => setSearchTerm(event.target.value)}
+          placeholder="Sök produkt, märke, modell eller artikelnummer..."
+          className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+        />
       </div>
+
+      <div className="flex gap-2 flex-wrap mb-3">
+        {['alla', ...Object.keys(categoryConfig)].map(cat => <button key={cat} onClick={() => { setFilterCat(cat); if (cat !== 'montagesystem') setFilterBrand('alla'); }} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${filterCat === cat ? 'bg-primary text-white border-primary' : 'bg-card text-muted-foreground border-border hover:border-primary/50'}`}>{cat === 'alla' ? 'Alla kategorier' : categoryConfig[cat].label}</button>)}
+      </div>
+
+      {filterCat === 'montagesystem' && mountingBrands.length > 0 && (
+        <div className="mb-3 flex flex-wrap gap-2">
+          <button onClick={() => setFilterBrand('alla')} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${filterBrand === 'alla' ? 'bg-primary text-white border-primary' : 'bg-card text-muted-foreground border-border hover:border-primary/50'}`}>Alla märken</button>
+          {mountingBrands.map(brand => <button key={brand} onClick={() => setFilterBrand(brand)} className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${filterBrand === brand ? 'bg-primary text-white border-primary' : 'bg-card text-muted-foreground border-border hover:border-primary/50'}`}>{brand}</button>)}
+        </div>
+      )}
 
       <div className="mb-6 flex flex-wrap gap-2">
         {qualityFilters.map(filter => <button key={filter.value} onClick={() => setFilterQuality(filter.value)} className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all ${filterQuality === filter.value ? 'border-primary bg-primary text-white' : 'border-border bg-card text-muted-foreground hover:border-primary/50'}`}><ListChecks className="h-3.5 w-3.5" /> {filter.label}</button>)}
-        {(filterCat !== 'alla' || filterQuality !== 'alla') && <button onClick={() => { setFilterCat('alla'); setFilterQuality('alla'); }} className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted">Rensa filter</button>}
+        {(filterCat !== 'alla' || filterQuality !== 'alla' || filterBrand !== 'alla' || searchTerm) && <button onClick={() => { setFilterCat('alla'); setFilterQuality('alla'); setFilterBrand('alla'); setSearchTerm(''); }} className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-muted-foreground hover:bg-muted">Rensa filter</button>}
       </div>
 
       <div className="mb-4 text-xs text-muted-foreground">Visar {filteredRows.length} av {products.length} produkter. {fixRows.length > 0 && `${fixRows.length} behöver fixas i denna vy.`}</div>
