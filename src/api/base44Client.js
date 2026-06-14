@@ -3,6 +3,9 @@ import { appParams } from '@/lib/app-params';
 
 const { appId, token, functionsVersion, appBaseUrl } = appParams;
 
+const META_START = '\n\n---SOLARPLAN_PRODUCT_META_START---\n';
+const META_END = '\n---SOLARPLAN_PRODUCT_META_END---';
+
 function withFileUrl(result) {
   if (typeof result === 'string') return { file_url: result, url: result };
 
@@ -21,6 +24,62 @@ function withFileUrl(result) {
     '';
 
   return fileUrl ? { ...result, file_url: fileUrl, url: result?.url || fileUrl } : result;
+}
+
+function docsFromDescription(description = '') {
+  const text = String(description || '');
+  const start = text.indexOf(META_START);
+  const end = text.indexOf(META_END);
+  if (start === -1 || end === -1 || end <= start) return [];
+
+  try {
+    const meta = JSON.parse(text.slice(start + META_START.length, end).trim()) || {};
+    return Array.isArray(meta.documents) ? meta.documents.filter(doc => doc?.file_url || doc?.url) : [];
+  } catch {
+    return [];
+  }
+}
+
+function withProductDocumentsPayload(payload) {
+  if (!payload || typeof payload !== 'object') return payload;
+  const docs = Array.isArray(payload.documents_snapshot) && payload.documents_snapshot.length
+    ? payload.documents_snapshot
+    : docsFromDescription(payload.description);
+  if (!docs.length) return payload;
+  return {
+    ...payload,
+    documents_snapshot: docs,
+    documents: docs,
+    product_documents: docs,
+  };
+}
+
+function wrapProductEntity(productEntity) {
+  if (!productEntity || typeof productEntity !== 'object') return productEntity;
+
+  return new Proxy(productEntity, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      if ((property !== 'create' && property !== 'update') || typeof value !== 'function') return value;
+
+      return async (...args) => {
+        if (property === 'create') return value.call(target, withProductDocumentsPayload(args[0]));
+        if (property === 'update') return value.call(target, args[0], withProductDocumentsPayload(args[1]));
+        return value.apply(target, args);
+      };
+    },
+  });
+}
+
+function wrapEntities(entities) {
+  if (!entities || typeof entities !== 'object') return entities;
+
+  return new Proxy(entities, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      return property === 'Product' ? wrapProductEntity(value) : value;
+    },
+  });
 }
 
 function wrapCore(core) {
@@ -59,6 +118,8 @@ const client = createClient({
 export const base44 = new Proxy(client, {
   get(target, property, receiver) {
     const value = Reflect.get(target, property, receiver);
-    return property === 'integrations' ? wrapIntegrations(value) : value;
+    if (property === 'integrations') return wrapIntegrations(value);
+    if (property === 'entities') return wrapEntities(value);
+    return value;
   },
 });
