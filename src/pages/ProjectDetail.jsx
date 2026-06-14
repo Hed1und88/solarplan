@@ -20,6 +20,7 @@ import MountingSystemCalculator from '@/components/project/MountingSystemCalcula
 import SolarRoofPlannerV2 from '@/components/project/SolarRoofPlannerV2';
 import { fetchProjectById, mergeProjectWithBackup, saveProjectPatch, writeProjectBackup } from '@/lib/projectPersistence';
 import { productQualityIssues, productQualityStatus, selectedProductQualityInput } from '@/lib/productQuality';
+import { mergeProjectAutoProducts } from '@/lib/projectAutoProducts';
 
 const statusLabels = { planering: 'Planering', projektering: 'Projektering', offert: 'Offert', installation: 'Installation', klart: 'Klart' };
 const statusColors = { planering: 'bg-blue-100 text-blue-700', projektering: 'bg-amber-100 text-amber-700', offert: 'bg-purple-100 text-purple-700', installation: 'bg-orange-100 text-orange-700', klart: 'bg-green-100 text-green-700' };
@@ -85,6 +86,7 @@ function collectProjectProductEntries(project = {}, products = []) {
 
   (Array.isArray(project?.selected_products) ? project.selected_products : []).forEach(item => {
     const sourceProduct = productById(activeProducts, item.product_id);
+    if (!sourceProduct && item.auto_generated) return;
     if (!sourceProduct) return;
     pushProjectProductEntry(entries, {
       source: 'Produktfliken',
@@ -206,8 +208,13 @@ export default function ProjectDetail() {
     },
   });
 
-  const saveProject = data => updateMutation.mutateAsync(data || {});
   const project = workingProject || mergeProjectWithBackup(serverProject);
+  const saveProject = data => {
+    const baseProject = project || workingProject || mergeProjectWithBackup(serverProject) || {};
+    const projectWithPatch = { ...baseProject, ...(data || {}) };
+    const syncedProject = mergeProjectAutoProducts(projectWithPatch, products);
+    return updateMutation.mutateAsync({ ...(data || {}), selected_products: syncedProject.selected_products, total_cost: syncedProject.total_cost });
+  };
   const saveEntireProject = () => saveProject(buildFullProjectSavePatch(project));
   const projectProductQuality = collectProjectProductEntries(project, products);
   const incompleteProjectProducts = projectProductQuality.filter(item => !item.status.complete);
