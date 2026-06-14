@@ -41,7 +41,10 @@ function createEmptyLayout() {
     roomHeight: 2.5,
     walls: [],
     devices: [],
+    obstacles: [],
     photoItems: [],
+    wallColor: '#94a3b8',
+    floorColor: '#e2e8f0',
     savedAt: '',
   };
 }
@@ -63,6 +66,9 @@ function parseBatteryLayout(raw) {
         roomHeight: numberOr(parsed.roomHeight, fallback.roomHeight),
         walls: Array.isArray(parsed.walls) ? parsed.walls : [],
         devices: Array.isArray(parsed.devices) ? parsed.devices : [],
+        obstacles: Array.isArray(parsed.obstacles) ? parsed.obstacles : [],
+        wallColor: typeof parsed.wallColor === 'string' ? parsed.wallColor : '#94a3b8',
+        floorColor: typeof parsed.floorColor === 'string' ? parsed.floorColor : '#e2e8f0',
         photoItems: Array.isArray(parsed.photoItems)
           ? parsed.photoItems
           : Array.isArray(parsed.batteries)
@@ -316,7 +322,7 @@ function createLabelSprite(text, color = '#1e293b') {
   return sprite;
 }
 
-function createWallObject(wall, roomHeight) {
+function createWallObject(wall, roomHeight, wallColor = '#94a3b8') {
   const length = wallLength(wall);
   const centerX = (wall.x1 + wall.x2) / 2;
   const centerZ = (wall.z1 + wall.z2) / 2;
@@ -324,7 +330,7 @@ function createWallObject(wall, roomHeight) {
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(length, roomHeight, WALL_THICKNESS_M),
     new THREE.MeshStandardMaterial({
-      color: '#94a3b8',
+      color: wallColor,
       roughness: 0.7,
       metalness: 0.05,
       transparent: true,
@@ -336,6 +342,35 @@ function createWallObject(wall, roomHeight) {
   mesh.receiveShadow = true;
   addEdges(mesh, '#64748b');
   return mesh;
+}
+
+function createObstacleObject(obstacle) {
+  const group = new THREE.Group();
+  group.position.set(obstacle.x, obstacle.height / 2, obstacle.z);
+
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(obstacle.width, obstacle.height, obstacle.depth),
+    new THREE.MeshStandardMaterial({
+      color: obstacle.color || '#7c3aed',
+      roughness: 0.6,
+      metalness: 0.1,
+      transparent: true,
+      opacity: 0.82,
+    }),
+  );
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  addEdges(mesh, '#c4b5fd');
+  group.add(mesh);
+
+  const label = createLabelSprite(
+    `${obstacle.label || 'Hinder'}\n${formatMeters(obstacle.width)} x ${formatMeters(obstacle.depth)}`,
+    '#1e293b',
+  );
+  label.position.set(0, obstacle.height / 2 + 0.22, 0);
+  group.add(label);
+
+  return group;
 }
 
 function createDeviceObject(device, isSelected) {
@@ -431,7 +466,7 @@ function createDeviceObject(device, isSelected) {
   return group;
 }
 
-function StudioScene({ walls, devices, selectedDeviceId, roomHeight, onSelectDevice, onClearSelection }) {
+function StudioScene({ walls, devices, obstacles, selectedDeviceId, roomHeight, wallColor, floorColor, onSelectDevice, onClearSelection }) {
   const containerRef = useRef(null);
   const sceneRef = useRef(null);
   const cameraRef = useRef(null);
@@ -448,7 +483,7 @@ function StudioScene({ walls, devices, selectedDeviceId, roomHeight, onSelectDev
     if (!container) return undefined;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#f0f4f8');
+    scene.background = new THREE.Color(floorColor);
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -469,7 +504,7 @@ function StudioScene({ walls, devices, selectedDeviceId, roomHeight, onSelectDev
 
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(DRAW_WIDTH_M, DRAW_DEPTH_M),
-      new THREE.MeshStandardMaterial({ color: '#e2e8f0', roughness: 0.9, metalness: 0.0 }),
+      new THREE.MeshStandardMaterial({ color: floorColor, roughness: 0.9, metalness: 0.0 }),
     );
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -0.01;
@@ -607,9 +642,10 @@ function StudioScene({ walls, devices, selectedDeviceId, roomHeight, onSelectDev
     root.children.forEach(disposeObject);
     root.clear();
 
-    walls.forEach((wall) => root.add(createWallObject(wall, roomHeight)));
+    walls.forEach((wall) => root.add(createWallObject(wall, roomHeight, wallColor)));
+    (obstacles || []).forEach((obstacle) => root.add(createObstacleObject(obstacle)));
     devices.forEach((device) => root.add(createDeviceObject(device, selectedDeviceId === device.instanceId)));
-  }, [walls, devices, selectedDeviceId, roomHeight]);
+  }, [walls, devices, obstacles, selectedDeviceId, roomHeight, wallColor, floorColor]);
 
   return <div ref={containerRef} className="h-full min-h-[680px] w-full" />;
 }
@@ -650,6 +686,19 @@ export default function BatteryTab({ project, onUpdate }) {
   const [currentMousePoint, setCurrentMousePoint] = useState(null);
   const [saving, setSaving] = useState(false);
   const svgRef = useRef(null);
+  const [obstacles, setObstacles] = useState(initialLayout.obstacles);
+  const [wallColor, setWallColor] = useState(initialLayout.wallColor);
+  const [floorColor, setFloorColor] = useState(initialLayout.floorColor);
+  const [drawMode, setDrawMode] = useState('wall');
+  const [obstacleConfig, setObstacleConfig] = useState({
+    type: 'shelf',
+    label: 'Hylla',
+    width: 1.0,
+    depth: 0.4,
+    height: 2.0,
+    color: '#7c3aed',
+  });
+  const [obstaclePreview, setObstaclePreview] = useState(null);
 
   useEffect(() => {
     const nextLayout = parseBatteryLayout(project.battery_layout_data);
@@ -661,6 +710,11 @@ export default function BatteryTab({ project, onUpdate }) {
     setDrawingPoints([]);
     setCurrentMousePoint(null);
     setSelectedDeviceId(null);
+    setObstacles(nextLayout.obstacles);
+    setWallColor(nextLayout.wallColor);
+    setFloorColor(nextLayout.floorColor);
+    setDrawMode('wall');
+    setObstaclePreview(null);
   }, [project?.id, project?.battery_image_url, project?.battery_layout_data]);
 
   const { data: products = [] } = useQuery({
@@ -707,6 +761,21 @@ export default function BatteryTab({ project, onUpdate }) {
     if (!svgRef.current) return;
     const point = svgPointFromEvent(event);
 
+    if (drawMode === 'obstacle') {
+      setObstacles((prev) => [...prev, {
+        id: makeId('obstacle'),
+        type: obstacleConfig.type,
+        label: obstacleConfig.label,
+        x: point.x,
+        z: point.z,
+        width: obstacleConfig.width,
+        depth: obstacleConfig.depth,
+        height: obstacleConfig.height,
+        color: obstacleConfig.color,
+      }]);
+      return;
+    }
+
     setDrawingPoints((prev) => {
       if (prev.length > 2 && distance2D(point, prev[0]) <= GRID_STEP_M * 0.75) {
         addWallBetween(prev[prev.length - 1], prev[0]);
@@ -721,8 +790,14 @@ export default function BatteryTab({ project, onUpdate }) {
   };
 
   const handleDrawMove = (event) => {
-    if (!svgRef.current || drawingPoints.length === 0) return;
-    setCurrentMousePoint(svgPointFromEvent(event));
+    if (!svgRef.current) return;
+    const point = svgPointFromEvent(event);
+    if (drawMode === 'obstacle') {
+      setObstaclePreview(point);
+      return;
+    }
+    if (drawingPoints.length === 0) return;
+    setCurrentMousePoint(point);
   };
 
   const finishDrawing = (closeRoom = false) => {
@@ -742,9 +817,11 @@ export default function BatteryTab({ project, onUpdate }) {
   const clearStudio = () => {
     setWalls([]);
     setDevices([]);
+    setObstacles([]);
     setDrawingPoints([]);
     setCurrentMousePoint(null);
     setSelectedDeviceId(null);
+    setObstaclePreview(null);
     setMode('draw');
   };
 
@@ -851,7 +928,10 @@ export default function BatteryTab({ project, onUpdate }) {
           roomHeight,
           walls,
           devices,
+          obstacles,
           photoItems,
+          wallColor,
+          floorColor,
           savedAt: new Date().toISOString(),
         }),
       });
@@ -871,6 +951,11 @@ export default function BatteryTab({ project, onUpdate }) {
           <div className="mt-2 flex flex-wrap gap-2">
             <Badge variant="secondary" className="gap-1"><Ruler className="h-3 w-3" />{walls.length} väggar</Badge>
             <Badge variant="secondary" className="gap-1"><Box className="h-3 w-3" />{devices.length} enheter</Badge>
+            {obstacles.length > 0 && (
+              <Badge variant="secondary" className="gap-1">
+                <Layers className="h-3 w-3" />{obstacles.length} hinder
+              </Badge>
+            )}
             {issues.length > 0 && <Badge className="bg-amber-100 text-amber-800">{issues.length} kontrollpunkter</Badge>}
           </div>
         </div>
@@ -911,6 +996,117 @@ export default function BatteryTab({ project, onUpdate }) {
                     <Button variant="destructive" size="sm" onClick={clearStudio} className="col-span-2">
                       <Eraser className="mr-2 h-4 w-4" />Rensa rum
                     </Button>
+                  </div>
+
+                  <div className="border-t pt-3 space-y-3">
+                    <div className="text-xs font-semibold text-slate-600">Ritläge</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button
+                        size="sm"
+                        variant={drawMode === 'wall' ? 'default' : 'outline'}
+                        onClick={() => { setDrawMode('wall'); setObstaclePreview(null); }}
+                      >
+                        Vägg
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={drawMode === 'obstacle' ? 'default' : 'outline'}
+                        onClick={() => setDrawMode('obstacle')}
+                      >
+                        Hinder
+                      </Button>
+                    </div>
+
+                    {drawMode === 'obstacle' && (
+                      <div className="space-y-2">
+                        <div className="text-xs font-medium text-slate-500">Typ av hinder</div>
+                        <select
+                          className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm"
+                          value={obstacleConfig.type}
+                          onChange={(e) => {
+                            const presets = {
+                              shelf: { label: 'Hylla', width: 1.0, depth: 0.4, height: 2.0, color: '#7c3aed' },
+                              table: { label: 'Bord', width: 1.2, depth: 0.8, height: 0.75, color: '#b45309' },
+                              box: { label: 'Låda', width: 0.6, depth: 0.4, height: 0.5, color: '#0369a1' },
+                              pillar: { label: 'Pelare', width: 0.3, depth: 0.3, height: 2.5, color: '#374151' },
+                              custom: { label: 'Hinder', width: 1.0, depth: 0.5, height: 1.0, color: '#6b7280' },
+                            };
+                            const preset = presets[e.target.value] || presets.custom;
+                            setObstacleConfig({ ...preset, type: e.target.value });
+                          }}
+                        >
+                          <option value="shelf">Hylla</option>
+                          <option value="table">Bord</option>
+                          <option value="box">Låda/kartong</option>
+                          <option value="pillar">Pelare</option>
+                          <option value="custom">Eget hinder</option>
+                        </select>
+
+                        <Input
+                          value={obstacleConfig.label}
+                          onChange={(e) => setObstacleConfig((prev) => ({ ...prev, label: e.target.value }))}
+                          placeholder="Etikett"
+                          className="h-8 text-sm"
+                        />
+
+                        <div className="grid grid-cols-3 gap-1.5">
+                          <NumberField
+                            label="Bredd"
+                            value={obstacleConfig.width}
+                            step={0.1}
+                            onChange={(v) => setObstacleConfig((prev) => ({ ...prev, width: Math.max(0.1, Number(v)) }))}
+                          />
+                          <NumberField
+                            label="Djup"
+                            value={obstacleConfig.depth}
+                            step={0.1}
+                            onChange={(v) => setObstacleConfig((prev) => ({ ...prev, depth: Math.max(0.1, Number(v)) }))}
+                          />
+                          <NumberField
+                            label="Höjd"
+                            value={obstacleConfig.height}
+                            step={0.1}
+                            onChange={(v) => setObstacleConfig((prev) => ({ ...prev, height: Math.max(0.1, Number(v)) }))}
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs text-slate-500">Färg</label>
+                          <input
+                            type="color"
+                            value={obstacleConfig.color}
+                            onChange={(e) => setObstacleConfig((prev) => ({ ...prev, color: e.target.value }))}
+                            className="h-7 w-10 cursor-pointer rounded border border-input"
+                          />
+                        </div>
+
+                        <p className="text-[11px] text-slate-400">
+                          Klicka på canvasen för att placera. Klicka på ett hinder för att ta bort det.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="border-t pt-3 space-y-2">
+                    <div className="text-xs font-semibold text-slate-600">Färger</div>
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs text-slate-500">Väggar</label>
+                      <input
+                        type="color"
+                        value={wallColor}
+                        onChange={(e) => setWallColor(e.target.value)}
+                        className="h-7 w-10 cursor-pointer rounded border border-input"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs text-slate-500">Golv</label>
+                      <input
+                        type="color"
+                        value={floorColor}
+                        onChange={(e) => setFloorColor(e.target.value)}
+                        className="h-7 w-10 cursor-pointer rounded border border-input"
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -954,6 +1150,65 @@ export default function BatteryTab({ project, onUpdate }) {
                       </text>
                     </g>
                   ))}
+
+                  {obstacles.map((obs) => (
+                    <g key={obs.id}>
+                      <rect
+                        x={obs.x - obs.width / 2}
+                        y={obs.z - obs.depth / 2}
+                        width={obs.width}
+                        height={obs.depth}
+                        fill={obs.color}
+                        fillOpacity="0.25"
+                        stroke={obs.color}
+                        strokeWidth="0.05"
+                        strokeLinejoin="round"
+                        style={{ cursor: 'pointer' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setObstacles((prev) => prev.filter((o) => o.id !== obs.id));
+                        }}
+                      />
+                      <text
+                        x={obs.x}
+                        y={obs.z}
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        fontSize="0.16"
+                        fontWeight="600"
+                        fill={obs.color}
+                        style={{ pointerEvents: 'none', userSelect: 'none' }}
+                      >
+                        {obs.label}
+                      </text>
+                      <text
+                        x={obs.x}
+                        y={obs.z + 0.22}
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        fontSize="0.13"
+                        fill="#64748b"
+                        style={{ pointerEvents: 'none', userSelect: 'none' }}
+                      >
+                        {obs.width.toFixed(2)}×{obs.depth.toFixed(2)} m
+                      </text>
+                    </g>
+                  ))}
+
+                  {drawMode === 'obstacle' && obstaclePreview && (
+                    <rect
+                      x={obstaclePreview.x - obstacleConfig.width / 2}
+                      y={obstaclePreview.z - obstacleConfig.depth / 2}
+                      width={obstacleConfig.width}
+                      height={obstacleConfig.depth}
+                      fill={obstacleConfig.color}
+                      fillOpacity="0.15"
+                      stroke={obstacleConfig.color}
+                      strokeWidth="0.04"
+                      strokeDasharray="0.1 0.08"
+                      style={{ pointerEvents: 'none' }}
+                    />
+                  )}
 
                   {drawingPoints.length > 0 && currentMousePoint && (() => {
                     const start = drawingPoints[drawingPoints.length - 1];
@@ -1120,8 +1375,11 @@ export default function BatteryTab({ project, onUpdate }) {
                 <StudioScene
                   walls={walls}
                   devices={devices}
+                  obstacles={obstacles}
                   selectedDeviceId={selectedDeviceId}
                   roomHeight={roomHeight}
+                  wallColor={wallColor}
+                  floorColor={floorColor}
                   onSelectDevice={setSelectedDeviceId}
                   onClearSelection={() => setSelectedDeviceId(null)}
                 />
