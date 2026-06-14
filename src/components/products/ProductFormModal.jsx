@@ -151,7 +151,7 @@ function getAutoFetchConfig(category, query, docs) {
 export default function ProductFormModal({ product, onSave, onClose, fixMode = false, hasNextProduct = false }) {
   const meta = productMeta(product || {});
   const [form, setForm] = useState({
-    name: product?.name || '', category: product?.category || 'solpanel', brand: product?.brand || '', model: product?.model || '', price: product?.price || '', unit: product?.unit || 'st', power_watts: product?.power_watts || '', capacity_kwh: product?.capacity_kwh || meta.capacity_kwh || '', width_mm: product?.width_mm || meta.width_mm || '', height_mm: product?.height_mm || meta.height_mm || '', weight_kg: product?.weight_kg || meta.weight_kg || '', depth_mm: meta.depth_mm || product?.depth_mm || '', module_capacity_kwh: meta.module_capacity_kwh || product?.module_capacity_kwh || '', usable_capacity_kwh: meta.usable_capacity_kwh || product?.usable_capacity_kwh || '', dod_percent: meta.dod_percent || product?.dod_percent || 90, modules_count: meta.modules_count || product?.modules_count || '', max_modules_per_stack: meta.max_modules_per_stack || product?.max_modules_per_stack || '', max_battery_modules: meta.max_battery_modules || product?.max_battery_modules || '', module_weight_kg: meta.module_weight_kg || product?.module_weight_kg || '', base_weight_kg: meta.base_weight_kg || product?.base_weight_kg || '', bms_weight_kg: meta.bms_weight_kg || product?.bms_weight_kg || '', clearance_front_mm: meta.clearance_front_mm || product?.clearance_front_mm || '', clearance_back_mm: meta.clearance_back_mm || product?.clearance_back_mm || '', clearance_side_mm: meta.clearance_side_mm || product?.clearance_side_mm || '', clearance_top_mm: meta.clearance_top_mm || product?.clearance_top_mm || '', clearance_bottom_mm: meta.clearance_bottom_mm || product?.clearance_bottom_mm || '', installation_location: meta.installation_location || product?.installation_location || '', ip_rating: meta.ip_rating || product?.ip_rating || '', voc_v: product?.voc_v || '', isc_a: product?.isc_a || '', vmp_v: product?.vmp_v || '', imp_a: product?.imp_a || '', temp_coeff_pmax_percent_c: product?.temp_coeff_pmax_percent_c || '', temp_coeff_voc_percent_c: product?.temp_coeff_voc_percent_c || '', temp_coeff_isc_percent_c: product?.temp_coeff_isc_percent_c || '', noct_c: product?.noct_c || '', bifacial: product?.bifacial ?? false, max_dc_power_kw: product?.max_dc_power_kw || '', max_dc_voltage_v: product?.max_dc_voltage_v || '', startup_voltage_v: product?.startup_voltage_v || '', mppt_voltage_min_v: product?.mppt_voltage_min_v || '', mppt_voltage_max_v: product?.mppt_voltage_max_v || '', nominal_dc_voltage_v: product?.nominal_dc_voltage_v || '', mppt_count: product?.mppt_count || '', strings_per_mppt: product?.strings_per_mppt || '', max_input_current_a: product?.max_input_current_a || '', max_short_circuit_current_a: product?.max_short_circuit_current_a || '', battery_supported: product?.battery_supported ?? false, phase_type: product?.phase_type || '', inverter_type: product?.inverter_type || '', description: productDescription(product || {}), image_url: product?.image_url || '', clampZoneMinMm: meta.clampZoneMinMm || '', clampZoneMaxMm: meta.clampZoneMaxMm || '', railOffsetTopMm: meta.railOffsetTopMm || '', railOffsetBottomMm: meta.railOffsetBottomMm || '', clampSource: meta.clampSource || '',
+    name: product?.name || '', category: product?.category || 'solpanel', brand: product?.brand || '', model: product?.model || '', price: product?.price ?? '', unit: product?.unit || 'st', power_watts: product?.power_watts || '', capacity_kwh: product?.capacity_kwh || meta.capacity_kwh || '', width_mm: product?.width_mm || meta.width_mm || '', height_mm: product?.height_mm || meta.height_mm || '', weight_kg: product?.weight_kg || meta.weight_kg || '', depth_mm: meta.depth_mm || product?.depth_mm || '', module_capacity_kwh: meta.module_capacity_kwh || product?.module_capacity_kwh || '', usable_capacity_kwh: meta.usable_capacity_kwh || product?.usable_capacity_kwh || '', dod_percent: meta.dod_percent || product?.dod_percent || 90, modules_count: meta.modules_count || product?.modules_count || '', max_modules_per_stack: meta.max_modules_per_stack || product?.max_modules_per_stack || '', max_battery_modules: meta.max_battery_modules || product?.max_battery_modules || '', module_weight_kg: meta.module_weight_kg || product?.module_weight_kg || '', base_weight_kg: meta.base_weight_kg || product?.base_weight_kg || '', bms_weight_kg: meta.bms_weight_kg || product?.bms_weight_kg || '', clearance_front_mm: meta.clearance_front_mm || product?.clearance_front_mm || '', clearance_back_mm: meta.clearance_back_mm || product?.clearance_back_mm || '', clearance_side_mm: meta.clearance_side_mm || product?.clearance_side_mm || '', clearance_top_mm: meta.clearance_top_mm || product?.clearance_top_mm || '', clearance_bottom_mm: meta.clearance_bottom_mm || product?.clearance_bottom_mm || '', installation_location: meta.installation_location || product?.installation_location || '', ip_rating: meta.ip_rating || product?.ip_rating || '', voc_v: product?.voc_v || '', isc_a: product?.isc_a || '', vmp_v: product?.vmp_v || '', imp_a: product?.imp_a || '', temp_coeff_pmax_percent_c: product?.temp_coeff_pmax_percent_c || '', temp_coeff_voc_percent_c: product?.temp_coeff_voc_percent_c || '', temp_coeff_isc_percent_c: product?.temp_coeff_isc_percent_c || '', noct_c: product?.noct_c || '', bifacial: product?.bifacial ?? false, max_dc_power_kw: product?.max_dc_power_kw || '', max_dc_voltage_v: product?.max_dc_voltage_v || '', startup_voltage_v: product?.startup_voltage_v || '', mppt_voltage_min_v: product?.mppt_voltage_min_v || '', mppt_voltage_max_v: product?.mppt_voltage_max_v || '', nominal_dc_voltage_v: product?.nominal_dc_voltage_v || '', mppt_count: product?.mppt_count || '', strings_per_mppt: product?.strings_per_mppt || '', max_input_current_a: product?.max_input_current_a || '', max_short_circuit_current_a: product?.max_short_circuit_current_a || '', battery_supported: product?.battery_supported ?? false, phase_type: product?.phase_type || '', inverter_type: product?.inverter_type || '', description: productDescription(product || {}), image_url: product?.image_url || '', clampZoneMinMm: meta.clampZoneMinMm || '', clampZoneMaxMm: meta.clampZoneMaxMm || '', railOffsetTopMm: meta.railOffsetTopMm || '', railOffsetBottomMm: meta.railOffsetBottomMm || '', clampSource: meta.clampSource || '',
   });
   const [documents, setDocuments] = useState(() => productDocuments(product || {}));
   const [uploading, setUploading] = useState(false);
@@ -204,25 +204,52 @@ export default function ProductFormModal({ product, onSave, onClose, fixMode = f
 
   const handleImage = async (e) => { const file = e.target.files?.[0]; if (!file) return; setUploading(true); const { file_url } = await base44.integrations.Core.UploadFile({ file }); set('image_url', file_url); setUploading(false); };
   const handleDocumentUpload = async (event, type) => {
-    const file = event.target.files?.[0]; if (!file) return; setDocUploading(type);
-    try { const { file_url } = await base44.integrations.Core.UploadFile({ file }); setDocuments(current => [...current.filter(doc => !(doc.type === type && doc.name === file.name)), { id: `${Date.now()}-${type}`, type, name: file.name, title: file.name, file_name: file.name, file_url, uploadedAt: new Date().toISOString(), uploaded_at: new Date().toISOString() }]); setFetchMsg('✓ Dokument uppladdat. Tryck Hämta från uppladdade dokument för att fylla tekniska data.'); setFetchReport(null); }
-    finally { setDocUploading(null); event.target.value = ''; }
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setDocUploading(type);
+    try {
+      const result = await base44.integrations.Core.UploadFile({ file });
+      const file_url = result?.file_url || result?.url || '';
+      if (!file_url) {
+        setFetchMsg('⚠ Uppladdningen misslyckades – ingen URL returnerades. Försök igen.');
+        return;
+      }
+      setDocuments(current => [
+        ...current.filter(doc => !(doc.type === type && doc.name === file.name)),
+        { id: `${Date.now()}-${type}`, type, name: file.name, title: file.name, file_name: file.name, file_url, uploadedAt: new Date().toISOString(), uploaded_at: new Date().toISOString() }
+      ]);
+      setFetchMsg('✓ Dokument uppladdat. Tryck Hämta från uppladdade dokument för att fylla tekniska data.');
+      setFetchReport(null);
+    } catch (err) {
+      console.error('Dokumentuppladdning misslyckades:', err);
+      setFetchMsg('⚠ Uppladdningen misslyckades: ' + (err?.message || 'okänt fel'));
+    } finally {
+      setDocUploading(null);
+      event.target.value = '';
+    }
   };
   const removeDocument = id => { setDocuments(current => current.filter(doc => doc.id !== id)); setFetchReport(null); };
 
   const handleSave = async ({ continueToNext = false } = {}) => {
     setSaving(true);
-    const numOrNull = v => (v !== '' && v != null && !isNaN(Number(v))) ? Number(v) : undefined;
-    const batteryMeta = BATTERY_FIELDS.reduce((acc, key) => { const raw = form[key]; if (raw === '' || raw === null || raw === undefined) return acc; acc[key] = ['installation_location', 'ip_rating'].includes(key) ? raw : numOrNull(raw); return acc; }, {});
-    if (form.category === 'batteri') { ['capacity_kwh', 'width_mm', 'height_mm', 'weight_kg'].forEach(key => { const value = numOrNull(form[key]); if (value !== undefined) batteryMeta[key] = value; }); if (!batteryMeta.usable_capacity_kwh && usableKwh) batteryMeta.usable_capacity_kwh = usableKwh; }
-    const metaPatch = { documents, clampZoneMinMm: numOrNull(form.clampZoneMinMm), clampZoneMaxMm: numOrNull(form.clampZoneMaxMm), railOffsetTopMm: numOrNull(form.railOffsetTopMm), railOffsetBottomMm: numOrNull(form.railOffsetBottomMm), clampSource: form.clampSource || '', ...batteryMeta };
-    Object.keys(metaPatch).forEach(k => metaPatch[k] === undefined && delete metaPatch[k]);
-    const data = { ...form, price: Number(form.price) || 0, description: buildProductDescription(form.description, metaPatch) };
-    ['power_watts','capacity_kwh','width_mm','height_mm','weight_kg','voc_v','isc_a','vmp_v','imp_a','temp_coeff_pmax_percent_c','temp_coeff_voc_percent_c','temp_coeff_isc_percent_c','noct_c','max_dc_power_kw','max_dc_voltage_v','startup_voltage_v','mppt_voltage_min_v','mppt_voltage_max_v','nominal_dc_voltage_v','mppt_count','strings_per_mppt','max_input_current_a','max_short_circuit_current_a'].forEach(k => { data[k] = numOrNull(form[k]); });
-    [...PANEL_META_FIELDS, ...BATTERY_FIELDS].forEach(k => delete data[k]);
-    data.bifacial = Boolean(form.bifacial); data.battery_supported = Boolean(form.battery_supported); Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
-    if (product?.id) await base44.entities.Product.update(product.id, data); else await base44.entities.Product.create(data);
-    setSaving(false); await onSave?.({ continueToNext, savedProductId: product?.id });
+    try {
+      const numOrNull = v => (v !== '' && v != null && !isNaN(Number(v))) ? Number(v) : undefined;
+      const batteryMeta = BATTERY_FIELDS.reduce((acc, key) => { const raw = form[key]; if (raw === '' || raw === null || raw === undefined) return acc; acc[key] = ['installation_location', 'ip_rating'].includes(key) ? raw : numOrNull(raw); return acc; }, {});
+      if (form.category === 'batteri') { ['capacity_kwh', 'width_mm', 'height_mm', 'weight_kg'].forEach(key => { const value = numOrNull(form[key]); if (value !== undefined) batteryMeta[key] = value; }); if (!batteryMeta.usable_capacity_kwh && usableKwh) batteryMeta.usable_capacity_kwh = usableKwh; }
+      const metaPatch = { documents, clampZoneMinMm: numOrNull(form.clampZoneMinMm), clampZoneMaxMm: numOrNull(form.clampZoneMaxMm), railOffsetTopMm: numOrNull(form.railOffsetTopMm), railOffsetBottomMm: numOrNull(form.railOffsetBottomMm), clampSource: form.clampSource || '', ...batteryMeta };
+      Object.keys(metaPatch).forEach(k => metaPatch[k] === undefined && delete metaPatch[k]);
+      const data = { ...form, price: Number(form.price) || 0, description: buildProductDescription(form.description, metaPatch) };
+      ['power_watts','capacity_kwh','width_mm','height_mm','weight_kg','voc_v','isc_a','vmp_v','imp_a','temp_coeff_pmax_percent_c','temp_coeff_voc_percent_c','temp_coeff_isc_percent_c','noct_c','max_dc_power_kw','max_dc_voltage_v','startup_voltage_v','mppt_voltage_min_v','mppt_voltage_max_v','nominal_dc_voltage_v','mppt_count','strings_per_mppt','max_input_current_a','max_short_circuit_current_a'].forEach(k => { data[k] = numOrNull(form[k]); });
+      [...PANEL_META_FIELDS, ...BATTERY_FIELDS].forEach(k => delete data[k]);
+      data.bifacial = Boolean(form.bifacial); data.battery_supported = Boolean(form.battery_supported); Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
+      if (product?.id) await base44.entities.Product.update(product.id, data); else await base44.entities.Product.create(data);
+      await onSave?.({ continueToNext, savedProductId: product?.id });
+    } catch (err) {
+      console.error('Sparande misslyckades:', err);
+      setFetchMsg('⚠ Sparandet misslyckades: ' + (err?.message || 'okänt fel. Kontrollera konsolen.'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -244,7 +271,7 @@ export default function ProductFormModal({ product, onSave, onClose, fixMode = f
           <Field label="Beskrivning" value={form.description} onChange={v => set('description', v)} placeholder="Valfri beskrivning..." multiline />
           <div><label className="text-xs font-medium text-muted-foreground mb-1.5 block">Produktbild</label>{form.image_url ? <div className="relative"><img src={form.image_url} alt="" className="w-full h-28 object-contain bg-muted rounded-xl" /><button onClick={() => set('image_url', '')} className="absolute top-2 right-2 bg-white rounded-full p-1 shadow"><X className="w-3 h-3" /></button></div> : <label className="flex flex-col items-center justify-center h-20 border-2 border-dashed border-border rounded-xl cursor-pointer hover:border-primary/50 transition-colors">{uploading ? <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /> : <><Upload className="w-4 h-4 text-muted-foreground mb-1" /><span className="text-xs text-muted-foreground">Ladda upp bild</span></>}<input type="file" className="hidden" accept="image/*" onChange={handleImage} /></label>}</div>
         </div>
-        <div className="flex flex-wrap gap-3 p-5 border-t border-border"><button onClick={onClose} className="flex-1 min-w-[130px] py-2.5 rounded-xl border border-border text-sm font-medium hover:bg-muted transition-colors">Avbryt</button>{fixMode && <button onClick={() => handleSave({ continueToNext: true })} disabled={saving || !form.name || !form.price} className="flex-1 min-w-[170px] py-2.5 rounded-xl border border-primary text-primary text-sm font-medium hover:bg-primary/10 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">{saving && <Loader2 className="w-4 h-4 animate-spin" />}Spara och nästa</button>}<button onClick={() => handleSave({ continueToNext: false })} disabled={saving || !form.name || !form.price} className="flex-1 min-w-[150px] py-2.5 rounded-xl bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">{saving && <Loader2 className="w-4 h-4 animate-spin" />}{product ? 'Spara ändringar' : 'Lägg till'}</button></div>
+        <div className="flex flex-wrap gap-3 p-5 border-t border-border"><button onClick={onClose} className="flex-1 min-w-[130px] py-2.5 rounded-xl border border-border text-sm font-medium hover:bg-muted transition-colors">Avbryt</button>{fixMode && <button onClick={() => handleSave({ continueToNext: true })} disabled={saving || !form.name || form.price === ''} className="flex-1 min-w-[170px] py-2.5 rounded-xl border border-primary text-primary text-sm font-medium hover:bg-primary/10 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">{saving && <Loader2 className="w-4 h-4 animate-spin" />}Spara och nästa</button>}<button onClick={() => handleSave({ continueToNext: false })} disabled={saving || !form.name || form.price === ''} className="flex-1 min-w-[150px] py-2.5 rounded-xl bg-primary text-white text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">{saving && <Loader2 className="w-4 h-4 animate-spin" />}{product ? 'Spara ändringar' : 'Lägg till'}</button></div>
       </div>
     </div>
   );
