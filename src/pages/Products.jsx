@@ -40,6 +40,16 @@ const META_FIELDS = [
   'weight_kg',
 ];
 
+const DOCUMENT_REQUIRED_CATEGORIES = new Set([
+  'solpanel',
+  'vaxelriktare',
+  'batteri',
+  'optimerare',
+  'elbilsladdare',
+  'varmepump',
+  'värmepump',
+]);
+
 const qualityFilters = [
   { value: 'alla', label: 'Alla status' },
   { value: 'ofullstandiga', label: 'Ofullständiga' },
@@ -48,6 +58,11 @@ const qualityFilters = [
   { value: 'saknar_klamzon', label: 'Saknar klämzon' },
   { value: 'saknar_batteridata', label: 'Saknar batteridata' },
 ];
+
+function productRequiresDocuments(product = {}) {
+  const category = String(product.category || '').trim().toLowerCase();
+  return DOCUMENT_REQUIRED_CATEGORIES.has(category);
+}
 
 function hydrateProduct(product = {}) {
   const meta = productMeta(product);
@@ -119,6 +134,7 @@ function usableBatteryKwh(product = {}) {
 function productCompleteness(rawProduct = {}) {
   const product = hydrateProduct(rawProduct);
   const docs = productDocuments(product);
+  const requiresDocuments = productRequiresDocuments(product);
   const hasManual = docs.some(doc => doc.type === 'manual');
   const hasDatasheet = docs.some(doc => doc.type === 'datasheet');
   const technicalFields = requiredTechnicalFields(product);
@@ -126,9 +142,9 @@ function productCompleteness(rawProduct = {}) {
   const clamp = resolveProductClampZone(product);
   const needsClamp = product.category === 'solpanel';
   const technicalOk = missingTechnical.length === 0;
-  const docsOk = hasManual && hasDatasheet;
+  const docsOk = !requiresDocuments || (hasManual && hasDatasheet);
   const clampOk = !needsClamp || clamp.hasProductZone;
-  return { docs, hasManual, hasDatasheet, docsOk, technicalOk, missingTechnical, needsClamp, clampOk, clamp, complete: docsOk && technicalOk && clampOk };
+  return { docs, requiresDocuments, hasManual, hasDatasheet, docsOk, technicalOk, missingTechnical, needsClamp, clampOk, clamp, complete: docsOk && technicalOk && clampOk };
 }
 
 function issueFlags(product = {}, status = {}) {
@@ -291,7 +307,7 @@ export default function Products() {
         </div>
       </div>
 
-      <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="mr-2 inline h-4 w-4" />Produkter bör inte användas i projekt förrän manual, datablad och produktspecifik teknisk data är komplett. Klämzon krävs bara för solpaneler.</div>
+      <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="mr-2 inline h-4 w-4" />Manual och datablad krävs bara för solpaneler, växelriktare, batterier, optimerare, elbilsladdare och värmepumpar. Montagesystem har inget manualkrav.</div>
       {fixMessage && <div className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">{fixMessage}</div>}
 
       <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
@@ -346,8 +362,8 @@ export default function Products() {
               <div className="mt-3 flex items-center justify-between"><p className="text-lg font-bold text-primary">{product.price?.toLocaleString('sv-SE')} kr</p><p className="text-xs text-muted-foreground">/{product.unit || 'st'}</p></div>
               {(product.power_watts || product.capacity_kwh) && <div className="mt-2 flex flex-wrap gap-3">{product.power_watts && <span className="text-xs text-muted-foreground">{product.power_watts}W</span>}{product.capacity_kwh && <span className="text-xs text-muted-foreground">{product.capacity_kwh}kWh nominellt</span>}{usableKwh && <span className="text-xs text-green-700">{usableKwh}kWh vid {product.dod_percent || 90}% DoD</span>}</div>}
               {product.category === 'batteri' && <div className="mt-2 grid grid-cols-2 gap-1 text-[11px] text-muted-foreground">{product.module_capacity_kwh && <span>Modul: {product.module_capacity_kwh} kWh</span>}{product.max_modules_per_stack && <span>Max stapel: {product.max_modules_per_stack} moduler</span>}{(product.width_mm || product.height_mm || product.depth_mm) && <span className="col-span-2">Mått: {[product.width_mm, product.height_mm, product.depth_mm].filter(Boolean).join(' × ')} mm</span>}{(product.clearance_side_mm || product.clearance_top_mm) && <span className="col-span-2">Avstånd: sida {product.clearance_side_mm || '-'} mm, ovan {product.clearance_top_mm || '-'} mm</span>}</div>}
-              <div className="mt-4 flex flex-wrap gap-1.5"><StatusPill ok={status.hasDatasheet} icon={FileText}>Datablad</StatusPill><StatusPill ok={status.hasManual} icon={FileText}>Manual</StatusPill><StatusPill ok={status.technicalOk} icon={Zap}>Teknisk data</StatusPill>{product.category === 'batteri' && <StatusPill ok={hasValue(product.max_modules_per_stack)} icon={Layers}>Stapel</StatusPill>}{product.category === 'batteri' && <StatusPill ok={hasValue(product.clearance_side_mm) || hasValue(product.clearance_top_mm)} icon={Move3D}>Avstånd</StatusPill>}{status.needsClamp && <StatusPill ok={status.clampOk} icon={Ruler}>Klämzon</StatusPill>}</div>
-              {!status.complete && <div className="mt-3 rounded-xl bg-muted/40 p-2 text-[11px] text-muted-foreground">{!status.hasDatasheet && <div>• Datablad saknas</div>}{!status.hasManual && <div>• Manual saknas</div>}{!status.technicalOk && <div>• Teknisk data saknas: {status.missingTechnical.join(', ')}</div>}{status.needsClamp && !status.clampOk && <div>• Klämzon saknas från manual/datablad</div>}<button onClick={() => openFixProduct({ rawProduct, product, status })} className="mt-2 inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-100"><Wrench className="h-3 w-3" /> Fixa</button></div>}
+              <div className="mt-4 flex flex-wrap gap-1.5">{status.requiresDocuments && <StatusPill ok={status.hasDatasheet} icon={FileText}>Datablad</StatusPill>}{status.requiresDocuments && <StatusPill ok={status.hasManual} icon={FileText}>Manual</StatusPill>}<StatusPill ok={status.technicalOk} icon={Zap}>Teknisk data</StatusPill>{product.category === 'batteri' && <StatusPill ok={hasValue(product.max_modules_per_stack)} icon={Layers}>Stapel</StatusPill>}{product.category === 'batteri' && <StatusPill ok={hasValue(product.clearance_side_mm) || hasValue(product.clearance_top_mm)} icon={Move3D}>Avstånd</StatusPill>}{status.needsClamp && <StatusPill ok={status.clampOk} icon={Ruler}>Klämzon</StatusPill>}</div>
+              {!status.complete && <div className="mt-3 rounded-xl bg-muted/40 p-2 text-[11px] text-muted-foreground">{status.requiresDocuments && !status.hasDatasheet && <div>• Datablad saknas</div>}{status.requiresDocuments && !status.hasManual && <div>• Manual saknas</div>}{!status.technicalOk && <div>• Teknisk data saknas: {status.missingTechnical.join(', ')}</div>}{status.needsClamp && !status.clampOk && <div>• Klämzon saknas från manual/datablad</div>}<button onClick={() => openFixProduct({ rawProduct, product, status })} className="mt-2 inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-100"><Wrench className="h-3 w-3" /> Fixa</button></div>}
             </div>;
           })}
         </div>
