@@ -286,7 +286,7 @@ function addEdges(mesh, color = '#ffffff') {
   return edges;
 }
 
-function createLabelSprite(text, color = '#cbd5e1') {
+function createLabelSprite(text, color = '#1e293b') {
   const canvas = document.createElement('canvas');
   canvas.width = 640;
   canvas.height = 192;
@@ -294,8 +294,8 @@ function createLabelSprite(text, color = '#cbd5e1') {
   const lines = String(text || '').split('\n');
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = 'rgba(2, 6, 23, 0.78)';
-  ctx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.5)';
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.roundRect(18, 18, canvas.width - 36, canvas.height - 36, 18);
@@ -324,7 +324,7 @@ function createWallObject(wall, roomHeight) {
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(length, roomHeight, WALL_THICKNESS_M),
     new THREE.MeshStandardMaterial({
-      color: '#1e293b',
+      color: '#94a3b8',
       roughness: 0.7,
       metalness: 0.05,
       transparent: true,
@@ -406,7 +406,7 @@ function createDeviceObject(device, isSelected) {
 
   const label = createLabelSprite(
     `${shortLabel(device.productName)}\n${formatMeters(device.width)} x ${formatMeters(device.height)} x ${formatMeters(device.depth)}`,
-    isSelected ? '#f97316' : '#cbd5e1',
+    isSelected ? '#f97316' : '#1e293b',
   );
   label.position.set(0, device.height / 2 + 0.22, 0);
   group.add(label);
@@ -448,7 +448,7 @@ function StudioScene({ walls, devices, selectedDeviceId, roomHeight, onSelectDev
     if (!container) return undefined;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#05070c');
+    scene.background = new THREE.Color('#f0f4f8');
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -469,14 +469,14 @@ function StudioScene({ walls, devices, selectedDeviceId, roomHeight, onSelectDev
 
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(DRAW_WIDTH_M, DRAW_DEPTH_M),
-      new THREE.MeshStandardMaterial({ color: '#0b1120', roughness: 0.86, metalness: 0.02 }),
+      new THREE.MeshStandardMaterial({ color: '#e2e8f0', roughness: 0.9, metalness: 0.0 }),
     );
     floor.rotation.x = -Math.PI / 2;
     floor.position.y = -0.01;
     floor.receiveShadow = true;
     scene.add(floor);
 
-    const grid = new THREE.GridHelper(Math.max(DRAW_WIDTH_M, DRAW_DEPTH_M), Math.max(DRAW_WIDTH_M, DRAW_DEPTH_M) * 2, '#475569', '#1e293b');
+    const grid = new THREE.GridHelper(Math.max(DRAW_WIDTH_M, DRAW_DEPTH_M), Math.max(DRAW_WIDTH_M, DRAW_DEPTH_M) * 2, '#94a3b8', '#cbd5e0');
     grid.position.y = 0.004;
     scene.add(grid);
 
@@ -915,7 +915,7 @@ export default function BatteryTab({ project, onUpdate }) {
                 </div>
               </div>
 
-              <div className="relative min-h-[560px] overflow-hidden rounded-lg border bg-[#070b13]">
+              <div className="relative min-h-[560px] overflow-hidden rounded-lg border border-slate-200 bg-[#f0f4f8]">
                 <svg
                   ref={svgRef}
                   viewBox={`${-DRAW_WIDTH_M / 2} ${-DRAW_DEPTH_M / 2} ${DRAW_WIDTH_M} ${DRAW_DEPTH_M}`}
@@ -926,12 +926,11 @@ export default function BatteryTab({ project, onUpdate }) {
                 >
                   <defs>
                     <pattern id="battery-room-grid" width={GRID_STEP_M} height={GRID_STEP_M} patternUnits="userSpaceOnUse">
-                      <path d={`M ${GRID_STEP_M} 0 L 0 0 0 ${GRID_STEP_M}`} fill="none" stroke="#1e293b" strokeWidth="0.012" />
+                      <path d={`M ${GRID_STEP_M} 0 L 0 0 0 ${GRID_STEP_M}`} fill="none" stroke="#cbd5e0" strokeWidth="0.012" />
                     </pattern>
                   </defs>
+                  <rect x={-DRAW_WIDTH_M / 2} y={-DRAW_DEPTH_M / 2} width={DRAW_WIDTH_M} height={DRAW_DEPTH_M} fill="white" />
                   <rect x={-DRAW_WIDTH_M / 2} y={-DRAW_DEPTH_M / 2} width={DRAW_WIDTH_M} height={DRAW_DEPTH_M} fill="url(#battery-room-grid)" />
-                  <line x1={-DRAW_WIDTH_M / 2} y1="0" x2={DRAW_WIDTH_M / 2} y2="0" stroke="#0f766e" strokeWidth="0.018" />
-                  <line x1="0" y1={-DRAW_DEPTH_M / 2} x2="0" y2={DRAW_DEPTH_M / 2} stroke="#0f766e" strokeWidth="0.018" />
 
                   {walls.map((wall) => (
                     <g key={wall.id}>
@@ -940,7 +939,7 @@ export default function BatteryTab({ project, onUpdate }) {
                         y1={wall.z1}
                         x2={wall.x2}
                         y2={wall.z2}
-                        stroke="#38bdf8"
+                        stroke="#2563eb"
                         strokeWidth="0.08"
                         strokeLinecap="round"
                       />
@@ -949,25 +948,49 @@ export default function BatteryTab({ project, onUpdate }) {
                         y={(wall.z1 + wall.z2) / 2 - 0.12}
                         textAnchor="middle"
                         fontSize="0.18"
-                        fill="#cbd5e1"
+                        fill="#1e293b"
                       >
                         {formatMeters(wallLength(wall))}
                       </text>
                     </g>
                   ))}
 
-                  {drawingPoints.length > 0 && currentMousePoint && (
-                    <line
-                      x1={drawingPoints[drawingPoints.length - 1].x}
-                      y1={drawingPoints[drawingPoints.length - 1].z}
-                      x2={currentMousePoint.x}
-                      y2={currentMousePoint.z}
-                      stroke="#f59e0b"
-                      strokeWidth="0.045"
-                      strokeDasharray="0.12 0.1"
-                      strokeLinecap="round"
-                    />
-                  )}
+                  {drawingPoints.length > 0 && currentMousePoint && (() => {
+                    const start = drawingPoints[drawingPoints.length - 1];
+                    const end = currentMousePoint;
+                    const dx = end.x - start.x;
+                    const dz = end.z - start.z;
+                    const dist = Math.sqrt(dx * dx + dz * dz);
+                    const midX = (start.x + end.x) / 2;
+                    const midZ = (start.z + end.z) / 2;
+                    return (
+                      <g>
+                        <line
+                          x1={start.x}
+                          y1={start.z}
+                          x2={end.x}
+                          y2={end.z}
+                          stroke="#f59e0b"
+                          strokeWidth="0.045"
+                          strokeDasharray="0.12 0.1"
+                          strokeLinecap="round"
+                        />
+                        {dist > GRID_STEP_M / 2 && (
+                          <text
+                            x={midX}
+                            y={midZ - 0.14}
+                            textAnchor="middle"
+                            fontSize="0.2"
+                            fontWeight="600"
+                            fill="#f59e0b"
+                            style={{ pointerEvents: 'none', userSelect: 'none' }}
+                          >
+                            {dist.toFixed(2)} m
+                          </text>
+                        )}
+                      </g>
+                    );
+                  })()}
 
                   {drawingPoints.map((point, index) => (
                     <circle
@@ -979,7 +1002,7 @@ export default function BatteryTab({ project, onUpdate }) {
                     />
                   ))}
                 </svg>
-                <div className="absolute bottom-3 right-3 rounded-md border border-slate-700 bg-slate-950/90 px-3 py-1.5 text-[11px] font-medium text-slate-300">
+                <div className="absolute bottom-3 right-3 rounded-md border border-slate-200 bg-white/95 px-3 py-1.5 text-[11px] font-medium text-slate-600 shadow-sm">
                   1 ruta = 0.25 m
                 </div>
               </div>
@@ -1088,9 +1111,9 @@ export default function BatteryTab({ project, onUpdate }) {
                 )}
               </div>
 
-              <div className="relative min-h-[680px] overflow-hidden rounded-lg border bg-[#05070c]">
+              <div className="relative min-h-[680px] overflow-hidden rounded-lg border border-slate-200 bg-[#f0f4f8]">
                 {walls.length === 0 && (
-                  <div className="absolute left-4 top-4 z-10 rounded-md border border-slate-700 bg-slate-950/85 px-3 py-2 text-xs text-slate-300">
+                  <div className="absolute left-4 top-4 z-10 rounded-md border border-slate-200 bg-white/95 px-3 py-2 text-xs text-slate-600 shadow-sm">
                     Inget rum ritat
                   </div>
                 )}
