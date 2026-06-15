@@ -40,14 +40,51 @@ function docsFromDescription(description = '') {
   }
 }
 
+function compactProductDescription(description = '') {
+  const text = String(description || '');
+  const start = text.indexOf(META_START);
+  const end = text.indexOf(META_END);
+  if (start === -1 || end === -1 || end <= start) return text;
+
+  const cleanDescription = text.slice(0, start).trim() || 'Produktdokument';
+  const rawMeta = text.slice(start + META_START.length, end).trim();
+
+  try {
+    const meta = JSON.parse(rawMeta) || {};
+    const documents = Array.isArray(meta.documents)
+      ? meta.documents
+          .filter(doc => doc?.file_url || doc?.url)
+          .map(doc => ({
+            id: doc.id,
+            type: doc.type || doc.document_type || 'other',
+            name: doc.name || doc.title || doc.file_name || 'Dokument',
+            file_url: doc.file_url || doc.url || '',
+          }))
+      : [];
+
+    const compactMeta = { ...meta, documents, updatedAt: new Date().toISOString() };
+    delete compactMeta.name;
+    delete compactMeta.brand;
+    delete compactMeta.model;
+    delete compactMeta.category;
+    delete compactMeta.price;
+
+    return `${cleanDescription.slice(0, 80)}${META_START}${JSON.stringify(compactMeta)}${META_END}`;
+  } catch {
+    return text;
+  }
+}
+
 function withProductDocumentsPayload(payload) {
   if (!payload || typeof payload !== 'object') return payload;
+  const compactDescription = compactProductDescription(payload.description);
   const docs = Array.isArray(payload.documents_snapshot) && payload.documents_snapshot.length
     ? payload.documents_snapshot
-    : docsFromDescription(payload.description);
-  if (!docs.length) return payload;
+    : docsFromDescription(compactDescription);
+  if (!docs.length) return { ...payload, description: compactDescription };
   return {
     ...payload,
+    description: compactDescription,
     documents_snapshot: docs,
     documents: docs,
     product_documents: docs,
