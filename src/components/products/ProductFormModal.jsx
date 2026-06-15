@@ -236,8 +236,17 @@ export default function ProductFormModal({ product, onSave, onClose, fixMode = f
       const numOrNull = v => (v !== '' && v != null && !isNaN(Number(v))) ? Number(v) : undefined;
       const batteryMeta = BATTERY_FIELDS.reduce((acc, key) => { const raw = form[key]; if (raw === '' || raw === null || raw === undefined) return acc; acc[key] = ['installation_location', 'ip_rating'].includes(key) ? raw : numOrNull(raw); return acc; }, {});
       if (form.category === 'batteri') { ['capacity_kwh', 'width_mm', 'height_mm', 'weight_kg'].forEach(key => { const value = numOrNull(form[key]); if (value !== undefined) batteryMeta[key] = value; }); if (!batteryMeta.usable_capacity_kwh && usableKwh) batteryMeta.usable_capacity_kwh = usableKwh; }
-      const metaPatch = { documents, clampZoneMinMm: numOrNull(form.clampZoneMinMm), clampZoneMaxMm: numOrNull(form.clampZoneMaxMm), railOffsetTopMm: numOrNull(form.railOffsetTopMm), railOffsetBottomMm: numOrNull(form.railOffsetBottomMm), clampSource: form.clampSource || '', ...batteryMeta };
-      Object.keys(metaPatch).forEach(k => metaPatch[k] === undefined && delete metaPatch[k]);
+      const metaPatch = { documents };
+      // Only include clamp zone data for solar panels
+      if (form.category === 'solpanel') {
+        if (numOrNull(form.clampZoneMinMm) != null) metaPatch.clampZoneMinMm = numOrNull(form.clampZoneMinMm);
+        if (numOrNull(form.clampZoneMaxMm) != null) metaPatch.clampZoneMaxMm = numOrNull(form.clampZoneMaxMm);
+        if (numOrNull(form.railOffsetTopMm) != null) metaPatch.railOffsetTopMm = numOrNull(form.railOffsetTopMm);
+        if (numOrNull(form.railOffsetBottomMm) != null) metaPatch.railOffsetBottomMm = numOrNull(form.railOffsetBottomMm);
+        if (form.clampSource) metaPatch.clampSource = form.clampSource;
+      }
+      // Only include battery meta for battery products
+      if (form.category === 'batteri') Object.assign(metaPatch, batteryMeta);
       const data = { ...form, price: Number(form.price) || 0, description: buildProductDescription(form.description, metaPatch) };
       ['power_watts','capacity_kwh','width_mm','height_mm','weight_kg','voc_v','isc_a','vmp_v','imp_a','temp_coeff_pmax_percent_c','temp_coeff_voc_percent_c','temp_coeff_isc_percent_c','noct_c','max_dc_power_kw','max_dc_voltage_v','startup_voltage_v','mppt_voltage_min_v','mppt_voltage_max_v','nominal_dc_voltage_v','mppt_count','strings_per_mppt','max_input_current_a','max_short_circuit_current_a'].forEach(k => { data[k] = numOrNull(form[k]); });
       [...PANEL_META_FIELDS, ...BATTERY_FIELDS].forEach(k => delete data[k]);

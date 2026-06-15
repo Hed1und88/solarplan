@@ -111,20 +111,22 @@ export function buildProductDescription(cleanDescription = '', meta = {}) {
       file_url: doc.file_url || doc.url || '',
     }));
 
-  const normalizedMeta = {
-    ...(meta || {}),
-    documents: minimalDocuments,
-    updatedAt: new Date().toISOString(),
-  };
+  // Build a minimal meta object — only include non-null/non-empty values
+  const normalizedMeta = { documents: minimalDocuments };
 
-  // Remove redundant/large fields that are already stored as top-level product fields
-  delete normalizedMeta.name;
-  delete normalizedMeta.brand;
-  delete normalizedMeta.model;
-  delete normalizedMeta.category;
-  delete normalizedMeta.price;
+  // Only add non-null clamp zone data
+  const clampFields = ['clampZoneMinMm', 'clampZoneMaxMm', 'railOffsetTopMm', 'railOffsetBottomMm', 'clampSource'];
+  clampFields.forEach(k => {
+    if (meta[k] != null && meta[k] !== '') normalizedMeta[k] = meta[k];
+  });
 
-  const clean = String(cleanDescription || '').trim().slice(0, 500);
+  // Only add non-null battery/technical meta fields (not already top-level product fields)
+  const skipFields = new Set(['name', 'brand', 'model', 'category', 'price', 'documents', 'updatedAt', ...clampFields]);
+  Object.entries(meta || {}).forEach(([k, v]) => {
+    if (!skipFields.has(k) && v != null && v !== '') normalizedMeta[k] = v;
+  });
+
+  const clean = String(cleanDescription || '').trim().slice(0, 300);
   return `${clean}${META_START}${JSON.stringify(normalizedMeta)}${META_END}`.trim();
 }
 
