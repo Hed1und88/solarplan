@@ -40,7 +40,15 @@ function docsFromDescription(description = '') {
   }
 }
 
-function compactProductDescription(description = '') {
+function compactDocument(doc = {}) {
+  return {
+    type: doc.type || doc.document_type || 'other',
+    name: String(doc.name || doc.title || doc.file_name || 'Dokument').slice(0, 40),
+    file_url: doc.file_url || doc.url || '',
+  };
+}
+
+function compactProductDescription(description = '', category = '') {
   const text = String(description || '');
   const start = text.indexOf(META_START);
   const end = text.indexOf(META_END);
@@ -52,15 +60,12 @@ function compactProductDescription(description = '') {
   try {
     const meta = JSON.parse(rawMeta) || {};
     const documents = Array.isArray(meta.documents)
-      ? meta.documents
-          .filter(doc => doc?.file_url || doc?.url)
-          .map(doc => ({
-            id: doc.id,
-            type: doc.type || doc.document_type || 'other',
-            name: doc.name || doc.title || doc.file_name || 'Dokument',
-            file_url: doc.file_url || doc.url || '',
-          }))
+      ? meta.documents.filter(doc => doc?.file_url || doc?.url).map(compactDocument)
       : [];
+
+    if (String(category || '').toLowerCase() === 'montagesystem') {
+      return `Produktdokument${META_START}${JSON.stringify({ documents })}${META_END}`;
+    }
 
     const compactMeta = { ...meta, documents, updatedAt: new Date().toISOString() };
     delete compactMeta.name;
@@ -77,10 +82,10 @@ function compactProductDescription(description = '') {
 
 function withProductDocumentsPayload(payload) {
   if (!payload || typeof payload !== 'object') return payload;
-  const compactDescription = compactProductDescription(payload.description);
+  const compactDescription = compactProductDescription(payload.description, payload.category);
   const docs = Array.isArray(payload.documents_snapshot) && payload.documents_snapshot.length
-    ? payload.documents_snapshot
-    : docsFromDescription(compactDescription);
+    ? payload.documents_snapshot.map(compactDocument)
+    : docsFromDescription(compactDescription).map(compactDocument);
   if (!docs.length) return { ...payload, description: compactDescription };
   return {
     ...payload,
