@@ -2,8 +2,16 @@ import { geocodeAddress } from '@/lib/solarplan3d/dataSourceAdapters';
 
 const BOVERKET_PORTAL = 'https://gis2.boverket.se/portal';
 const CLIMATE_EXPERIENCE_ITEM_ID = 'ec290b8ec43d47e480e870bb8e1d5ded';
-const SERVICE_CACHE_KEY = 'solarplan:boverket-climate-service-urls:v1';
-const REQUEST_TIMEOUT_MS = 20000;
+const SERVICE_CACHE_KEY = 'solarplan:boverket-climate-service-urls:v2';
+const LAYER_CACHE_KEY = 'solarplan:boverket-climate-layers:v2';
+const RESULT_CACHE_KEY = 'solarplan:project-climate-results:v2';
+const REQUEST_TIMEOUT_MS = 15000;
+const DISCOVERY_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const RESULT_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+let serviceDiscoveryPromise = null;
+let layerDiscoveryPromise = null;
+const layerMetadataCache = new Map();
 
 const toAscii = value => String(value || '')
   .toLowerCase()
@@ -21,6 +29,50 @@ const round = (value, digits = 2) => {
   const factor = 10 ** digits;
   return Math.round(Number(value) * factor) / factor;
 };
+
+const normalizedQueryKey = value => toAscii(value).replace(/\s+/g, '-');
+
+function readCache(key, ttlMs) {
+  if (typeof window === 'undefined') return null;
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(key) || 'null');
+    if (!parsed || Date.now() - Number(parsed.savedAt || 0) > ttlMs) return null;
+    return parsed.value;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(key, value) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify({ savedAt: Date.now(), value }));
+  } catch {}
+}
+
+function readResultCache(query) {
+  if (typeof window === 'undefined') return null;
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(RESULT_CACHE_KEY) || '{}');
+    const item = parsed?.[normalizedQueryKey(query)];
+    if (!item || Date.now() - Number(item.savedAt || 0) > RESULT_CACHE_TTL_MS) return null;
+    return item.value || null;
+  } catch {
+    return null;
+  }
+}
+
+function writeResultCache(query, value) {
+  if (typeof window === 'undefined') return;
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(RESULT_CACHE_KEY) || '{}');
+    parsed[normalizedQueryKey(query)] = { savedAt: Date.now(), value };
+    const entries = Object.entries(parsed)
+      .sort(([, a], [, b]) => Number(b?.savedAt || 0) - Number(a?.savedAt || 0))
+      .slice(0, 50);
+    window.localStorage.setItem(RESULT_CACHE_KEY, JSON.stringify(Object.fromEntries(entries)));
+  } catch {}
+}
 
 async function fetchJson(url, timeoutMs = REQUEST_TIMEOUT_MS) {
   const controller = new AbortController();
@@ -82,29 +134,7 @@ function collectPortalReferences(value, references, keyHint = '') {
   }
 }
 
-function readCachedServiceUrls() {
-  if (typeof window === 'undefined') return [];
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem(SERVICE_CACHE_KEY) || 'null');
-    if (!parsed || !Array.isArray(parsed.urls)) return [];
-    if (Date.now() - Number(parsed.savedAt || 0) > 7 * 24 * 60 * 60 * 1000) return [];
-    return parsed.urls.filter(Boolean);
-  } catch {
-    return [];
-  }
-}
-
-function cacheServiceUrls(urls) {
-  if (typeof window === 'undefined' || !urls.length) return;
-  try {
-    window.localStorage.setItem(SERVICE_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), urls }));
-  } catch {}
-}
-
-async function discoverClimateServiceUrls() {
-  const cached = readCachedServiceUrls();
-  if (cached.length) return cached;
-
+async function discoverClimateServiceUrlsUncached() {
   const references = { itemIds: new Set([CLIMATE_EXPERIENCE_ITEM_ID]), serviceUrls: new Set() };
   const visited = new Set();
   const queue = [{ itemId: CLIMATE_EXPERIENCE_ITEM_ID, depth: 0 }];
@@ -131,8 +161,19 @@ async function discoverClimateServiceUrls() {
   }
 
   const urls = Array.from(references.serviceUrls);
-  cacheServiceUrls(urls);
+  if (urls.length) writeCache(SERVICE_CACHE_KEY, urls);
   return urls;
+}
+
+async function discoverClimateServiceUrls() {
+  const cached = readCache(SERVICE_CACHE_KEY, DISCOVERY_CACHE_TTL_MS);
+  if (Array.isArray(cached) && cached.length) return cached;
+  if (!serviceDiscoveryPromise) {
+    serviceDiscoveryPromise = discoverClimateServiceUrlsUncached().finally(() => {
+      serviceDiscoveryPromise = null;
+    });
+  }
+  return serviceDiscoveryPromise;
 }
 
 function climateKindFromText(value) {
@@ -143,21 +184,68 @@ function climateKindFromText(value) {
 }
 
 async function expandServiceLayers(serviceUrl) {
-  if (/\/(?:FeatureServer|MapServer)\/\d+$/i.test(serviceUrl)) return [{ url: serviceUrl, name: serviceUrl }];
+  if (/\/(?:FeatureServer|MapServer)\/\d+$/i.test(serviceUrl)) {
+    const metadata = await fetchJson(`${serviceUrl}?f=json`);
+    const name = metadata?.name || serviceUrl;
+    return [{ url: serviceUrl, name, kind: climateKindFromText(name) }];
+  }
 
   const metadata = await fetchJson(`${serviceUrl}?f=json`);
   const layers = Array.isArray(metadata?.layers) ? metadata.layers : [];
-  return layers.map(layer => ({
-    url: `${serviceUrl}/${layer.id}`,
-    name: layer.name || `${metadata?.name || 'Klimatlager'} ${layer.id}`,
+  return layers.map(layer => {
+    const name = layer.name || `${metadata?.name || 'Klimatlager'} ${layer.id}`;
+    return {
+      url: `${serviceUrl}/${layer.id}`,
+      name,
+      kind: climateKindFromText(name),
+    };
+  });
+}
+
+async function discoverClimateLayersUncached() {
+  const serviceUrls = await discoverClimateServiceUrls();
+  if (!serviceUrls.length) return [];
+
+  const groups = await Promise.all(serviceUrls.map(async serviceUrl => {
+    try {
+      return await expandServiceLayers(serviceUrl);
+    } catch (error) {
+      console.warn('Kunde inte läsa ArcGIS-tjänst:', serviceUrl, error);
+      return [];
+    }
   }));
+
+  const layers = groups.flat();
+  if (layers.length) writeCache(LAYER_CACHE_KEY, layers);
+  return layers;
+}
+
+async function discoverClimateLayers() {
+  const cached = readCache(LAYER_CACHE_KEY, DISCOVERY_CACHE_TTL_MS);
+  if (Array.isArray(cached) && cached.length) return cached;
+  if (!layerDiscoveryPromise) {
+    layerDiscoveryPromise = discoverClimateLayersUncached().finally(() => {
+      layerDiscoveryPromise = null;
+    });
+  }
+  return layerDiscoveryPromise;
+}
+
+async function getLayerMetadata(layerUrl) {
+  if (!layerMetadataCache.has(layerUrl)) {
+    layerMetadataCache.set(layerUrl, fetchJson(`${layerUrl}?f=json`).catch(error => {
+      layerMetadataCache.delete(layerUrl);
+      throw error;
+    }));
+  }
+  return layerMetadataCache.get(layerUrl);
 }
 
 function fieldScore({ kind, layerName, fieldName, alias, value }) {
   const label = toAscii(`${layerName} ${fieldName} ${alias}`);
   const field = toAscii(`${fieldName} ${alias}`);
   const number = finiteNumber(value, null);
-  if (number === null || /(objectid|globalid|shape|created|updated|editor|fid)/.test(field)) return -Infinity;
+  if (number === null || /(objectid|globalid|shape|created|updated|editor|fid|area|length)/.test(field)) return -Infinity;
 
   const snowPlausible = number >= 0.5 && number <= 10;
   const windPlausible = number >= 15 && number <= 40;
@@ -165,127 +253,108 @@ function fieldScore({ kind, layerName, fieldName, alias, value }) {
   if (kind === 'wind' && !windPlausible) return -Infinity;
 
   let score = 0;
-  if (kind === 'snow' && /(sno|snow)/.test(label)) score += 12;
-  if (kind === 'wind' && /(vind|wind)/.test(label)) score += 12;
-  if (/(last|zon|zone|grund|referens|varde|value|ms|kn)/.test(label)) score += 4;
-  if (climateKindFromText(layerName) === kind) score += 10;
+  if (kind === 'snow' && /(sno|snow)/.test(label)) score += 14;
+  if (kind === 'wind' && /(vind|wind)/.test(label)) score += 14;
+  if (/(last|zon|zone|grund|referens|varde|value|hastighet|speed|ms|kn)/.test(label)) score += 5;
+  if (climateKindFromText(layerName) === kind) score += 12;
   if (/^(value|varde|zon|zone|klass|class)$/.test(field)) score += 4;
-  if (Number.isInteger(number) && number > 100) score -= 20;
   return score;
 }
 
-function extractValueFromFeature(kind, layerName, metadata, attributes) {
+function extractValueFromFeature(kind, layer, metadata, attributes) {
+  if (layer.kind && layer.kind !== kind) return null;
   const fields = Array.isArray(metadata?.fields) ? metadata.fields : [];
   const aliases = Object.fromEntries(fields.map(field => [field.name, field.alias || field.name]));
   const candidates = Object.entries(attributes || {})
     .map(([fieldName, value]) => ({
       value: finiteNumber(value, null),
-      score: fieldScore({ kind, layerName, fieldName, alias: aliases[fieldName] || '', value }),
-      fieldName,
+      score: fieldScore({ kind, layerName: layer.name, fieldName, alias: aliases[fieldName] || '', value }),
     }))
-    .filter(candidate => candidate.value !== null && Number.isFinite(candidate.score))
+    .filter(candidate => candidate.value !== null && Number.isFinite(candidate.score) && candidate.score > 0)
     .sort((a, b) => b.score - a.score);
 
-  return candidates[0]?.score > 0 ? candidates[0] : null;
+  return candidates[0]?.value ?? null;
 }
 
 async function queryLayer(layer, latitude, longitude) {
-  const metadata = await fetchJson(`${layer.url}?f=json`);
-  const params = new URLSearchParams({
-    f: 'json',
-    where: '1=1',
-    geometry: `${longitude},${latitude}`,
-    geometryType: 'esriGeometryPoint',
-    inSR: '4326',
-    spatialRel: 'esriSpatialRelIntersects',
-    outFields: '*',
-    returnGeometry: 'false',
-  });
-  const result = await fetchJson(`${layer.url}/query?${params.toString()}`);
+  const [metadata, result] = await Promise.all([
+    getLayerMetadata(layer.url),
+    fetchJson(`${layer.url}/query?${new URLSearchParams({
+      f: 'json',
+      where: '1=1',
+      geometry: `${longitude},${latitude}`,
+      geometryType: 'esriGeometryPoint',
+      inSR: '4326',
+      spatialRel: 'esriSpatialRelIntersects',
+      outFields: '*',
+      returnGeometry: 'false',
+    }).toString()}`),
+  ]);
+
   const feature = result?.features?.[0];
   if (!feature?.attributes) return null;
 
   return {
     layerName: layer.name || metadata?.name || '',
-    snow: extractValueFromFeature('snow', layer.name || metadata?.name || '', metadata, feature.attributes),
-    wind: extractValueFromFeature('wind', layer.name || metadata?.name || '', metadata, feature.attributes),
+    snow: extractValueFromFeature('snow', layer, metadata, feature.attributes),
+    wind: extractValueFromFeature('wind', layer, metadata, feature.attributes),
   };
 }
 
 async function queryBoverketClimateLoads(latitude, longitude) {
-  const serviceUrls = await discoverClimateServiceUrls();
-  if (!serviceUrls.length) throw new Error('Boverkets klimatlastlager kunde inte hittas.');
+  const layers = await discoverClimateLayers();
+  if (!layers.length) throw new Error('Boverkets klimatlastlager kunde inte hittas.');
 
-  const layers = [];
-  for (const serviceUrl of serviceUrls) {
+  const namedClimateLayers = layers.filter(layer => layer.kind);
+  const preferred = (namedClimateLayers.length ? namedClimateLayers : layers).slice(0, 20);
+  const results = await Promise.all(preferred.map(async layer => {
     try {
-      const expanded = await expandServiceLayers(serviceUrl);
-      layers.push(...expanded);
+      return await queryLayer(layer, latitude, longitude);
     } catch (error) {
-      console.warn('Kunde inte läsa ArcGIS-tjänst:', serviceUrl, error);
+      console.warn('Kunde inte fråga Boverkets klimatlastlager:', layer.url, error);
+      return null;
     }
-  }
+  }));
 
-  const classified = layers.map(layer => ({ ...layer, kind: climateKindFromText(layer.name) }));
-  const namedClimateLayers = classified.filter(layer => layer.kind);
-  const preferred = (namedClimateLayers.length ? namedClimateLayers : classified).slice(0, 24);
-
-  let snow = null;
-  let wind = null;
-  let snowLayer = '';
-  let windLayer = '';
-
-  for (let index = 0; index < preferred.length && !(snow && wind); index += 6) {
-    const batch = preferred.slice(index, index + 6);
-    const results = await Promise.all(batch.map(async layer => {
-      try {
-        return await queryLayer(layer, latitude, longitude);
-      } catch (error) {
-        console.warn('Kunde inte fråga Boverkets klimatlastlager:', layer.url, error);
-        return null;
-      }
-    }));
-
-    results.forEach(result => {
-      if (!snow && result?.snow) {
-        snow = result.snow.value;
-        snowLayer = result.layerName;
-      }
-      if (!wind && result?.wind) {
-        wind = result.wind.value;
-        windLayer = result.layerName;
-      }
-    });
-  }
-
-  if (!Number.isFinite(snow) || !Number.isFinite(wind)) {
-    throw new Error('Snö- eller vindlast saknades för den valda platsen.');
-  }
+  const snowResult = results.find(result => Number.isFinite(result?.snow));
+  const windResult = results.find(result => Number.isFinite(result?.wind));
+  if (!snowResult || !windResult) throw new Error('Snö- eller vindlast saknades för den valda platsen.');
 
   return {
-    snowLoadKnM2: round(snow, 2),
-    windLoadMs: round(wind, 1),
-    source: `Boverkets digitala klimatlastkartor${snowLayer || windLayer ? ` (${[snowLayer, windLayer].filter(Boolean).join(' / ')})` : ''}`,
+    snowLoadKnM2: round(snowResult.snow, 2),
+    windLoadMs: round(windResult.wind, 1),
+    source: `Boverkets digitala klimatlastkartor (${[snowResult.layerName, windResult.layerName].filter(Boolean).join(' / ')})`,
   };
+}
+
+export function preloadProjectClimateLookup() {
+  discoverClimateLayers().catch(error => {
+    console.warn('Förladdning av klimatlastdata misslyckades:', error);
+  });
 }
 
 export async function resolveProjectClimateLoads(address) {
   const query = String(address || '').trim();
-  if (query.length < 5) throw new Error('Ange en fullständig adress.');
+  if (query.length < 5) throw new Error('Ange postnummer och postort.');
+
+  const cached = readResultCache(query);
+  if (cached) return { ...cached, fromCache: true };
 
   const geocoding = await geocodeAddress(query);
   const latitude = finiteNumber(geocoding?.data?.latitude, null);
   const longitude = finiteNumber(geocoding?.data?.longitude, null);
   if (!geocoding?.ok || latitude === null || longitude === null) {
-    throw new Error(geocoding?.message || 'Adressen kunde inte hittas.');
+    throw new Error(geocoding?.message || 'Postnumret och postorten kunde inte hittas.');
   }
 
   const climate = await queryBoverketClimateLoads(latitude, longitude);
-  return {
+  const result = {
     address: geocoding.data.geocodedAddress || query,
     latitude,
     longitude,
     ...climate,
     updatedAt: new Date().toISOString(),
   };
+  writeResultCache(query, result);
+  return result;
 }
