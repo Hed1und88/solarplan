@@ -1,83 +1,80 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { base44 } from '@/api/base44Client';
-import { Loader2, Mail, MapPin, Phone, RefreshCw, Snowflake, Wind, X } from 'lucide-react';
-import { resolveProjectClimateLoads } from '@/lib/projectClimateLoads';
+import { Loader2, RefreshCw, X } from 'lucide-react';
+import { preloadProjectClimateLookup, resolveProjectClimateLoads } from '@/lib/projectClimateLoads';
 
-const statusOptions = [
-  ['planering', 'Planering'],
-  ['projektering', 'Projektering'],
-  ['offert', 'Offert'],
-  ['installation', 'Installation'],
-  ['klart', 'Klart'],
-];
+const INPUT = 'w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30';
+const STATUSES = [['planering','Planering'],['projektering','Projektering'],['offert','Offert'],['installation','Installation'],['klart','Klart']];
+const digits = value => String(value || '').replace(/\D/g, '').slice(0, 5);
+const formatPostcode = value => {
+  const valueDigits = digits(value);
+  return valueDigits.length > 3 ? `${valueDigits.slice(0, 3)} ${valueDigits.slice(3)}` : valueDigits;
+};
+const placeKey = (postcode, city) => `${digits(postcode)}|${String(city || '').trim().toLowerCase()}`;
+const addressText = form => `${form.street_address.trim()}, ${formatPostcode(form.postal_code)} ${form.postal_city.trim()}`;
 
-const asInputValue = value => (value === undefined || value === null ? '' : value);
-const normalizedAddress = value => String(value || '').trim().toLowerCase();
+function splitAddress(source) {
+  if (source.street_address || source.postal_code || source.postal_city) return {
+    street_address: source.street_address || '',
+    postal_code: formatPostcode(source.postal_code),
+    postal_city: source.postal_city || '',
+  };
+  const raw = String(source.address || '').trim();
+  const match = raw.match(/^(.*?)(?:,\s*|\s+)(\d{3}\s?\d{2})\s+([^,]+?)(?:,\s*(?:Sweden|Sverige))?$/i);
+  return match
+    ? { street_address: match[1].trim(), postal_code: formatPostcode(match[2]), postal_city: match[3].trim() }
+    : { street_address: raw, postal_code: '', postal_city: '' };
+}
 
-function Field({ label, icon: Icon, children }) {
-  return (
-    <label className="block space-y-1.5">
-      <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-        {Icon && <Icon className="h-3.5 w-3.5" />}
-        {label}
-      </span>
-      {children}
-    </label>
-  );
+function Field({ label, children }) {
+  return <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">{label}</span>{children}</label>;
 }
 
 export default function NewProjectModal({ onSave, onClose, initialValues = {}, project = null, onSubmit }) {
-  const isEditing = Boolean(project?.id);
+  const editing = Boolean(project?.id);
   const source = project || initialValues || {};
-  const initialForm = useMemo(() => ({
+  const location = useMemo(() => splitAddress(source), [source]);
+  const initial = useMemo(() => ({
     name: source.name || '',
-    customer_email: source.customer_email || source.email || source.contact_email || '',
-    customer_phone: source.customer_phone || source.phone || source.telephone || source.contact_phone || '',
-    address: source.address || '',
-    snow_load_kn_m2: asInputValue(source.snow_load_kn_m2),
-    wind_load_ms: asInputValue(source.wind_load_ms),
-    latitude: asInputValue(source.latitude),
-    longitude: asInputValue(source.longitude),
+    customer_email: source.customer_email || source.email || '',
+    customer_phone: source.customer_phone || source.phone || source.telephone || '',
+    ...location,
+    snow_load_kn_m2: source.snow_load_kn_m2 ?? '',
+    wind_load_ms: source.wind_load_ms ?? '',
+    latitude: source.latitude ?? '',
+    longitude: source.longitude ?? '',
     climate_load_source: source.climate_load_source || '',
     climate_load_updated_at: source.climate_load_updated_at || '',
     climate_load_status: source.climate_load_status || '',
     status: source.status || 'planering',
-  }), [source]);
+  }), [source, location]);
 
-  const [form, setForm] = useState(initialForm);
+  const [form, setForm] = useState(initial);
   const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState('');
-  const [climateState, setClimateState] = useState(() => (
-    initialForm.snow_load_kn_m2 !== '' && initialForm.wind_load_ms !== ''
-      ? { status: 'success', message: initialForm.climate_load_source || 'Snö- och vindlast är sparad.' }
-      : { status: 'idle', message: 'Snö- och vindlast hämtas automatiskt när adressen är ifylld.' }
-  ));
-  const lastResolvedAddress = useRef(
-    initialForm.snow_load_kn_m2 !== '' && initialForm.wind_load_ms !== ''
-      ? normalizedAddress(initialForm.address)
-      : '',
-  );
-  const requestSequence = useRef(0);
+  const [error, setError] = useState('');
+  const [lookup, setLookup] = useState(initial.snow_load_kn_m2 !== '' && initial.wind_load_ms !== ''
+    ? { state: 'done', text: initial.climate_load_source || 'Snö- och vindlast är sparad.' }
+    : { state: 'idle', text: 'Fyll i postnummer och postort. Uppslaget startar direkt.' });
+  const lastPlace = useRef(initial.snow_load_kn_m2 !== '' ? placeKey(initial.postal_code, initial.postal_city) : '');
+  const requestId = useRef(0);
 
-  const set = (key, value) => setForm(current => ({ ...current, [key]: value }));
+  useEffect(() => { preloadProjectClimateLookup(); }, []);
+  const patch = (key, value) => setForm(current => ({ ...current, [key]: value }));
 
-  const loadClimate = useCallback(async (address, { force = false } = {}) => {
-    const query = String(address || '').trim();
-    const addressKey = normalizedAddress(query);
-    if (query.length < 5) return;
-    if (!force && addressKey === lastResolvedAddress.current) return;
-
-    const requestId = ++requestSequence.current;
-    setClimateState({ status: 'loading', message: 'Hämtar adress, snölast och vindlast...' });
-    setSaveError('');
-
+  const fetchLoads = useCallback(async (postcode, city, force = false) => {
+    const postcodeDigits = digits(postcode);
+    const cleanCity = String(city || '').trim();
+    const key = placeKey(postcodeDigits, cleanCity);
+    if (postcodeDigits.length !== 5 || cleanCity.length < 2 || (!force && key === lastPlace.current)) return;
+    const currentRequest = ++requestId.current;
+    setLookup({ state: 'loading', text: 'Hämtar snölast och vindlast...' });
+    setError('');
     try {
-      const result = await resolveProjectClimateLoads(query);
-      if (requestId !== requestSequence.current) return;
-      lastResolvedAddress.current = normalizedAddress(result.address);
+      const result = await resolveProjectClimateLoads(`${formatPostcode(postcodeDigits)} ${cleanCity}, Sweden`);
+      if (currentRequest !== requestId.current) return;
+      lastPlace.current = key;
       setForm(current => ({
         ...current,
-        address: result.address,
         snow_load_kn_m2: result.snowLoadKnM2,
         wind_load_ms: result.windLoadMs,
         latitude: result.latitude,
@@ -86,235 +83,104 @@ export default function NewProjectModal({ onSave, onClose, initialValues = {}, p
         climate_load_updated_at: result.updatedAt,
         climate_load_status: 'automatic',
       }));
-      setClimateState({ status: 'success', message: `${result.snowLoadKnM2} kN/m² · ${result.windLoadMs} m/s · ${result.source}` });
-    } catch (error) {
-      if (requestId !== requestSequence.current) return;
-      lastResolvedAddress.current = '';
-      setClimateState({
-        status: 'error',
-        message: `${error?.message || 'Kunde inte hämta klimatlast automatiskt.'} Du kan fylla i värdena manuellt.`,
-      });
+      setLookup({ state: 'done', text: `${result.snowLoadKnM2} kN/m² · ${result.windLoadMs} m/s${result.fromCache ? ' · direkt från cache' : ''}` });
+    } catch (lookupError) {
+      if (currentRequest !== requestId.current) return;
+      lastPlace.current = '';
+      setLookup({ state: 'error', text: `${lookupError?.message || 'Kunde inte hämta klimatlast.'} Fyll i manuellt.` });
     }
   }, []);
 
   useEffect(() => {
-    const address = String(form.address || '').trim();
-    if (address.length < 5 || normalizedAddress(address) === lastResolvedAddress.current) return undefined;
-    const timer = window.setTimeout(() => loadClimate(address), 1200);
-    return () => window.clearTimeout(timer);
-  }, [form.address, loadClimate]);
+    if (digits(form.postal_code).length === 5 && form.postal_city.trim().length >= 2) fetchLoads(form.postal_code, form.postal_city);
+  }, [form.postal_code, form.postal_city, fetchLoads]);
 
-  const changeAddress = value => {
-    requestSequence.current += 1;
-    lastResolvedAddress.current = '';
+  const changePlace = (key, value) => {
+    requestId.current += 1;
+    lastPlace.current = '';
     setForm(current => ({
       ...current,
-      address: value,
-      snow_load_kn_m2: '',
-      wind_load_ms: '',
-      latitude: '',
-      longitude: '',
-      climate_load_source: '',
-      climate_load_updated_at: '',
-      climate_load_status: '',
+      [key]: key === 'postal_code' ? formatPostcode(value) : value,
+      snow_load_kn_m2: '', wind_load_ms: '', latitude: '', longitude: '',
+      climate_load_source: '', climate_load_updated_at: '', climate_load_status: '',
     }));
-    setClimateState({ status: 'idle', message: 'Snö- och vindlast hämtas automatiskt när adressen är ifylld.' });
+    setLookup({ state: 'idle', text: 'Fyll i postnummer och postort. Uppslaget startar direkt.' });
   };
 
-  const setManualClimateValue = (key, value) => {
-    setForm(current => ({
-      ...current,
-      [key]: value,
-      climate_load_source: 'Manuellt angivet',
-      climate_load_updated_at: new Date().toISOString(),
-      climate_load_status: 'manual',
-    }));
-    setClimateState({ status: 'manual', message: 'Snö- eller vindlast har ändrats manuellt.' });
+  const manualLoad = (key, value) => {
+    setForm(current => ({ ...current, [key]: value, climate_load_source: 'Manuellt angivet', climate_load_updated_at: new Date().toISOString(), climate_load_status: 'manual' }));
+    setLookup({ state: 'manual', text: 'Lastvärdet har ändrats manuellt.' });
   };
 
-  const handleSave = async () => {
-    const snowLoad = Number(form.snow_load_kn_m2);
-    const windLoad = Number(form.wind_load_ms);
-    if (!form.name.trim() || !form.address.trim() || !Number.isFinite(snowLoad) || !Number.isFinite(windLoad)) return;
+  const valid = Boolean(form.name.trim() && form.street_address.trim() && digits(form.postal_code).length === 5 && form.postal_city.trim()
+    && Number(form.snow_load_kn_m2) > 0 && Number(form.wind_load_ms) > 0);
 
+  const save = async () => {
+    if (!valid) return;
     const payload = {
-      ...(isEditing ? {} : initialValues || {}),
+      ...(editing ? {} : initialValues),
       name: form.name.trim(),
       customer_email: form.customer_email.trim(),
       customer_phone: form.customer_phone.trim(),
-      address: form.address.trim(),
-      snow_load_kn_m2: snowLoad,
-      wind_load_ms: windLoad,
+      street_address: form.street_address.trim(),
+      postal_code: formatPostcode(form.postal_code),
+      postal_city: form.postal_city.trim(),
+      address: addressText(form),
+      snow_load_kn_m2: Number(form.snow_load_kn_m2),
+      wind_load_ms: Number(form.wind_load_ms),
       latitude: form.latitude === '' ? null : Number(form.latitude),
       longitude: form.longitude === '' ? null : Number(form.longitude),
       climate_load_source: form.climate_load_source || 'Manuellt angivet',
       climate_load_updated_at: form.climate_load_updated_at || new Date().toISOString(),
       climate_load_status: form.climate_load_status || 'manual',
-      status: isEditing ? form.status : 'planering',
+      status: editing ? form.status : 'planering',
     };
-
     setSaving(true);
-    setSaveError('');
+    setError('');
     try {
-      let savedProject;
-      if (onSubmit) savedProject = await onSubmit(payload);
-      else if (isEditing) savedProject = await base44.entities.Project.update(project.id, payload);
-      else savedProject = await base44.entities.Project.create(payload);
-      onSave?.(savedProject || { ...project, ...payload });
-    } catch (error) {
-      setSaveError(error?.message || 'Projektet kunde inte sparas.');
+      const saved = onSubmit
+        ? await onSubmit(payload)
+        : editing
+          ? await base44.entities.Project.update(project.id, payload)
+          : await base44.entities.Project.create(payload);
+      onSave?.(saved || { ...project, ...payload });
+    } catch (saveError) {
+      setError(saveError?.message || 'Projektet kunde inte sparas.');
     } finally {
       setSaving(false);
     }
   };
 
-  const canSave = Boolean(
-    form.name.trim()
-    && form.address.trim()
-    && Number.isFinite(Number(form.snow_load_kn_m2))
-    && Number(form.snow_load_kn_m2) > 0
-    && Number.isFinite(Number(form.wind_load_ms))
-    && Number(form.wind_load_ms) > 0,
-  );
-
-  const climateMessageClass = climateState.status === 'error'
-    ? 'border-red-200 bg-red-50 text-red-800'
-    : climateState.status === 'success'
-      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+  const lookupClass = lookup.state === 'error' ? 'border-red-200 bg-red-50 text-red-800'
+    : lookup.state === 'done' ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
       : 'border-blue-200 bg-blue-50 text-blue-800';
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-border bg-card shadow-2xl">
-        <div className="flex items-center justify-between border-b border-border p-5">
-          <div>
-            <h2 className="font-semibold">{isEditing ? 'Ändra projektuppgifter' : 'Skapa projekt'}</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">Kontaktuppgifter och dimensionerande klimatlast sparas på projektet.</p>
-          </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-muted" aria-label="Stäng"><X className="h-4 w-4" /></button>
-        </div>
-
-        <div className="space-y-4 p-5">
-          <Field label="Namn på projektet *">
-            <input
-              type="text"
-              value={form.name}
-              onChange={event => set('name', event.target.value)}
-              placeholder="T.ex. Helgetorp"
-              autoFocus
-              className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-          </Field>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="E-post" icon={Mail}>
-              <input
-                type="email"
-                value={form.customer_email}
-                onChange={event => set('customer_email', event.target.value)}
-                placeholder="namn@exempel.se"
-                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </Field>
-            <Field label="Telefon" icon={Phone}>
-              <input
-                type="tel"
-                value={form.customer_phone}
-                onChange={event => set('customer_phone', event.target.value)}
-                placeholder="070-123 45 67"
-                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </Field>
-          </div>
-
-          <Field label="Adress *" icon={MapPin}>
-            <div className="relative">
-              <input
-                type="text"
-                value={form.address}
-                onChange={event => changeAddress(event.target.value)}
-                placeholder="Gata, postnummer och ort"
-                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 pr-20 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-              <div className="absolute inset-y-0 right-2 flex items-center gap-1">
-                {climateState.status === 'loading' && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-                {form.address && (
-                  <button type="button" onClick={() => changeAddress('')} className="rounded-md p-1 text-muted-foreground hover:bg-muted" aria-label="Rensa adress">
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-          </Field>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Snölast *" icon={Snowflake}>
-              <div className="relative">
-                <input
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  value={form.snow_load_kn_m2}
-                  onChange={event => setManualClimateValue('snow_load_kn_m2', event.target.value)}
-                  className="w-full rounded-xl border border-border bg-background px-3 py-2.5 pr-20 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                />
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center border-l border-border pl-3 text-sm text-muted-foreground">kN/m²</span>
-              </div>
-            </Field>
-            <Field label="Vindlast *" icon={Wind}>
-              <div className="relative">
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={form.wind_load_ms}
-                  onChange={event => setManualClimateValue('wind_load_ms', event.target.value)}
-                  className="w-full rounded-xl border border-border bg-background px-3 py-2.5 pr-16 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                />
-                <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center border-l border-border pl-3 text-sm text-muted-foreground">m/s</span>
-              </div>
-            </Field>
-          </div>
-
-          <div className={`flex items-start justify-between gap-3 rounded-xl border px-3 py-2.5 text-xs ${climateMessageClass}`}>
-            <span>{climateState.message}</span>
-            <button
-              type="button"
-              onClick={() => loadClimate(form.address, { force: true })}
-              disabled={climateState.status === 'loading' || form.address.trim().length < 5}
-              className="inline-flex shrink-0 items-center gap-1 font-medium disabled:opacity-50"
-            >
-              <RefreshCw className="h-3.5 w-3.5" /> Hämta igen
-            </button>
-          </div>
-
-          {isEditing && (
-            <Field label="Status">
-              <select
-                value={form.status}
-                onChange={event => set('status', event.target.value)}
-                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-              >
-                {statusOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
-            </Field>
-          )}
-
-          <p className="text-xs text-muted-foreground">
-            Automatiska värden hämtas från Boverkets digitala klimatlastkartor. Vid zongräns eller konstruktionskritisk dimensionering ska värdet verifieras mot gällande regelverk.
-          </p>
-
-          {saveError && <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{saveError}</div>}
-        </div>
-
-        <div className="flex gap-3 border-t border-border p-5">
-          <button onClick={onClose} disabled={saving} className="flex-1 rounded-xl border border-border py-2.5 text-sm font-medium hover:bg-muted disabled:opacity-50">Avbryt</button>
-          <button onClick={handleSave} disabled={saving || !canSave} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50">
-            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-            {isEditing ? 'Spara ändringar' : 'Skapa projekt'}
-          </button>
-        </div>
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+    <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border bg-card shadow-2xl">
+      <div className="flex items-center justify-between border-b p-5">
+        <div><h2 className="font-semibold">{editing ? 'Ändra projektuppgifter' : 'Skapa projekt'}</h2><p className="text-xs text-muted-foreground">Projekt- och kontaktuppgifter</p></div>
+        <button onClick={onClose} aria-label="Stäng"><X className="h-4 w-4" /></button>
       </div>
+      <div className="space-y-4 p-5">
+        <Field label="Namn på projektet *"><input className={INPUT} value={form.name} onChange={e => patch('name', e.target.value)} autoFocus /></Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="E-post"><input type="email" className={INPUT} value={form.customer_email} onChange={e => patch('customer_email', e.target.value)} /></Field>
+          <Field label="Telefon"><input type="tel" className={INPUT} value={form.customer_phone} onChange={e => patch('customer_phone', e.target.value)} /></Field>
+        </div>
+        <Field label="Adress *"><input className={INPUT} placeholder="Gata, nummer eller fastighetsnamn" value={form.street_address} onChange={e => patch('street_address', e.target.value)} /></Field>
+        <div className="grid gap-4 sm:grid-cols-[160px_1fr]">
+          <Field label="Postnummer *"><input className={INPUT} inputMode="numeric" maxLength={6} placeholder="655 95" value={form.postal_code} onChange={e => changePlace('postal_code', e.target.value)} /></Field>
+          <Field label="Postort *"><div className="relative"><input className={`${INPUT} pr-10`} placeholder="Väse" value={form.postal_city} onChange={e => changePlace('postal_city', e.target.value)} />{lookup.state === 'loading' && <Loader2 className="absolute right-3 top-3 h-4 w-4 animate-spin" />}</div></Field>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Snölast *"><div className="relative"><input type="number" min="0" step="0.1" className={`${INPUT} pr-20`} value={form.snow_load_kn_m2} onChange={e => manualLoad('snow_load_kn_m2', e.target.value)} /><span className="absolute right-3 top-3 text-sm text-muted-foreground">kN/m²</span></div></Field>
+          <Field label="Vindlast *"><div className="relative"><input type="number" min="0" step="1" className={`${INPUT} pr-14`} value={form.wind_load_ms} onChange={e => manualLoad('wind_load_ms', e.target.value)} /><span className="absolute right-3 top-3 text-sm text-muted-foreground">m/s</span></div></Field>
+        </div>
+        <div className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-xs ${lookupClass}`}><span>{lookup.text}</span><button type="button" className="inline-flex items-center gap-1 font-medium" disabled={lookup.state === 'loading'} onClick={() => fetchLoads(form.postal_code, form.postal_city, true)}><RefreshCw className="h-3.5 w-3.5" />Hämta igen</button></div>
+        {editing && <Field label="Status"><select className={INPUT} value={form.status} onChange={e => patch('status', e.target.value)}>{STATUSES.map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></Field>}
+        {error && <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>}
+      </div>
+      <div className="flex gap-3 border-t p-5"><button className="flex-1 rounded-xl border py-2.5 text-sm font-medium" onClick={onClose}>Avbryt</button><button className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary py-2.5 text-sm font-medium text-white disabled:opacity-50" disabled={!valid || saving} onClick={save}>{saving && <Loader2 className="h-4 w-4 animate-spin" />}{editing ? 'Spara ändringar' : 'Skapa projekt'}</button></div>
     </div>
-  );
+  </div>;
 }
