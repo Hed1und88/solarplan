@@ -1,0 +1,21 @@
+{
+  "name": "SalesLead",
+  "type": "object",
+  "properties": {
+    "company_name": { "type": "string" },
+    "contact_name": { "type": "string" },
+    "email": { "type": "string", "format": "email" },
+    "phone": { "type": "string" },
+    "address": { "type": "string" },
+    "source": { "type": "string" },
+    "interest": { "type": "string" },
+    "status": { "type": "string", "enum": ["new", "contacted", "meeting", "quote", "won", "lost"], "default": "new" },
+    "estimated_value": { "type": "number" },
+    "next_follow_up": { "type": "string", "format": "date" },
+    "notes": { "type": "string" },
+    "company_id": { "type": "string" },
+    "owner_email": { "type": "string" },
+    "owner_role": { "type": "string" }
+  },
+  "required": ["company_name"]
+}
