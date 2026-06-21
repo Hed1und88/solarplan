@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Loader2, Mail, MapPin, Phone, RefreshCw, Snowflake, Wind, X } from 'lucide-react';
 import { resolveProjectClimateLoads } from '@/lib/projectClimateLoads';
@@ -61,7 +61,7 @@ export default function NewProjectModal({ onSave, onClose, initialValues = {}, p
 
   const set = (key, value) => setForm(current => ({ ...current, [key]: value }));
 
-  const loadClimate = async (address, { force = false } = {}) => {
+  const loadClimate = useCallback(async (address, { force = false } = {}) => {
     const query = String(address || '').trim();
     const addressKey = normalizedAddress(query);
     if (query.length < 5) return;
@@ -95,14 +95,14 @@ export default function NewProjectModal({ onSave, onClose, initialValues = {}, p
         message: `${error?.message || 'Kunde inte hämta klimatlast automatiskt.'} Du kan fylla i värdena manuellt.`,
       });
     }
-  };
+  }, []);
 
   useEffect(() => {
     const address = String(form.address || '').trim();
     if (address.length < 5 || normalizedAddress(address) === lastResolvedAddress.current) return undefined;
     const timer = window.setTimeout(() => loadClimate(address), 1200);
     return () => window.clearTimeout(timer);
-  }, [form.address]);
+  }, [form.address, loadClimate]);
 
   const changeAddress = value => {
     requestSequence.current += 1;
@@ -233,7 +233,6 @@ export default function NewProjectModal({ onSave, onClose, initialValues = {}, p
                 type="text"
                 value={form.address}
                 onChange={event => changeAddress(event.target.value)}
-                onBlur={() => loadClimate(form.address, { force: true })}
                 placeholder="Gata, postnummer och ort"
                 className="w-full rounded-xl border border-border bg-background px-3 py-2.5 pr-20 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
