@@ -29,6 +29,7 @@ const DOCUMENT_REQUIRED_CATEGORIES = new Set([
   'vaxelriktare',
   'batteri',
   'optimerare',
+  'montagesystem',
   'elbilsladdare',
   'varmepump',
   'värmepump',
