@@ -16,17 +16,7 @@ import {
   subMonths,
 } from 'date-fns';
 import { sv } from 'date-fns/locale';
-import {
-  CalendarDays,
-  ChevronLeft,
-  ChevronRight,
-  Clock3,
-  MapPin,
-  Pencil,
-  Plus,
-  Trash2,
-  X,
-} from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Clock3, MapPin, Plus, Trash2, X } from 'lucide-react';
 import {
   canEditWorkspaceRecord,
   currentUserSafe,
@@ -55,9 +45,7 @@ function safeDate(value) {
   }
 }
 
-function inputDateTime(date) {
-  return format(date, "yyyy-MM-dd'T'HH:mm");
-}
+const inputDateTime = date => format(date, "yyyy-MM-dd'T'HH:mm");
 
 function emptyForm(day = new Date()) {
   const start = new Date(day);
@@ -93,8 +81,8 @@ function EventModal({ event, selectedDay, projects, prospects, currentUser, onCl
   } : emptyForm(selectedDay));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-
   const set = (key, value) => setForm(current => ({ ...current, [key]: value }));
+
   const save = async () => {
     const start = new Date(form.start_time);
     const end = new Date(form.end_time);
@@ -141,21 +129,21 @@ function EventModal({ event, selectedDay, projects, prospects, currentUser, onCl
         <button onClick={onClose} className="rounded-lg p-1.5 hover:bg-muted" aria-label="Stäng"><X className="h-4 w-4" /></button>
       </div>
       <div className="space-y-4 p-5">
-        <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Rubrik *</span><input className={INPUT} value={form.title} onChange={e => set('title', e.target.value)} placeholder="T.ex. Säljmöte med kund" autoFocus /></label>
+        <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Rubrik *</span><input className={INPUT} value={form.title} onChange={eventValue => set('title', eventValue.target.value)} placeholder="T.ex. Säljmöte med kund" autoFocus /></label>
         <div className="grid gap-4 sm:grid-cols-2">
-          <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Typ</span><select className={INPUT} value={form.event_type} onChange={e => set('event_type', e.target.value)}>{Object.entries(TYPE_CONFIG).map(([value, config]) => <option key={value} value={value}>{config.label}</option>)}</select></label>
-          <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Status</span><select className={INPUT} value={form.status} onChange={e => set('status', e.target.value)}><option value="planned">Planerad</option><option value="completed">Genomförd</option><option value="cancelled">Inställd</option></select></label>
+          <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Typ</span><select className={INPUT} value={form.event_type} onChange={eventValue => set('event_type', eventValue.target.value)}>{Object.entries(TYPE_CONFIG).map(([value, config]) => <option key={value} value={value}>{config.label}</option>)}</select></label>
+          <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Status</span><select className={INPUT} value={form.status} onChange={eventValue => set('status', eventValue.target.value)}><option value="planned">Planerad</option><option value="completed">Genomförd</option><option value="cancelled">Inställd</option></select></label>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Start *</span><input type="datetime-local" className={INPUT} value={form.start_time} onChange={e => set('start_time', e.target.value)} /></label>
-          <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Slut *</span><input type="datetime-local" className={INPUT} value={form.end_time} onChange={e => set('end_time', e.target.value)} /></label>
+          <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Start *</span><input type="datetime-local" className={INPUT} value={form.start_time} onChange={eventValue => set('start_time', eventValue.target.value)} /></label>
+          <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Slut *</span><input type="datetime-local" className={INPUT} value={form.end_time} onChange={eventValue => set('end_time', eventValue.target.value)} /></label>
         </div>
-        <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Plats eller möteslänk</span><input className={INPUT} value={form.location} onChange={e => set('location', e.target.value)} placeholder="Adress, Teams- eller Meet-länk" /></label>
+        <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Plats eller möteslänk</span><input className={INPUT} value={form.location} onChange={eventValue => set('location', eventValue.target.value)} placeholder="Adress, Teams- eller Meet-länk" /></label>
         <div className="grid gap-4 sm:grid-cols-2">
-          <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Kopplat projekt</span><select className={INPUT} value={form.related_project_id} onChange={e => { const item = projects.find(project => project.id === e.target.value); setForm(current => ({ ...current, related_project_id: e.target.value, related_project_name: item?.name || '' })); }}><option value="">Inget projekt</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
-          <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Kopplad lead</span><select className={INPUT} value={form.related_lead_id} onChange={e => { const item = prospects.find(prospect => prospect.id === e.target.value); setForm(current => ({ ...current, related_lead_id: e.target.value, related_lead_name: item?.company_name || '' })); }}><option value="">Ingen lead</option>{prospects.map(prospect => <option key={prospect.id} value={prospect.id}>{prospect.company_name}</option>)}</select></label>
+          <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Kopplat projekt</span><select className={INPUT} value={form.related_project_id} onChange={eventValue => { const item = projects.find(project => project.id === eventValue.target.value); setForm(current => ({ ...current, related_project_id: eventValue.target.value, related_project_name: item?.name || '' })); }}><option value="">Inget projekt</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+          <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Kopplad lead</span><select className={INPUT} value={form.related_lead_id} onChange={eventValue => { const item = prospects.find(prospect => prospect.id === eventValue.target.value); setForm(current => ({ ...current, related_lead_id: eventValue.target.value, related_lead_name: item?.company_name || '' })); }}><option value="">Ingen lead</option>{prospects.map(prospect => <option key={prospect.id} value={prospect.id}>{prospect.company_name}</option>)}</select></label>
         </div>
-        <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Anteckningar</span><textarea className={`${INPUT} min-h-24 resize-y`} value={form.description} onChange={e => set('description', e.target.value)} /></label>
+        <label className="block space-y-1.5"><span className="text-xs font-medium text-muted-foreground">Anteckningar</span><textarea className={`${INPUT} min-h-24 resize-y`} value={form.description} onChange={eventValue => set('description', eventValue.target.value)} /></label>
         {error && <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div>}
       </div>
       <div className="flex items-center gap-3 border-t border-border p-5">
@@ -210,7 +198,7 @@ export default function Calendar() {
   const filteredEvents = selectedType === 'all' ? events : events.filter(event => event.event_type === selectedType);
   const upcoming = filteredEvents
     .filter(event => event.status !== 'cancelled' && safeDate(event.end_time)?.getTime() >= Date.now())
-    .sort((a, b) => (safeDate(a.start_time)?.getTime() || 0) - (safeDate(b.start_time)?.getTime() || 0))
+    .sort((first, second) => (safeDate(first.start_time)?.getTime() || 0) - (safeDate(second.start_time)?.getTime() || 0))
     .slice(0, 8);
 
   const eventSaved = (saved, deletedId) => {
@@ -233,7 +221,7 @@ export default function Calendar() {
         <button onClick={() => setMonth(addMonths(month, 1))} className="rounded-lg border border-border p-2 hover:bg-muted" aria-label="Nästa månad"><ChevronRight className="h-4 w-4" /></button>
         <h2 className="ml-2 min-w-44 text-lg font-semibold capitalize">{format(month, 'MMMM yyyy', { locale: sv })}</h2>
       </div>
-      <select className="rounded-lg border border-border bg-background px-3 py-2 text-sm" value={selectedType} onChange={e => setSelectedType(e.target.value)}><option value="all">Alla typer</option>{Object.entries(TYPE_CONFIG).map(([value, config]) => <option key={value} value={value}>{config.label}</option>)}</select>
+      <select className="rounded-lg border border-border bg-background px-3 py-2 text-sm" value={selectedType} onChange={event => setSelectedType(event.target.value)}><option value="all">Alla typer</option>{Object.entries(TYPE_CONFIG).map(([value, config]) => <option key={value} value={value}>{config.label}</option>)}</select>
     </div>
 
     {error && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>}
@@ -246,7 +234,7 @@ export default function Calendar() {
             const dayEvents = filteredEvents.filter(event => {
               const start = safeDate(event.start_time);
               return start && isSameDay(start, day);
-            }).sort((a, b) => (safeDate(a.start_time)?.getTime() || 0) - (safeDate(b.start_time)?.getTime() || 0));
+            }).sort((first, second) => (safeDate(first.start_time)?.getTime() || 0) - (safeDate(second.start_time)?.getTime() || 0));
             return <button key={day.toISOString()} onClick={() => setModal({ day, event: null })} className={`min-h-28 border-b border-r border-border p-1.5 text-left align-top transition-colors hover:bg-muted/30 sm:min-h-32 sm:p-2 ${!isSameMonth(day, month) ? 'bg-muted/20 text-muted-foreground' : ''}`}>
               <span className={`mb-1 inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${isToday(day) ? 'bg-primary text-white' : ''}`}>{format(day, 'd')}</span>
               <div className="space-y-1">
