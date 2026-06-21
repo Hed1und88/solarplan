@@ -1,0 +1,31 @@
+{
+  "name": "CalendarEvent",
+  "type": "object",
+  "properties": {
+    "title": { "type": "string", "description": "Rubrik för kalenderhändelsen" },
+    "event_type": {
+      "type": "string",
+      "enum": ["sales_meeting", "project_meeting", "service", "installation", "follow_up", "internal", "other"],
+      "default": "sales_meeting",
+      "description": "Typ av kalenderhändelse"
+    },
+    "start_time": { "type": "string", "format": "date-time", "description": "Starttid" },
+    "end_time": { "type": "string", "format": "date-time", "description": "Sluttid" },
+    "location": { "type": "string", "description": "Plats eller möteslänk" },
+    "description": { "type": "string", "description": "Anteckningar och mötesinformation" },
+    "status": {
+      "type": "string",
+      "enum": ["planned", "completed", "cancelled"],
+      "default": "planned",
+      "description": "Händelsens status"
+    },
+    "related_project_id": { "type": "string", "description": "Kopplat projekt-id" },
+    "related_project_name": { "type": "string", "description": "Kopplat projektnamn" },
+    "related_lead_id": { "type": "string", "description": "Kopplat lead-id" },
+    "related_lead_name": { "type": "string", "description": "Kopplat leadnamn" },
+    "company_id": { "type": "string", "description": "Företagstillhörighet" },
+    "owner_email": { "type": "string", "description": "Ägarens e-postadress" },
+    "owner_role": { "type": "string", "description": "Ägarens roll" }
+  },
+  "required": ["title", "start_time", "end_time"]
+}
