@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { base44 } from '@/api/base44Client';
 import { ArrowRight, MapPin, Pencil, Plus, Shield, Sun, User } from 'lucide-react';
 import NewProjectModal from '@/components/projects/NewProjectModal';
-import { attachCompanyOwnership, filterProjectsForUser, resolveAccessContext } from '@/lib/accessControl';
+import { attachCompanyOwnership, canEditProject, filterProjectsForUser, resolveAccessContext } from '@/lib/accessControl';
+import { saveProjectPatch } from '@/lib/projectPersistence';
 
 const statusConfig = {
   planering: { label: 'Planering', color: 'bg-blue-100 text-blue-700' },
@@ -87,6 +88,7 @@ export default function Projects() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {projects.map(project => {
             const status = statusConfig[project.status] || statusConfig.planering;
+            const canEdit = canEditProject(currentUser || {}, project);
             return (
               <div key={project.id} className="relative bg-card rounded-2xl border border-border hover:shadow-lg transition-all group">
                 <Link to={`/projects/${project.id}`} className="block p-5">
@@ -101,7 +103,7 @@ export default function Projects() {
                   <div className="mt-3 pt-3 border-t border-border flex items-center justify-between">{project.total_cost ? <span className="text-sm font-semibold text-primary">{project.total_cost?.toLocaleString('sv-SE')} kr</span> : <span className="text-xs text-muted-foreground">Ingen offert</span>}<ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" /></div>
                 </Link>
 
-                {canCreateProject && (
+                {canEdit && (
                   <button
                     type="button"
                     onClick={() => setEditingProject(project)}
@@ -128,6 +130,7 @@ export default function Projects() {
       {editingProject && (
         <NewProjectModal
           project={editingProject}
+          onSubmit={payload => saveProjectPatch(base44, editingProject, payload)}
           onSave={handleSaved}
           onClose={closeModal}
         />
