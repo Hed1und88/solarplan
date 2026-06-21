@@ -10,11 +10,9 @@ export default function ProjectInfoEditor({ project, onUpdate, isSaving }) {
     return (
       <NewProjectModal
         project={project}
+        onSubmit={payload => onUpdate?.(payload)}
         onClose={() => setEditing(false)}
-        onSave={async updatedProject => {
-          await onUpdate?.(updatedProject);
-          setEditing(false);
-        }}
+        onSave={() => setEditing(false)}
       />
     );
   }
