@@ -4,6 +4,7 @@ import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import { CompanySessionProvider } from '@/lib/CompanySessionContext';
 import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import Layout from '@/components/Layout';
 import Dashboard from '@/pages/Dashboard';
@@ -23,7 +24,7 @@ const AuthenticatedApp = () => {
     if (authError.type === 'user_not_registered') return <UserNotRegisteredError />;
     if (authError.type === 'auth_required') { navigateToLogin(); return null; }
   }
-  return <Routes>
+  return <CompanySessionProvider><Routes>
     <Route element={<Layout />}>
       <Route path="/" element={<Dashboard />} />
       <Route path="/projects" element={<Projects />} />
@@ -38,7 +39,7 @@ const AuthenticatedApp = () => {
       <Route path="/settings" element={<Settings />} />
     </Route>
     <Route path="*" element={<PageNotFound />} />
-  </Routes>;
+  </Routes></CompanySessionProvider>;
 };
 
 function App() {
