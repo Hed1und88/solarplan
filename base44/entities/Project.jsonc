@@ -10,9 +10,51 @@
       "type": "string",
       "description": "Kundnamn"
     },
+    "customer_email": {
+      "type": "string",
+      "format": "email",
+      "description": "Kundens eller kontaktpersonens e-postadress"
+    },
+    "customer_phone": {
+      "type": "string",
+      "description": "Kundens eller kontaktpersonens telefonnummer"
+    },
     "address": {
       "type": "string",
-      "description": "Adress"
+      "description": "Projektadress"
+    },
+    "latitude": {
+      "type": "number",
+      "description": "Geokodad latitud för projektadressen"
+    },
+    "longitude": {
+      "type": "number",
+      "description": "Geokodad longitud för projektadressen"
+    },
+    "snow_load_kn_m2": {
+      "type": "number",
+      "description": "Dimensionerande snölast i kN/m²"
+    },
+    "wind_load_ms": {
+      "type": "number",
+      "description": "Referensvindhastighet i m/s"
+    },
+    "climate_load_source": {
+      "type": "string",
+      "description": "Källa för projektets snö- och vindlast"
+    },
+    "climate_load_updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Tidpunkt då klimatlasten senast hämtades eller ändrades"
+    },
+    "climate_load_status": {
+      "type": "string",
+      "enum": [
+        "automatic",
+        "manual"
+      ],
+      "description": "Anger om klimatlasten hämtades automatiskt eller angavs manuellt"
     },
     "status": {
       "type": "string",
@@ -32,39 +74,39 @@
     },
     "roof_height_m": {
       "type": "number",
-      "description": "Takdjup/h\u00f6jd i meter"
+      "description": "Takdjup/höjd i meter"
     },
     "roof_image_url": {
       "type": "string",
-      "description": "Bild p\u00e5 taket"
+      "description": "Bild på taket"
     },
     "panel_layout_data": {
       "type": "string",
-      "description": "JSON-data f\u00f6r panelplacering p\u00e5 taket"
+      "description": "JSON-data för panelplacering på taket"
     },
     "existing_installation_image_url": {
       "type": "string",
-      "description": "Bild p\u00e5 befintlig anl\u00e4ggning"
+      "description": "Bild på befintlig anläggning"
     },
     "string_layout_data": {
       "type": "string",
-      "description": "JSON-data f\u00f6r slingmarkering"
+      "description": "JSON-data för slingmarkering"
     },
     "battery_image_url": {
       "type": "string",
-      "description": "Bild f\u00f6r batteriplanering"
+      "description": "Bild för batteriplanering"
     },
     "battery_layout_data": {
       "type": "string",
-      "description": "JSON-data f\u00f6r batteriplacering"
+      "description": "JSON-data för batteriplacering"
     },
     "mounting_data": {
       "type": "string",
-      "description": "JSON-data f\u00f6r montagesystem och lastber\u00e4kning"
+      "description": "JSON-data för montagesystem och lastberäkning"
     },
     "solar_data": {
       "type": "string",
-      "description": "JSON-data f\u00f6r h\u00e4mtad solenergianalys (PVGIS/Forecast)"
+      "description": "JSON-data för hämtad solenergianalys (PVGIS/Forecast)"
     },
     "selected_products": {
       "type": "array",
