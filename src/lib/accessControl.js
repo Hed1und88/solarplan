@@ -1,4 +1,8 @@
 export const APP_OWNER_EMAIL = 'lyntrasolutions@gmail.com';
+export const SUPER_ADMIN_EMAILS = new Set([
+  APP_OWNER_EMAIL,
+  'hedlund1212@gmail.com',
+]);
 
 export const ACCESS_ROLES = {
   SUPERADMIN: 'superadmin',
@@ -7,8 +11,6 @@ export const ACCESS_ROLES = {
   WHOLESALER: 'wholesaler',
   ANONYMOUS: 'anonymous',
 };
-
-const SUPERADMIN_EMAILS = new Set([APP_OWNER_EMAIL]);
 
 function norm(value) {
   return String(value || '').trim().toLowerCase();
@@ -40,7 +42,7 @@ export function getEntityOwnerEmail(entity = {}) {
 
 export function normalizeAccessRole(user = {}) {
   const email = getUserEmail(user);
-  if (SUPERADMIN_EMAILS.has(email)) return ACCESS_ROLES.SUPERADMIN;
+  if (SUPER_ADMIN_EMAILS.has(email)) return ACCESS_ROLES.SUPERADMIN;
 
   const rawRole = norm(readFirst(user, ['access_role', 'role', 'user_role', 'account_type', 'type']));
   if (['superadmin', 'super_admin', 'owner', 'app_owner', 'appensagare', 'appägare'].includes(rawRole)) return ACCESS_ROLES.SUPERADMIN;
