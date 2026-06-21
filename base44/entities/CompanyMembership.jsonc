@@ -1,0 +1,20 @@
+{
+  "name": "CompanyMembership",
+  "type": "object",
+  "properties": {
+    "company_id": { "type": "string", "description": "Kopplat företags-id" },
+    "company_name": { "type": "string", "description": "Företagsnamn för snabb visning" },
+    "user_email": { "type": "string", "description": "Användarens e-postadress" },
+    "user_name": { "type": "string", "description": "Användarens namn" },
+    "access_role": {
+      "type": "string",
+      "enum": ["company_admin", "employee"],
+      "default": "employee",
+      "description": "Användarens roll i företaget"
+    },
+    "active": { "type": "boolean", "default": true, "description": "Om kopplingen är aktiv" },
+    "invited_at": { "type": "string", "description": "Tidpunkt då användaren kopplades eller bjöds in" },
+    "assigned_by_email": { "type": "string", "description": "Administratören som skapade kopplingen" }
+  },
+  "required": ["company_id", "user_email", "access_role"]
+}
