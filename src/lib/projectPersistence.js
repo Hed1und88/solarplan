@@ -3,9 +3,11 @@ import { attachCompanyOwnership, canEditProject, canViewProject, filterProjectsF
 const PROJECT_BACKUP_PREFIX = 'solarplan:project-backup:';
 
 const PROJECT_SERVER_FIELDS = new Set([
-  'name', 'customer_name', 'address', 'status', 'roof_width_m', 'roof_height_m', 'roof_image_url',
-  'panel_layout_data', 'solar_roof_planner_data', 'existing_installation_image_url', 'string_layout_data',
-  'battery_image_url', 'battery_layout_data', 'mounting_data', 'solar_data', 'selected_products', 'total_cost', 'notes',
+  'name', 'customer_name', 'customer_email', 'customer_phone', 'address', 'status',
+  'latitude', 'longitude', 'snow_load_kn_m2', 'wind_load_ms', 'climate_load_source', 'climate_load_updated_at', 'climate_load_status',
+  'roof_width_m', 'roof_height_m', 'roof_image_url', 'panel_layout_data', 'solar_roof_planner_data',
+  'existing_installation_image_url', 'string_layout_data', 'battery_image_url', 'battery_layout_data',
+  'mounting_data', 'solar_data', 'selected_products', 'total_cost', 'notes',
   'company_id', 'companyId', 'organization_id', 'organizationId', 'tenant_id', 'tenantId', 'owner_company_id', 'ownerCompanyId',
   'owner_email', 'owner_role', 'created_by_email', 'employee_can_edit', 'wholesaler_emails', 'allowed_wholesaler_emails', 'guest_emails',
 ]);
