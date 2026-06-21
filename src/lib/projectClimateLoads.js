@@ -42,7 +42,7 @@ function portalRequest(path, params = {}) {
 }
 
 function normalizeServiceUrl(value) {
-  const raw = String(value || '').trim();
+  const raw = String(value || '').trim().replace(/\/$/, '');
   if (!raw || !/(?:FeatureServer|MapServer)(?:\/\d+)?(?:\?.*)?$/i.test(raw)) return null;
   try {
     const absolute = new URL(raw, `${BOVERKET_PORTAL}/`).toString();
@@ -137,8 +137,8 @@ async function discoverClimateServiceUrls() {
 
 function climateKindFromText(value) {
   const text = toAscii(value);
-  if (/\b(sno|snow|snolast|snozon)\b/.test(text)) return 'snow';
-  if (/\b(vind|wind|vindlast|referensvind)\b/.test(text)) return 'wind';
+  if (/(sno|snow)/.test(text)) return 'snow';
+  if (/(vind|wind)/.test(text)) return 'wind';
   return null;
 }
 
@@ -226,20 +226,27 @@ async function queryBoverketClimateLoads(latitude, longitude) {
     }
   }
 
-  const preferred = layers
-    .map(layer => ({ ...layer, kind: climateKindFromText(layer.name) }))
-    .sort((a, b) => Number(Boolean(b.kind)) - Number(Boolean(a.kind)))
-    .slice(0, 40);
+  const classified = layers.map(layer => ({ ...layer, kind: climateKindFromText(layer.name) }));
+  const namedClimateLayers = classified.filter(layer => layer.kind);
+  const preferred = (namedClimateLayers.length ? namedClimateLayers : classified).slice(0, 24);
 
   let snow = null;
   let wind = null;
   let snowLayer = '';
   let windLayer = '';
 
-  for (const layer of preferred) {
-    if (snow && wind) break;
-    try {
-      const result = await queryLayer(layer, latitude, longitude);
+  for (let index = 0; index < preferred.length && !(snow && wind); index += 6) {
+    const batch = preferred.slice(index, index + 6);
+    const results = await Promise.all(batch.map(async layer => {
+      try {
+        return await queryLayer(layer, latitude, longitude);
+      } catch (error) {
+        console.warn('Kunde inte fråga Boverkets klimatlastlager:', layer.url, error);
+        return null;
+      }
+    }));
+
+    results.forEach(result => {
       if (!snow && result?.snow) {
         snow = result.snow.value;
         snowLayer = result.layerName;
@@ -248,9 +255,7 @@ async function queryBoverketClimateLoads(latitude, longitude) {
         wind = result.wind.value;
         windLayer = result.layerName;
       }
-    } catch (error) {
-      console.warn('Kunde inte fråga Boverkets klimatlastlager:', layer.url, error);
-    }
+    });
   }
 
   if (!Number.isFinite(snow) || !Number.isFinite(wind)) {
