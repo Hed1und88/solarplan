@@ -44,10 +44,13 @@ function buildSelectedProduct(product, quantity, source) {
 }
 
 function buildVirtualProduct(id, name, quantity, unit = 'st', systemSnapshot = null) {
+  const normalizedQuantity = unit === 'm'
+    ? Math.max(0, Math.ceil(Number(quantity || 0) * 10) / 10)
+    : Math.max(0, Math.ceil(quantity || 0));
   return {
     product_id: id,
     product_name: name,
-    quantity: Math.max(0, Math.ceil(quantity || 0)),
+    quantity: normalizedQuantity,
     unit_price: 0,
     product_snapshot: {
       id,
@@ -143,10 +146,10 @@ function collectMountingMaterials(project = {}, products = []) {
 
     if (product?.id) result.push(buildSelectedProduct(product, roofCount, 'mounting-system'));
 
-    const hookSpacingMm = toNumber(meta.max_hook_spacing_mm || meta.hook_spacing_mm || meta.hookSpacingMM || mounting.hookSpacing, 900);
-    const railPieceLengthMm = toNumber(meta.rail_length_mm || meta.railLengthMm, 2400);
-    const hookSpacingM = Math.max(0.4, hookSpacingMm / 1000);
-    const railPieceLengthM = Math.max(0.5, railPieceLengthMm / 1000);
+    const hookSpacingMm = toNumber(meta.max_hook_spacing_mm || meta.hook_spacing_mm || meta.hookSpacingMM || mounting.hookSpacing, 0);
+    const railPieceLengthMm = toNumber(meta.rail_length_mm || meta.railLengthMm, 0);
+    const hookSpacingM = hookSpacingMm > 0 ? Math.max(0.4, hookSpacingMm / 1000) : null;
+    const railPieceLengthM = railPieceLengthMm > 0 ? Math.max(0.5, railPieceLengthMm / 1000) : null;
     let panelCount = 0;
     let railRuns = 0;
     let railLengthM = 0;
@@ -170,20 +173,22 @@ function collectMountingMaterials(project = {}, products = []) {
     });
 
     if (!panelCount) return;
-    const hooks = Math.ceil(railLengthM / hookSpacingM) + railRuns;
-    const railPieces = Math.ceil(railLengthM / railPieceLengthM);
-    const joints = Math.max(0, railPieces - railRuns);
+    const hooks = hookSpacingM ? Math.ceil(railLengthM / hookSpacingM) + railRuns : 0;
+    const railPieces = railPieceLengthM ? Math.ceil(railLengthM / railPieceLengthM) : 0;
+    const joints = railPieces ? Math.max(0, railPieces - railRuns) : 0;
     const screws = hooks * 2;
     const prefix = `auto:mounting:${group.key}`;
 
     result.push(
-      buildVirtualProduct(`${prefix}:rails`, `Skenor – ${systemName}`, railPieces, 'st', systemSnapshot),
-      buildVirtualProduct(`${prefix}:hooks`, `Fästen/krokar – ${systemName}`, hooks, 'st', systemSnapshot),
+      railPieces
+        ? buildVirtualProduct(`${prefix}:rails`, `Skenor – ${systemName}`, railPieces, 'st', systemSnapshot)
+        : buildVirtualProduct(`${prefix}:rail-length`, `Skenlängd – ${systemName}`, railLengthM, 'm', systemSnapshot),
       buildVirtualProduct(`${prefix}:end-clamps`, `Ändklämmor – ${systemName}`, endClamps, 'st', systemSnapshot),
       buildVirtualProduct(`${prefix}:mid-clamps`, `Mittklämmor – ${systemName}`, midClamps, 'st', systemSnapshot),
-      buildVirtualProduct(`${prefix}:joints`, `Skarvar – ${systemName}`, joints, 'st', systemSnapshot),
-      buildVirtualProduct(`${prefix}:screws`, `Skruv – ${systemName}`, screws, 'st', systemSnapshot),
     );
+    if (hooks) result.push(buildVirtualProduct(`${prefix}:hooks`, `Fästen/krokar – ${systemName}`, hooks, 'st', systemSnapshot));
+    if (joints) result.push(buildVirtualProduct(`${prefix}:joints`, `Skarvar – ${systemName}`, joints, 'st', systemSnapshot));
+    if (screws) result.push(buildVirtualProduct(`${prefix}:screws`, `Skruv – ${systemName}`, screws, 'st', systemSnapshot));
   });
 
   return result.filter(item => item.quantity > 0);
