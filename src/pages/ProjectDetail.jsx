@@ -17,6 +17,7 @@ import BatteryTab from '@/components/project/BatteryTab';
 import ProductSelectionTab from '@/components/project/ProductSelectionTab.jsx';
 import ProjectDocumentsTab from '@/components/project/ProjectDocumentsTab.jsx';
 import MountingSystemCalculator from '@/components/project/MountingSystemCalculator';
+import PanelMountingSystemSelector from '@/components/project/PanelMountingSystemSelector';
 import SolarRoofPlannerV2 from '@/components/project/SolarRoofPlannerV2';
 import { fetchProjectById, mergeProjectWithBackup, saveProjectPatch, writeProjectBackup } from '@/lib/projectPersistence';
 import { productQualityIssues, productQualityStatus, selectedProductQualityInput } from '@/lib/productQuality';
@@ -107,6 +108,27 @@ function collectProjectProductEntries(project = {}, products = []) {
       source: `Paneler / ${roof.name || 'Tak'}`,
       sourceProduct,
       name: snapshot.name || sourceProduct.name || 'Panelprodukt',
+      product_id: productId,
+      product_snapshot: snapshot,
+      qualityInput: selectedProductQualityInput({
+        product_id: productId,
+        product_name: snapshot.name || sourceProduct.name,
+        product_snapshot: snapshot,
+        documents_snapshot: snapshot.documents_snapshot,
+        technical_snapshot: snapshot.technical_data_snapshot,
+      }, sourceProduct),
+    });
+  });
+
+  (planner?.roofs || []).forEach(roof => {
+    const productId = roof.mountingSystemProductId || roof.mountingSystemProductSnapshot?.product_id || roof.mountingSystemProductSnapshot?.id;
+    const sourceProduct = productById(activeProducts, productId);
+    if (!sourceProduct) return;
+    const snapshot = roof.mountingSystemProductSnapshot || {};
+    pushProjectProductEntry(entries, {
+      source: `Paneler / Montage / ${roof.name || 'Tak'}`,
+      sourceProduct,
+      name: snapshot.name || sourceProduct.name || 'Montagesystem',
       product_id: productId,
       product_snapshot: snapshot,
       qualityInput: selectedProductQualityInput({
@@ -283,7 +305,7 @@ export default function ProjectDetail() {
         <TabsTrigger value="mounting" className="gap-1.5 text-xs sm:text-sm"><Wrench className="w-4 h-4" /> <span className="hidden sm:inline">Montage</span></TabsTrigger>
         <TabsTrigger value="documents" className="gap-1.5 text-xs sm:text-sm"><FileText className="w-4 h-4" /> <span className="hidden sm:inline">Dokument</span></TabsTrigger>
       </TabsList>
-      <TabsContent value="panels"><SolarRoofPlannerV2 project={project} onUpdate={saveProject} /></TabsContent>
+      <TabsContent value="panels" className="space-y-4"><PanelMountingSystemSelector project={project} onUpdate={saveProject} /><SolarRoofPlannerV2 project={project} onUpdate={saveProject} /></TabsContent>
       <TabsContent value="strings" className="space-y-4"><StringMarkingTabV7 project={project} onUpdate={saveProject} selectedProduct={selectedPanelProduct} /><InverterFullSummary project={project} products={products} /></TabsContent>
       <TabsContent value="battery"><BatteryTab project={project} onUpdate={saveProject} /></TabsContent>
       <TabsContent value="products"><ProductSelectionTab project={project} onUpdate={saveProject} /></TabsContent>
