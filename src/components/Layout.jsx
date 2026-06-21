@@ -1,12 +1,14 @@
 import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, FolderOpen, Package, Settings, ChevronLeft, Sun } from 'lucide-react';
+import { LayoutDashboard, FolderOpen, CalendarDays, UsersRound, Package, Settings, ChevronLeft, Sun } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const ROOT_ROUTES = ['/', '/projects', '/products', '/settings', '/solar-shadow', '/solarplan-3d-projektering'];
+const ROOT_ROUTES = ['/', '/projects', '/calendar', '/leads', '/products', '/settings', '/solar-shadow', '/solarplan-3d-projektering'];
 
 const navItems = [
   { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { path: '/projects', icon: FolderOpen, label: 'Projekt' },
+  { path: '/calendar', icon: CalendarDays, label: 'Kalender' },
+  { path: '/leads', icon: UsersRound, label: 'Leads' },
   { path: '/solarplan-3d-projektering', icon: Sun, label: '3D Projektering' },
   { path: '/products', icon: Package, label: 'Produkter' },
   { path: '/settings', icon: Settings, label: 'Inställningar' },
@@ -31,7 +33,7 @@ export default function Layout() {
             <div className="text-[14px] font-black uppercase tracking-[0.12em] text-sky-300">Solutions AB</div>
           </div>
         </div>
-        <nav className="flex-1 px-3 py-4 space-y-1">
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {navItems.map(({ path, icon: Icon, label }) => {
             const active = location.pathname === path || (path !== '/' && location.pathname.startsWith(path));
             return <Link key={path} to={path} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${active ? 'bg-primary text-white shadow-md shadow-primary/30' : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-white'}`}><Icon className="w-4 h-4 flex-shrink-0" />{label}</Link>;
@@ -56,11 +58,13 @@ export default function Layout() {
             <motion.div key={location.pathname} initial={{ x: 24, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -24, opacity: 0 }} transition={{ duration: 0.18, ease: 'easeInOut' }} className="h-full"><Outlet /></motion.div>
           </AnimatePresence>
         </main>
-        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border flex" style={{ paddingBottom: 'env(safe-area-inset-bottom)', paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}>
-          {navItems.map(({ path, icon: Icon, label }) => {
-            const active = location.pathname === path || (path !== '/' && path !== '/settings' && location.pathname.startsWith(path));
-            return <Link key={path} to={path} className={`flex-1 flex flex-col items-center justify-center pt-2 pb-1 gap-0.5 transition-colors ${active ? 'text-primary' : 'text-muted-foreground'}`}><Icon className={`w-5 h-5 transition-transform ${active ? 'scale-110' : ''}`} /><span className="text-[10px] font-medium">{label}</span></Link>;
-          })}
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border overflow-x-auto" style={{ paddingBottom: 'env(safe-area-inset-bottom)', paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}>
+          <div className="flex min-w-max">
+            {navItems.map(({ path, icon: Icon, label }) => {
+              const active = location.pathname === path || (path !== '/' && path !== '/settings' && location.pathname.startsWith(path));
+              return <Link key={path} to={path} className={`flex w-[78px] flex-none flex-col items-center justify-center pt-2 pb-1 gap-0.5 transition-colors ${active ? 'text-primary' : 'text-muted-foreground'}`}><Icon className={`w-5 h-5 transition-transform ${active ? 'scale-110' : ''}`} /><span className="max-w-[74px] truncate text-[10px] font-medium">{label}</span></Link>;
+            })}
+          </div>
         </nav>
       </div>
     </div>
