@@ -2,143 +2,56 @@
   "name": "Project",
   "type": "object",
   "properties": {
-    "name": {
-      "type": "string",
-      "description": "Projektnamn"
-    },
-    "customer_name": {
-      "type": "string",
-      "description": "Kundnamn"
-    },
-    "customer_email": {
-      "type": "string",
-      "format": "email",
-      "description": "Kundens eller kontaktpersonens e-postadress"
-    },
-    "customer_phone": {
-      "type": "string",
-      "description": "Kundens eller kontaktpersonens telefonnummer"
-    },
-    "address": {
-      "type": "string",
-      "description": "Projektadress"
-    },
-    "latitude": {
-      "type": "number",
-      "description": "Geokodad latitud för projektadressen"
-    },
-    "longitude": {
-      "type": "number",
-      "description": "Geokodad longitud för projektadressen"
-    },
-    "snow_load_kn_m2": {
-      "type": "number",
-      "description": "Dimensionerande snölast i kN/m²"
-    },
-    "wind_load_ms": {
-      "type": "number",
-      "description": "Referensvindhastighet i m/s"
-    },
-    "climate_load_source": {
-      "type": "string",
-      "description": "Källa för projektets snö- och vindlast"
-    },
-    "climate_load_updated_at": {
-      "type": "string",
-      "format": "date-time",
-      "description": "Tidpunkt då klimatlasten senast hämtades eller ändrades"
-    },
+    "name": { "type": "string", "description": "Projektnamn" },
+    "customer_name": { "type": "string", "description": "Kundnamn" },
+    "customer_email": { "type": "string", "format": "email", "description": "Kundens eller kontaktpersonens e-postadress" },
+    "customer_phone": { "type": "string", "description": "Kundens eller kontaktpersonens telefonnummer" },
+    "street_address": { "type": "string", "description": "Gatuadress, gatunummer eller fastighetsnamn" },
+    "postal_code": { "type": "string", "description": "Svenskt postnummer" },
+    "postal_city": { "type": "string", "description": "Postort" },
+    "address": { "type": "string", "description": "Sammansatt projektadress" },
+    "latitude": { "type": "number", "description": "Geokodad latitud för projektadressen" },
+    "longitude": { "type": "number", "description": "Geokodad longitud för projektadressen" },
+    "snow_load_kn_m2": { "type": "number", "description": "Dimensionerande snölast i kN/m²" },
+    "wind_load_ms": { "type": "number", "description": "Referensvindhastighet i m/s" },
+    "climate_load_source": { "type": "string", "description": "Källa för projektets snö- och vindlast" },
+    "climate_load_updated_at": { "type": "string", "format": "date-time", "description": "Tidpunkt då klimatlasten senast hämtades eller ändrades" },
     "climate_load_status": {
       "type": "string",
-      "enum": [
-        "automatic",
-        "manual"
-      ],
+      "enum": ["automatic", "manual"],
       "description": "Anger om klimatlasten hämtades automatiskt eller angavs manuellt"
     },
     "status": {
       "type": "string",
-      "enum": [
-        "planering",
-        "projektering",
-        "offert",
-        "installation",
-        "klart"
-      ],
+      "enum": ["planering", "projektering", "offert", "installation", "klart"],
       "default": "planering",
       "description": "Projektstatus"
     },
-    "roof_width_m": {
-      "type": "number",
-      "description": "Takbredd i meter"
-    },
-    "roof_height_m": {
-      "type": "number",
-      "description": "Takdjup/höjd i meter"
-    },
-    "roof_image_url": {
-      "type": "string",
-      "description": "Bild på taket"
-    },
-    "panel_layout_data": {
-      "type": "string",
-      "description": "JSON-data för panelplacering på taket"
-    },
-    "existing_installation_image_url": {
-      "type": "string",
-      "description": "Bild på befintlig anläggning"
-    },
-    "string_layout_data": {
-      "type": "string",
-      "description": "JSON-data för slingmarkering"
-    },
-    "battery_image_url": {
-      "type": "string",
-      "description": "Bild för batteriplanering"
-    },
-    "battery_layout_data": {
-      "type": "string",
-      "description": "JSON-data för batteriplacering"
-    },
-    "mounting_data": {
-      "type": "string",
-      "description": "JSON-data för montagesystem och lastberäkning"
-    },
-    "solar_data": {
-      "type": "string",
-      "description": "JSON-data för hämtad solenergianalys (PVGIS/Forecast)"
-    },
+    "roof_width_m": { "type": "number", "description": "Takbredd i meter" },
+    "roof_height_m": { "type": "number", "description": "Takdjup/höjd i meter" },
+    "roof_image_url": { "type": "string", "description": "Bild på taket" },
+    "panel_layout_data": { "type": "string", "description": "JSON-data för panelplacering på taket" },
+    "existing_installation_image_url": { "type": "string", "description": "Bild på befintlig anläggning" },
+    "string_layout_data": { "type": "string", "description": "JSON-data för slingmarkering" },
+    "battery_image_url": { "type": "string", "description": "Bild för batteriplanering" },
+    "battery_layout_data": { "type": "string", "description": "JSON-data för batteriplacering" },
+    "mounting_data": { "type": "string", "description": "JSON-data för montagesystem och lastberäkning" },
+    "solar_data": { "type": "string", "description": "JSON-data för hämtad solenergianalys (PVGIS/Forecast)" },
     "selected_products": {
       "type": "array",
       "description": "Valda produkter med antal",
       "items": {
         "type": "object",
         "properties": {
-          "product_id": {
-            "type": "string"
-          },
-          "product_name": {
-            "type": "string"
-          },
-          "quantity": {
-            "type": "number"
-          },
-          "unit_price": {
-            "type": "number"
-          }
+          "product_id": { "type": "string" },
+          "product_name": { "type": "string" },
+          "quantity": { "type": "number" },
+          "unit_price": { "type": "number" }
         }
       }
     },
-    "total_cost": {
-      "type": "number",
-      "description": "Total kostnad i SEK"
-    },
-    "notes": {
-      "type": "string",
-      "description": "Anteckningar"
-    }
+    "total_cost": { "type": "number", "description": "Total kostnad i SEK" },
+    "notes": { "type": "string", "description": "Anteckningar" }
   },
-  "required": [
-    "name"
-  ]
+  "required": ["name"]
 }
