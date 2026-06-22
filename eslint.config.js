@@ -57,4 +57,16 @@ export default [
       "react-hooks/rules-of-hooks": "error",
     },
   },
+  {
+    files: ["src/components/project/BatteryPlannerV3.jsx"],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        itemIcon: "readonly",
+      },
+    },
+    rules: {
+      "unused-imports/no-unused-imports": "off",
+    },
+  },
 ];
