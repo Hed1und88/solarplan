@@ -7,6 +7,12 @@ const planner = project => safeJson(project.solar_roof_planner_data || project.p
 const batteryPlanner = project => safeJson(project.battery_layout_data, { devices: [] }) || { devices: [] };
 const countGroup = group => Math.max(0, Math.round(num(group.rows))) * Math.max(0, Math.round(num(group.cols)));
 
+function snapshotDocuments(snapshot = {}) {
+  if (Array.isArray(snapshot.documents_snapshot)) return snapshot.documents_snapshot;
+  if (Array.isArray(snapshot.product_snapshot?.documents_snapshot)) return snapshot.product_snapshot.documents_snapshot;
+  return [];
+}
+
 function selectedProduct(product, quantity, source) {
   const snapshot = createProductSnapshot(product);
   return {
@@ -17,6 +23,23 @@ function selectedProduct(product, quantity, source) {
     product_snapshot: snapshot,
     documents_snapshot: snapshot?.documents_snapshot || [],
     technical_snapshot: snapshot?.technical_data_snapshot || null,
+    snapshot_created_at: snapshot?.snapshot_created_at || new Date().toISOString(),
+    auto_generated: true,
+    auto_source: source,
+  };
+}
+
+function selectedSnapshot(snapshot, quantity, source, fallbackId = '') {
+  const productId = snapshot?.product_id || snapshot?.id || fallbackId;
+  if (!productId) return null;
+  return {
+    product_id: productId,
+    product_name: snapshot?.name || snapshot?.product_name || snapshot?.model || 'Produkt',
+    quantity: Math.max(1, Math.round(quantity || 1)),
+    unit_price: Number(snapshot?.price) || 0,
+    product_snapshot: snapshot,
+    documents_snapshot: snapshotDocuments(snapshot),
+    technical_snapshot: snapshot?.technical_data_snapshot || snapshot?.technical_snapshot || null,
     snapshot_created_at: snapshot?.snapshot_created_at || new Date().toISOString(),
     auto_generated: true,
     auto_source: source,
@@ -54,31 +77,39 @@ function virtualProduct(item, systemSnapshot = null) {
 
 function panelProducts(project, products) {
   const quantities = new Map();
+  const snapshots = new Map();
   (planner(project).roofs || []).forEach(roof => {
-    const id = roof.panelProductId || roof.panelProductSnapshot?.product_id || roof.panelProductSnapshot?.id;
+    const snapshot = roof.panelProductSnapshot || null;
+    const id = roof.panelProductId || snapshot?.product_id || snapshot?.id;
     const quantity = (roof.panelGroups || []).reduce((sum, group) => sum + countGroup(group), 0);
-    if (id && quantity) quantities.set(String(id), (quantities.get(String(id)) || 0) + quantity);
+    if (!id || !quantity) return;
+    const key = String(id);
+    quantities.set(key, (quantities.get(key) || 0) + quantity);
+    if (snapshot) snapshots.set(key, snapshot);
   });
   return [...quantities.entries()].map(([id, quantity]) => {
     const product = byId(products, id);
-    return product ? selectedProduct(product, quantity, 'panels') : null;
+    return product ? selectedProduct(product, quantity, 'panels') : selectedSnapshot(snapshots.get(id), quantity, 'panels', id);
   }).filter(Boolean);
 }
 
 function batteryRoomProducts(project, products) {
   const layout = batteryPlanner(project);
   const quantities = new Map();
+  const snapshots = new Map();
 
   (Array.isArray(layout.devices) ? layout.devices : []).forEach(device => {
-    const id = device?.productId || device?.product_id || device?.productSnapshot?.product_id || device?.productSnapshot?.id;
+    const snapshot = device?.productSnapshot || device?.product_snapshot || null;
+    const id = device?.productId || device?.product_id || snapshot?.product_id || snapshot?.id;
     if (!id) return;
     const key = String(id);
     quantities.set(key, (quantities.get(key) || 0) + 1);
+    if (snapshot) snapshots.set(key, snapshot);
   });
 
   return [...quantities.entries()].map(([id, quantity]) => {
     const product = byId(products, id);
-    return product ? selectedProduct(product, quantity, 'battery-room') : null;
+    return product ? selectedProduct(product, quantity, 'battery-room') : selectedSnapshot(snapshots.get(id), quantity, 'battery-room', id);
   }).filter(Boolean);
 }
 
@@ -91,13 +122,7 @@ function engineMaterials(mounting) {
     hasEngineResult = true;
     calculation.materials.materials.forEach(material => {
       const id = material.productId || `${calculation.engineId}:${material.articleNumber || material.name}`;
-      const current = grouped.get(id) || {
-        ...material,
-        productId: id,
-        quantity: 0,
-        engineId: calculation.engineId,
-        engineVersion: calculation.engineVersion,
-      };
+      const current = grouped.get(id) || { ...material, productId: id, quantity: 0, engineId: calculation.engineId, engineVersion: calculation.engineVersion };
       current.quantity += Number(material.quantity || 0);
       grouped.set(id, current);
     });
@@ -125,6 +150,7 @@ function genericMountingMaterials(project, products, mounting) {
     const snapshot = product?.id ? createProductSnapshot(product) : product;
     const meta = productMeta(product || {});
     if (product?.id) result.push(selectedProduct(product, systemRoofs.length, 'mounting-system'));
+    else if (snapshot) result.push(selectedSnapshot(snapshot, systemRoofs.length, 'mounting-system'));
 
     let railLengthM = 0;
     let railRuns = 0;
@@ -172,15 +198,26 @@ function mountingProducts(project, products) {
   return genericMountingMaterials(project, products, mounting);
 }
 
+function deduplicate(items = []) {
+  const result = [];
+  items.forEach(item => {
+    if (!item?.product_id) return;
+    const index = result.findIndex(existing => String(existing.product_id) === String(item.product_id));
+    if (index === -1) result.push(item);
+    else if (item.auto_generated && result[index].auto_generated) result[index] = item;
+  });
+  return result;
+}
+
 export function mergeProjectAutoProducts(project = {}, products = []) {
   const manual = (Array.isArray(project.selected_products) ? project.selected_products : [])
     .filter(item => !item.auto_generated && !['panels', 'battery-room', 'mounting', 'mounting-system'].includes(item.auto_source));
-  const selected_products = [
+  const selected_products = deduplicate([
     ...manual,
     ...panelProducts(project, products),
     ...batteryRoomProducts(project, products),
     ...mountingProducts(project, products),
-  ];
+  ]);
   const total_cost = selected_products.reduce((sum, item) => sum + (Number(item.unit_price) || 0) * (Number(item.quantity) || 0), 0);
   return { ...project, selected_products, total_cost };
 }
