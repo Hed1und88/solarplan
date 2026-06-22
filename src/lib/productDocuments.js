@@ -1,3 +1,9 @@
+import {
+  JA_SOLAR_JAM54D41_440_LB_META,
+  getJaSolarJam54D41MountingProfiles,
+  isJaSolarJam54D41_440Lb,
+} from '@/lib/jaSolarJam54D41Product';
+
 const META_START = '\n\n---SOLARPLAN_PRODUCT_META_START---\n';
 const META_END = '\n---SOLARPLAN_PRODUCT_META_END---';
 
@@ -101,7 +107,6 @@ export function splitProductDescription(description = '') {
 }
 
 export function buildProductDescription(cleanDescription = '', meta = {}) {
-  // Store only minimal document data to avoid exceeding field size limits
   const minimalDocuments = (meta?.documents || [])
     .filter(doc => doc?.file_url)
     .map(doc => ({
@@ -111,30 +116,36 @@ export function buildProductDescription(cleanDescription = '', meta = {}) {
       file_url: doc.file_url || doc.url || '',
     }));
 
-  // Build a minimal meta object — only include non-null/non-empty values
   const normalizedMeta = { documents: minimalDocuments };
-
-  // Only add non-null clamp zone data
   const clampFields = ['clampZoneMinMm', 'clampZoneMaxMm', 'railOffsetTopMm', 'railOffsetBottomMm', 'clampSource'];
-  clampFields.forEach(k => {
-    if (meta[k] != null && meta[k] !== '') normalizedMeta[k] = meta[k];
+  clampFields.forEach(key => {
+    if (meta[key] != null && meta[key] !== '') normalizedMeta[key] = meta[key];
   });
 
-  // Only add non-null battery/technical meta fields (not already top-level product fields)
   const skipFields = new Set(['name', 'brand', 'model', 'category', 'price', 'documents', 'updatedAt', ...clampFields]);
-  Object.entries(meta || {}).forEach(([k, v]) => {
-    if (!skipFields.has(k) && v != null && v !== '') normalizedMeta[k] = v;
+  Object.entries(meta || {}).forEach(([key, value]) => {
+    if (!skipFields.has(key) && value != null && value !== '') normalizedMeta[key] = value;
   });
 
   const clean = String(cleanDescription || '').trim().slice(0, 300);
   return `${clean}${META_START}${JSON.stringify(normalizedMeta)}${META_END}`.trim();
 }
 
-export function productMeta(product = {}) {
+function storedProductMeta(product = {}) {
   if (product?.product_meta_snapshot && typeof product.product_meta_snapshot === 'object') return product.product_meta_snapshot;
   if (product?.meta && typeof product.meta === 'object') return product.meta;
   const { meta } = splitProductDescription(product?.description || '');
   return meta || {};
+}
+
+export function productMeta(product = {}) {
+  const stored = storedProductMeta(product);
+  if (!isJaSolarJam54D41_440Lb(product)) return stored;
+  return {
+    ...stored,
+    ...JA_SOLAR_JAM54D41_440_LB_META,
+    documents: stored.documents || [],
+  };
 }
 
 export function productDescription(product = {}) {
@@ -194,32 +205,45 @@ function numberOr(value, fallback = null) {
   return Number.isFinite(num) ? num : fallback;
 }
 
+export function productMountingProfiles(product = {}) {
+  const meta = productMeta(product);
+  const stored = product?.mounting_profiles
+    || product?.mountingProfiles
+    || product?.mounting_data_snapshot?.mountingProfiles
+    || meta.mountingProfiles;
+  if (Array.isArray(stored) && stored.length) return stored;
+  return getJaSolarJam54D41MountingProfiles(product);
+}
+
 export function productClampData(product = {}) {
   const meta = productMeta(product);
   const clampSnapshot = product?.clamp_data_snapshot || product?.mounting_data_snapshot?.clampData || {};
+  const profiles = productMountingProfiles(product);
+  const primaryProfile = profiles[0] || {};
   return {
-    clampZoneMinMm: numberOr(product.clamp_zone_min_mm, numberOr(product.clampZoneMinMm, numberOr(clampSnapshot.clampZoneMinMm, numberOr(meta.clampZoneMinMm, null)))),
-    clampZoneMaxMm: numberOr(product.clamp_zone_max_mm, numberOr(product.clampZoneMaxMm, numberOr(clampSnapshot.clampZoneMaxMm, numberOr(meta.clampZoneMaxMm, null)))),
+    clampZoneMinMm: numberOr(product.clamp_zone_min_mm, numberOr(product.clampZoneMinMm, numberOr(clampSnapshot.clampZoneMinMm, numberOr(meta.clampZoneMinMm, numberOr(primaryProfile.clamp_zone_min_mm, null))))),
+    clampZoneMaxMm: numberOr(product.clamp_zone_max_mm, numberOr(product.clampZoneMaxMm, numberOr(clampSnapshot.clampZoneMaxMm, numberOr(meta.clampZoneMaxMm, numberOr(primaryProfile.clamp_zone_max_mm, null))))),
     railOffsetTopMm: numberOr(product.rail_offset_top_mm, numberOr(product.railOffsetTopMm, numberOr(clampSnapshot.railOffsetTopMm, numberOr(meta.railOffsetTopMm, null)))),
     railOffsetBottomMm: numberOr(product.rail_offset_bottom_mm, numberOr(product.railOffsetBottomMm, numberOr(clampSnapshot.railOffsetBottomMm, numberOr(meta.railOffsetBottomMm, null)))),
-    clampSource: product.clamp_source || product.clampSource || clampSnapshot.clampSource || meta.clampSource || '',
+    clampSource: product.clamp_source || product.clampSource || clampSnapshot.clampSource || meta.clampSource || primaryProfile.source_table || '',
   };
 }
 
 export function productHasClampZone(product = {}) {
   const data = productClampData(product);
-  return data.clampZoneMinMm != null && data.clampZoneMaxMm != null;
+  return productMountingProfiles(product).length > 0 || (data.clampZoneMinMm != null && data.clampZoneMaxMm != null);
 }
 
 export function resolveProductClampZone(product = {}) {
   const heightMm = numberOr(product?.height_mm, 0) || 0;
   const data = productClampData(product);
-  const hasProductZone = data.clampZoneMinMm != null && data.clampZoneMaxMm != null;
+  const profiles = productMountingProfiles(product);
+  const hasProductZone = productHasClampZone(product);
   const fallbackMin = heightMm ? Math.round(heightMm * 0.1) : null;
   const fallbackMax = heightMm ? Math.round(heightMm * 0.33) : null;
   const minMm = hasProductZone ? data.clampZoneMinMm : null;
   const maxMm = hasProductZone ? data.clampZoneMaxMm : null;
-  const preferredMm = minMm != null && maxMm != null ? Math.round((minMm + maxMm) / 2) : null;
+  const preferredMm = minMm != null && maxMm != null ? Math.round(((minMm + maxMm) / 2) * 10) / 10 : null;
 
   return {
     minMm,
@@ -230,9 +254,11 @@ export function resolveProductClampZone(product = {}) {
     railOffsetTopMm: hasProductZone ? (data.railOffsetTopMm ?? preferredMm) : null,
     railOffsetBottomMm: hasProductZone ? (data.railOffsetBottomMm ?? preferredMm) : null,
     hasProductZone,
+    hasLoadRatedProfiles: profiles.length > 0,
+    mountingProfiles: profiles,
     hasFallbackEstimate: !hasProductZone && fallbackMin != null && fallbackMax != null,
     source: hasProductZone ? (data.clampSource || 'Produktens sparade manual/datablad') : 'Klämzon saknas. Lägg in manual/datablad och fyll klämzonen från dokumentet.',
-    label: hasProductZone ? `${Math.round(minMm)}–${Math.round(maxMm)} mm` : 'Saknas',
+    label: hasProductZone ? `${minMm}–${maxMm} mm${profiles.length ? ` · ${profiles.length} lastprofiler` : ''}` : 'Saknas',
   };
 }
 
@@ -254,6 +280,7 @@ export function createProductSnapshot(product = {}) {
   const docs = productDocuments(hydrated);
   const meta = productMeta(product);
   const clampData = productClampData(hydrated);
+  const mountingProfiles = productMountingProfiles(hydrated);
   const technical = pickDefined(hydrated, TECHNICAL_SNAPSHOT_FIELDS);
 
   return {
@@ -275,7 +302,9 @@ export function createProductSnapshot(product = {}) {
     clamp_data_snapshot: clampData,
     mounting_data_snapshot: {
       clampData,
+      mountingProfiles,
       hasProductZone: productHasClampZone(hydrated),
+      hasLoadRatedProfiles: mountingProfiles.length > 0,
     },
     source_product_updated_at: product.updated_date || product.updated_at || product.modified_date || '',
     snapshot_created_at: new Date().toISOString(),
