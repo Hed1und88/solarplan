@@ -18,11 +18,12 @@ import {
   Save,
   Settings2,
   Trash2,
+  Wrench,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
 import ProductSearchSelect from '@/components/products/ProductSearchSelect';
-import { resolveProductClampZone } from '@/lib/productDocuments';
+import { createProductSnapshot, resolveProductClampZone } from '@/lib/productDocuments';
 
 const DEFAULT_PANEL = { id: 'standard', name: 'Standardpanel 500 W', model: 'Standardpanel 500 W', width_mm: 1134, height_mm: 1953, power_watts: 500 };
 const PANEL_GAP_M = 0.03;
@@ -57,6 +58,8 @@ const baseRoof = () => ({
   material: 'Tegelpannor',
   panelProductId: '',
   panelProductSnapshot: null,
+  mountingSystemProductId: '',
+  mountingSystemProductSnapshot: null,
   panelGroups: [createPanelGroup(1)],
   obstacles: [],
 });
@@ -394,7 +397,12 @@ export default function SolarRoofPlannerV2({ project, onUpdate }) {
     queryKey: ['products-panels-roof-planner'],
     queryFn: () => base44.entities.Product.filter({ category: 'solpanel' }),
   });
+  const { data: mountingSystems = [] } = useQuery({
+    queryKey: ['products-mounting-systems-roof-planner'],
+    queryFn: () => base44.entities.Product.filter({ category: 'montagesystem' }),
+  });
   const panelProducts = products.filter(product => product.is_active !== false);
+  const mountingProducts = mountingSystems.filter(product => product.is_active !== false);
   const [roofs, setRoofs] = useState(() => parseProjectLayout(project));
   const [selectedRoofId, setSelectedRoofId] = useState(roofs[0]?.id || '');
   const [selectedItem, setSelectedItem] = useState(null);
@@ -422,6 +430,7 @@ export default function SolarRoofPlannerV2({ project, onUpdate }) {
 
   const selectedRoof = roofs.find(roof => String(roof.id) === String(selectedRoofId)) || roofs[0];
   const selectedRoofProduct = selectedRoof ? panelProductForRoof(selectedRoof, panelProducts) : DEFAULT_PANEL;
+  const selectedMountingProduct = mountingProducts.find(product => String(product.id) === String(selectedRoof?.mountingSystemProductId)) || selectedRoof?.mountingSystemProductSnapshot || null;
   const selectedGroup = (selectedRoof?.panelGroups || []).find(group => String(group.id) === String(selectedItem?.groupId)) || selectedRoof?.panelGroups?.[0] || null;
   const total = useMemo(() => totals(roofs, panelProducts), [roofs, panelProducts]);
   const warnings = useMemo(
@@ -738,6 +747,32 @@ export default function SolarRoofPlannerV2({ project, onUpdate }) {
                         placeholder="Sök panel"
                       />
                       <ClampInfoBox product={selectedRoofProduct} />
+                    </div>
+                  </InspectorSection>
+
+                  <InspectorSection title="Montagesystem" icon={Wrench}>
+                    <div className="space-y-2">
+                      <ProductSearchSelect
+                        label="Montagesystem för aktivt tak"
+                        products={mountingProducts}
+                        value={selectedRoof.mountingSystemProductId || ''}
+                        onChange={value => {
+                          const product = mountingProducts.find(item => String(item.id) === String(value)) || null;
+                          setRoof(selectedRoof.id, {
+                            mountingSystemProductId: value,
+                            mountingSystemProductSnapshot: product ? createProductSnapshot(product) : null,
+                          });
+                        }}
+                        placeholder="Sök montagesystem"
+                      />
+                      {selectedMountingProduct ? (
+                        <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+                          <div className="font-semibold">{[selectedMountingProduct.brand, selectedMountingProduct.model].filter(Boolean).join(' ') || selectedMountingProduct.name}</div>
+                          <div className="mt-0.5 text-blue-700">Valet sparas separat för {selectedRoof.name} och används i montageberäkningen.</div>
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">Inget montagesystem valt för detta tak.</div>
+                      )}
                     </div>
                   </InspectorSection>
 
