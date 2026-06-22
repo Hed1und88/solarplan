@@ -5,7 +5,22 @@ import { useParams, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft, Sun, Cable, Battery, ShoppingCart, BarChart2, Wrench, GitBranch, Save, FileText, AlertTriangle } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  BarChart2,
+  Battery,
+  Cable,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  GitBranch,
+  Menu,
+  Save,
+  ShoppingCart,
+  Sun,
+  Wrench,
+} from 'lucide-react';
 import SolarDataPanelV2 from '@/components/project/SolarDataPanelV2';
 import ProjectPDFExport from '@/components/project/ProjectPDFExport';
 import ProjectInfoEditor from '@/components/project/ProjectInfoEditor';
@@ -191,11 +206,28 @@ function collectProjectProductEntries(project = {}, products = []) {
   });
 }
 
+function ProjectTab({ value, label, icon: Icon, activeTab, compact }) {
+  const showLabel = !compact || activeTab === value;
+  return (
+    <TabsTrigger
+      value={value}
+      title={label}
+      aria-label={label}
+      className="h-9 shrink-0 gap-1.5 rounded-lg px-2.5 text-xs text-slate-500 data-[state=active]:bg-white data-[state=active]:text-slate-950 data-[state=active]:shadow-sm"
+    >
+      <Icon className="h-4 w-4 shrink-0" />
+      {showLabel && <span>{label}</span>}
+    </TabsTrigger>
+  );
+}
+
 export default function ProjectDetail() {
   const { id } = useParams();
   const queryClient = useQueryClient();
   const [workingProject, setWorkingProject] = useState(null);
   const [saveMessage, setSaveMessage] = useState('');
+  const [activeTab, setActiveTab] = useState('panels');
+  const [compactTabs, setCompactTabs] = useState(false);
 
   const { data: products = [] } = useQuery({ queryKey: ['products-all'], queryFn: () => base44.entities.Product.list() });
   const { data: serverProject, isLoading } = useQuery({ queryKey: ['project', id], queryFn: () => fetchProjectById(base44, id), enabled: !!id });
@@ -206,6 +238,16 @@ export default function ProjectDetail() {
     setWorkingProject(merged);
     writeProjectBackup(merged);
   }, [serverProject?.id, serverProject?.updated_date, serverProject?.updated_at, serverProject?.panel_layout_data, serverProject?.string_layout_data, serverProject?.battery_layout_data, serverProject?.mounting_data, serverProject?.solar_data, serverProject?.selected_products, serverProject?.total_cost, serverProject?.notes]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    setCompactTabs(window.localStorage.getItem('solarplan:compact-project-tabs') === '1');
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('solarplan:compact-project-tabs', compactTabs ? '1' : '0');
+  }, [compactTabs]);
 
   const updateMutation = useMutation({
     mutationFn: data => saveProjectPatch(base44, workingProject || serverProject, data),
@@ -246,73 +288,92 @@ export default function ProjectDetail() {
     try {
       const planner = JSON.parse(project?.solar_roof_planner_data || project?.panel_layout_data || '{}');
       const pid = planner?.roofs?.find(roof => roof.panelProductId)?.panelProductId;
-      if (pid) return products.find(p => p.id === pid) || null;
+      if (pid) return products.find(product => product.id === pid) || null;
     } catch {}
-    return products.find(p => project?.selected_products?.some(sp => sp.product_id === p.id) && p.category === 'solpanel') || null;
+    return products.find(product => project?.selected_products?.some(selectedProduct => selectedProduct.product_id === product.id) && product.category === 'solpanel') || null;
   })();
 
   if (isLoading && !project) return <div className="p-6 lg:p-10 flex items-center justify-center min-h-[50vh]"><div className="w-8 h-8 border-4 border-muted border-t-primary rounded-full animate-spin" /></div>;
   if (!project) return <div className="p-6 lg:p-10 text-center"><p className="text-muted-foreground">Projektet hittades inte</p><Link to="/projects"><Button variant="outline" className="mt-4">Tillbaka</Button></Link></div>;
 
-  return <div className="p-6 lg:p-10 max-w-7xl mx-auto space-y-6">
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-      <div>
-        <Link to="/projects" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-2"><ArrowLeft className="w-4 h-4" /> Tillbaka</Link>
-        <div className="flex items-center gap-3"><h1 className="text-2xl font-bold">{project.name}</h1><Badge className={statusColors[project.status]}>{statusLabels[project.status]}</Badge></div>
-        {project.customer_name && <p className="text-muted-foreground mt-1">{project.customer_name} {project.address ? `• ${project.address}` : ''}</p>}
-        {saveMessage && <p className="mt-2 text-xs text-muted-foreground">{saveMessage}</p>}
-      </div>
-      <div className="flex items-center gap-2 flex-wrap">
-        <Button onClick={saveEntireProject} disabled={updateMutation.isPending} className="gap-2"><Save className="w-4 h-4" />{updateMutation.isPending ? 'Sparar...' : 'Spara allt'}</Button>
-        {project.status === 'projektering' && <Button onClick={() => updateMutation.mutate({ status: 'offert' })} disabled={hasIncompleteProjectProducts} title={hasIncompleteProjectProducts ? 'Projektet har ofullständiga produkter och kan inte skickas som offert ännu.' : ''} className="gap-2 bg-purple-600 hover:bg-purple-700 text-white disabled:opacity-50">Skicka som offert</Button>}
-        <ProjectPDFExport project={project} products={products} />
-      </div>
-    </div>
-
-    {hasIncompleteProjectProducts && (
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
-        <div className="flex items-start gap-3">
-          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-          <div className="min-w-0">
-            <p className="font-semibold">Projektet innehåller {incompleteProjectProducts.length} ofullständig(a) produkt(er)</p>
-            <p className="mt-1 text-sm">Gå till Produkter eller Dokument och uppdatera/fixa produkterna innan projektet skickas som offert.</p>
-            <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
-              {incompleteProjectProducts.slice(0, 6).map(item => (
-                <div key={`${item.key}-${item.source}`} className="rounded-xl bg-white/70 px-3 py-2">
-                  <div className="font-medium text-amber-950">{item.name}</div>
-                  <div className="text-amber-800">{issueText(item.issues)}</div>
-                  <div className="text-amber-700">Källa: {item.source}</div>
-                </div>
-              ))}
-            </div>
-            {incompleteProjectProducts.length > 6 && <p className="mt-2 text-xs">+{incompleteProjectProducts.length - 6} ytterligare produkter behöver kontrolleras.</p>}
-          </div>
+  return (
+    <div className={`mx-auto space-y-4 p-3 lg:p-5 ${activeTab === 'panels' ? 'max-w-[1800px]' : 'max-w-7xl'}`}>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <Link to="/projects" className="mb-2 inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"><ArrowLeft className="h-4 w-4" /> Tillbaka</Link>
+          <div className="flex items-center gap-3"><h1 className="text-2xl font-bold">{project.name}</h1><Badge className={statusColors[project.status]}>{statusLabels[project.status]}</Badge></div>
+          {project.customer_name && <p className="mt-1 text-muted-foreground">{project.customer_name} {project.address ? `• ${project.address}` : ''}</p>}
+          {saveMessage && <p className="mt-2 text-xs text-muted-foreground">{saveMessage}</p>}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={saveEntireProject} disabled={updateMutation.isPending} className="gap-2"><Save className="h-4 w-4" />{updateMutation.isPending ? 'Sparar...' : 'Spara allt'}</Button>
+          {project.status === 'projektering' && <Button onClick={() => updateMutation.mutate({ status: 'offert' })} disabled={hasIncompleteProjectProducts} title={hasIncompleteProjectProducts ? 'Projektet har ofullständiga produkter och kan inte skickas som offert ännu.' : ''} className="gap-2 bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50">Skicka som offert</Button>}
+          <ProjectPDFExport project={project} products={products} />
         </div>
       </div>
-    )}
 
-    <ProjectInfoEditor project={project} onUpdate={saveProject} isSaving={updateMutation.isPending} />
-    <EmergencyRestorePanel project={project} onRestore={saveProject} />
+      {hasIncompleteProjectProducts && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div className="min-w-0">
+              <p className="font-semibold">Projektet innehåller {incompleteProjectProducts.length} ofullständig(a) produkt(er)</p>
+              <p className="mt-1 text-sm">Gå till Produkter eller Dokument och uppdatera/fixa produkterna innan projektet skickas som offert.</p>
+              <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+                {incompleteProjectProducts.slice(0, 6).map(item => (
+                  <div key={`${item.key}-${item.source}`} className="rounded-xl bg-white/70 px-3 py-2">
+                    <div className="font-medium text-amber-950">{item.name}</div>
+                    <div className="text-amber-800">{issueText(item.issues)}</div>
+                    <div className="text-amber-700">Källa: {item.source}</div>
+                  </div>
+                ))}
+              </div>
+              {incompleteProjectProducts.length > 6 && <p className="mt-2 text-xs">+{incompleteProjectProducts.length - 6} ytterligare produkter behöver kontrolleras.</p>}
+            </div>
+          </div>
+        </div>
+      )}
 
-    <Tabs defaultValue="panels" className="space-y-4">
-      <TabsList className="grid grid-cols-8 w-full max-w-4xl">
-        <TabsTrigger value="panels" className="gap-1.5 text-xs sm:text-sm"><Sun className="w-4 h-4" /> <span className="hidden sm:inline">Paneler</span></TabsTrigger>
-        <TabsTrigger value="strings" className="gap-1.5 text-xs sm:text-sm"><Cable className="w-4 h-4" /> <span className="hidden sm:inline">Slingor</span></TabsTrigger>
-        <TabsTrigger value="battery" className="gap-1.5 text-xs sm:text-sm"><Battery className="w-4 h-4" /> <span className="hidden sm:inline">Batteri</span></TabsTrigger>
-        <TabsTrigger value="products" className="gap-1.5 text-xs sm:text-sm"><ShoppingCart className="w-4 h-4" /> <span className="hidden sm:inline">Produkter</span></TabsTrigger>
-        <TabsTrigger value="solar" className="gap-1.5 text-xs sm:text-sm"><BarChart2 className="w-4 h-4" /> <span className="hidden sm:inline">Soldata</span></TabsTrigger>
-        <TabsTrigger value="singleline" className="gap-1.5 text-xs sm:text-sm"><GitBranch className="w-4 h-4" /> <span className="hidden sm:inline">Enlinje</span></TabsTrigger>
-        <TabsTrigger value="mounting" className="gap-1.5 text-xs sm:text-sm"><Wrench className="w-4 h-4" /> <span className="hidden sm:inline">Montage</span></TabsTrigger>
-        <TabsTrigger value="documents" className="gap-1.5 text-xs sm:text-sm"><FileText className="w-4 h-4" /> <span className="hidden sm:inline">Dokument</span></TabsTrigger>
-      </TabsList>
-      <TabsContent value="panels" className="space-y-4"><PanelMountingSystemSelector project={project} onUpdate={saveProject} /><SolarRoofPlannerV2 project={project} onUpdate={saveProject} /></TabsContent>
-      <TabsContent value="strings" className="space-y-4"><StringMarkingTabV7 project={project} onUpdate={saveProject} selectedProduct={selectedPanelProduct} /><InverterFullSummary project={project} products={products} /></TabsContent>
-      <TabsContent value="battery"><BatteryTab project={project} onUpdate={saveProject} /></TabsContent>
-      <TabsContent value="products"><ProductSelectionTab project={project} onUpdate={saveProject} /></TabsContent>
-      <TabsContent value="solar"><SolarDataPanelV2 project={project} onUpdate={saveProject} /></TabsContent>
-      <TabsContent value="singleline"><AutoSingleLineSchemaTab project={project} onUpdate={saveProject} products={products} /></TabsContent>
-      <TabsContent value="mounting" className="space-y-4"><SolarRoofPlannerV2 project={project} onUpdate={saveProject} /><MountingSystemCalculator project={project} onUpdate={saveProject} /></TabsContent>
-      <TabsContent value="documents"><ProjectDocumentsTab project={project} products={products} onUpdate={saveProject} /></TabsContent>
-    </Tabs>
-  </div>;
+      <div className="flex flex-wrap items-center gap-2">
+        <ProjectInfoEditor project={project} onUpdate={saveProject} isSaving={updateMutation.isPending} />
+        <EmergencyRestorePanel project={project} onRestore={saveProject} />
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-3">
+        <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
+          <div className="min-w-0 flex-1 overflow-x-auto">
+            <TabsList className="inline-flex h-11 min-w-max justify-start gap-0.5 rounded-xl bg-slate-100 p-1">
+              <ProjectTab value="panels" label="Paneler" icon={Sun} activeTab={activeTab} compact={compactTabs} />
+              <ProjectTab value="strings" label="Slingor" icon={Cable} activeTab={activeTab} compact={compactTabs} />
+              <ProjectTab value="battery" label="Batteri" icon={Battery} activeTab={activeTab} compact={compactTabs} />
+              <ProjectTab value="products" label="Produkter" icon={ShoppingCart} activeTab={activeTab} compact={compactTabs} />
+              <ProjectTab value="solar" label="Soldata" icon={BarChart2} activeTab={activeTab} compact={compactTabs} />
+              <ProjectTab value="singleline" label="Enlinje" icon={GitBranch} activeTab={activeTab} compact={compactTabs} />
+              <ProjectTab value="mounting" label="Montage" icon={Wrench} activeTab={activeTab} compact={compactTabs} />
+              <ProjectTab value="documents" label="Dokument" icon={FileText} activeTab={activeTab} compact={compactTabs} />
+            </TabsList>
+          </div>
+          <button
+            type="button"
+            title={compactTabs ? 'Visa namn i projektmenyn' : 'Visa endast ikoner i projektmenyn'}
+            aria-label={compactTabs ? 'Visa namn i projektmenyn' : 'Visa endast ikoner i projektmenyn'}
+            onClick={() => setCompactTabs(current => !current)}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-950"
+          >
+            {compactTabs ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </button>
+          <Menu className="hidden h-4 w-4 text-slate-300 sm:block" />
+        </div>
+
+        <TabsContent value="panels" className="mt-0"><SolarRoofPlannerV2 project={project} onUpdate={saveProject} /></TabsContent>
+        <TabsContent value="strings" className="mt-0 space-y-4"><StringMarkingTabV7 project={project} onUpdate={saveProject} selectedProduct={selectedPanelProduct} /><InverterFullSummary project={project} products={products} /></TabsContent>
+        <TabsContent value="battery" className="mt-0"><BatteryTab project={project} onUpdate={saveProject} /></TabsContent>
+        <TabsContent value="products" className="mt-0"><ProductSelectionTab project={project} onUpdate={saveProject} /></TabsContent>
+        <TabsContent value="solar" className="mt-0"><SolarDataPanelV2 project={project} onUpdate={saveProject} /></TabsContent>
+        <TabsContent value="singleline" className="mt-0"><AutoSingleLineSchemaTab project={project} onUpdate={saveProject} products={products} /></TabsContent>
+        <TabsContent value="mounting" className="mt-0 space-y-4"><PanelMountingSystemSelector project={project} onUpdate={saveProject} /><SolarRoofPlannerV2 project={project} onUpdate={saveProject} /><MountingSystemCalculator project={project} onUpdate={saveProject} /></TabsContent>
+        <TabsContent value="documents" className="mt-0"><ProjectDocumentsTab project={project} products={products} onUpdate={saveProject} /></TabsContent>
+      </Tabs>
+    </div>
+  );
 }
