@@ -403,7 +403,10 @@ function MapWorkspace({ project, layout, setLayout, trace, setTrace, onSave, sav
                 draggable={false}
                 className="absolute inset-0 h-full w-full object-contain"
                 style={{ opacity: trace.opacity ?? 1 }}
-                onLoad={event => setTrace(current => ({ ...current, naturalWidth: event.currentTarget.naturalWidth, naturalHeight: event.currentTarget.naturalHeight }))}
+                onLoad={event => {
+                  const { naturalWidth, naturalHeight } = event.currentTarget;
+                  setTrace(current => ({ ...current, naturalWidth, naturalHeight }));
+                }}
               />
               <svg viewBox={`0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`} className="absolute inset-0 h-full w-full touch-none" onClick={handleCanvasClick}>
                 {mappedRoofs.map((roof, roofIndex) => {
