@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Crosshair,
@@ -130,11 +130,17 @@ async function compressImage(file) {
   }
 }
 
-function normalizedPoint(event) {
-  const rect = event.currentTarget.getBoundingClientRect();
+function normalizedSvgPoint(event, width, height) {
+  const svg = event.currentTarget.ownerSVGElement || event.currentTarget;
+  const matrix = svg?.getScreenCTM?.();
+  if (!svg?.createSVGPoint || !matrix || !(width > 0) || !(height > 0)) return null;
+  const point = svg.createSVGPoint();
+  point.x = event.clientX;
+  point.y = event.clientY;
+  const local = point.matrixTransform(matrix.inverse());
   return {
-    x: clamp((event.clientX - rect.left) / rect.width, 0, 1),
-    y: clamp((event.clientY - rect.top) / rect.height, 0, 1),
+    x: clamp(local.x / width, 0, 1),
+    y: clamp(local.y / height, 0, 1),
   };
 }
 
@@ -184,6 +190,16 @@ function edgeLength(a, b, trace) {
   ) * trace.metersPerPixel;
 }
 
+function roofWithPolygonMetrics(roof, points, trace) {
+  const dimensions = roofDimensions(points, trace);
+  return {
+    ...roof,
+    mapPolygon: points,
+    mapAreaM2: polygonArea(points, trace),
+    ...(dimensions ? { widthM: Number(dimensions.widthM.toFixed(2)), roofFallM: Number(dimensions.roofFallM.toFixed(2)) } : {}),
+  };
+}
+
 function ToolbarButton({ title, active, disabled, onClick, children }) {
   return (
     <button
@@ -202,6 +218,7 @@ function ToolbarButton({ title, active, disabled, onClick, children }) {
 export default function InlinePanelMapTools({ project, onUpdate, toolbarTarget, canvasTarget, settingsTarget }) {
   const fileInputRef = useRef(null);
   const dragRef = useRef(null);
+  const geometryDragRef = useRef(null);
   const canvasRef = useRef(null);
   const [layout, setLayout] = useState(() => readLayout(project));
   const [trace, setTrace] = useState(() => ({ ...DEFAULT_TRACE, ...(readLayout(project).mapTrace || {}) }));
@@ -213,7 +230,6 @@ export default function InlinePanelMapTools({ project, onUpdate, toolbarTarget, 
   const [calibrationPoints, setCalibrationPoints] = useState([]);
   const [calibrationMeters, setCalibrationMeters] = useState('');
   const [selectedRoofId, setSelectedRoofId] = useState(() => readLayout(project).roofs?.[0]?.id || '');
-  const [dragPoint, setDragPoint] = useState(null);
   const [obstacleStart, setObstacleStart] = useState(null);
   const [status, setStatus] = useState('');
   const [saving, setSaving] = useState(false);
@@ -232,6 +248,13 @@ export default function InlinePanelMapTools({ project, onUpdate, toolbarTarget, 
     setTrace(nextTrace);
     setSelectedRoofId(current => nextLayout.roofs.some(roof => String(roof.id) === String(current)) ? current : nextLayout.roofs?.[0]?.id || '');
   }, [project?.id, project?.solar_roof_planner_data, project?.panel_layout_data]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !project?.id) return;
+    window.dispatchEvent(new CustomEvent('solarplan:map-layout-change', {
+      detail: { projectId: String(project.id), layout },
+    }));
+  }, [layout, project?.id]);
 
   useEffect(() => {
     let objectUrl = '';
@@ -301,23 +324,56 @@ export default function InlinePanelMapTools({ project, onUpdate, toolbarTarget, 
     if (points.length < 3) return;
     const targetRoof = selectedRoof || layout.roofs.find(roof => !roof.mapPolygon?.length) || layout.roofs[0];
     if (!targetRoof) return;
-    const dimensions = roofDimensions(points, trace);
-    updateRoof(targetRoof.id, roof => ({
-      ...roof,
-      shape: 'Fri polygon',
-      mapPolygon: points,
-      mapAreaM2: polygonArea(points, trace),
-      ...(dimensions ? { widthM: Number(dimensions.widthM.toFixed(2)), roofFallM: Number(dimensions.roofFallM.toFixed(2)) } : {}),
-    }));
+    updateRoof(targetRoof.id, roof => {
+      const originalDimensions = roof.mapOriginalDimensions || (!roof.mapPolygon?.length ? {
+        widthM: roof.widthM ?? '',
+        roofFallM: roof.roofFallM ?? '',
+        shape: roof.shape || 'Rektangel',
+      } : null);
+      const updated = roofWithPolygonMetrics({
+        ...roof,
+        shape: 'Fri polygon',
+        ...(originalDimensions ? { mapOriginalDimensions: originalDimensions } : {}),
+      }, points, trace);
+      return updated;
+    });
     setSelectedRoofId(targetRoof.id);
     setDraft([]);
     setTool('edit');
-    setStatus(`${targetRoof.name} har ritats på kartbilden.`);
+    setStatus(`${targetRoof.name} har ritats. Dra hörn, linjehandtag eller hela takytan för att justera ritningen.`);
+  };
+
+  const clearRoofDrawing = roofId => {
+    const roof = layout.roofs.find(item => String(item.id) === String(roofId));
+    if (!roof?.mapPolygon?.length) return;
+    updateRoof(roofId, current => {
+      const original = current.mapOriginalDimensions;
+      const {
+        mapPolygon,
+        mapAreaM2,
+        mapOriginalDimensions,
+        obstacles,
+        ...rest
+      } = current;
+      return {
+        ...rest,
+        widthM: original ? original.widthM : '',
+        roofFallM: original ? original.roofFallM : '',
+        shape: original?.shape || (current.shape === 'Fri polygon' ? 'Rektangel' : current.shape),
+        obstacles: [],
+      };
+    });
+    geometryDragRef.current = null;
+    setDraft([]);
+    setObstacleStart(null);
+    setTool('draw');
+    setStatus(`${roof.name}: takritning, kartmått och hinder har tagits bort. Själva taket och panelgrupperna finns kvar.`);
   };
 
   const handleCanvasClick = event => {
-    if (!trace.imageUrl) return;
-    const point = normalizedPoint(event);
+    if (!trace.imageUrl || geometryDragRef.current) return;
+    const point = normalizedSvgPoint(event, stageWidth, stageHeight);
+    if (!point) return;
     if (tool === 'draw') {
       if (draft.length >= 3 && pointDistance(point, draft[0]) < 0.025) finishPolygon(draft);
       else setDraft(current => [...current, point]);
@@ -358,31 +414,67 @@ export default function InlinePanelMapTools({ project, onUpdate, toolbarTarget, 
     setTrace(calibrated);
     setLayout(current => ({
       ...current,
-      roofs: current.roofs.map(roof => {
-        if (!roof.mapPolygon?.length) return roof;
-        const dimensions = roofDimensions(roof.mapPolygon, calibrated);
-        return {
-          ...roof,
-          mapAreaM2: polygonArea(roof.mapPolygon, calibrated),
-          ...(dimensions ? { widthM: Number(dimensions.widthM.toFixed(2)), roofFallM: Number(dimensions.roofFallM.toFixed(2)) } : {}),
-        };
-      }),
+      roofs: current.roofs.map(roof => roof.mapPolygon?.length ? roofWithPolygonMetrics(roof, roof.mapPolygon, calibrated) : roof),
     }));
     setTool('draw');
     setStatus(`Kalibrerat: ${metersPerPixel.toFixed(5)} meter per pixel.`);
   };
 
-  const moveRoofPoint = (roofId, pointIndex, point) => {
-    updateRoof(roofId, roof => {
-      const mapPolygon = roof.mapPolygon.map((item, index) => index === pointIndex ? point : item);
-      const dimensions = roofDimensions(mapPolygon, trace);
-      return {
-        ...roof,
-        mapPolygon,
-        mapAreaM2: polygonArea(mapPolygon, trace),
-        ...(dimensions ? { widthM: Number(dimensions.widthM.toFixed(2)), roofFallM: Number(dimensions.roofFallM.toFixed(2)) } : {}),
+  const beginGeometryDrag = (event, type, roof, pointIndex = null) => {
+    if (tool !== 'edit' || !roof?.mapPolygon?.length) return;
+    const point = normalizedSvgPoint(event, stageWidth, stageHeight);
+    if (!point) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    geometryDragRef.current = {
+      type,
+      roofId: roof.id,
+      pointIndex,
+      start: point,
+      original: roof.mapPolygon.map(item => ({ x: number(item.x), y: number(item.y) })),
+    };
+    setSelectedRoofId(roof.id);
+  };
+
+  const moveGeometryDrag = event => {
+    const drag = geometryDragRef.current;
+    if (!drag || tool !== 'edit') return;
+    const point = normalizedSvgPoint(event, stageWidth, stageHeight);
+    if (!point) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    const rawDx = point.x - drag.start.x;
+    const rawDy = point.y - drag.start.y;
+    let nextPoints = drag.original.map(item => ({ ...item }));
+
+    if (drag.type === 'point') {
+      const originalPoint = drag.original[drag.pointIndex];
+      nextPoints[drag.pointIndex] = {
+        x: clamp(originalPoint.x + rawDx, 0, 1),
+        y: clamp(originalPoint.y + rawDy, 0, 1),
       };
-    });
+    } else {
+      const indices = drag.type === 'edge'
+        ? [drag.pointIndex, (drag.pointIndex + 1) % drag.original.length]
+        : drag.original.map((_, index) => index);
+      const indexedPoints = indices.map(index => drag.original[index]);
+      const dx = clamp(rawDx, -Math.min(...indexedPoints.map(item => item.x)), 1 - Math.max(...indexedPoints.map(item => item.x)));
+      const dy = clamp(rawDy, -Math.min(...indexedPoints.map(item => item.y)), 1 - Math.max(...indexedPoints.map(item => item.y)));
+      nextPoints = nextPoints.map((item, index) => indices.includes(index) ? { x: item.x + dx, y: item.y + dy } : item);
+    }
+
+    updateRoof(drag.roofId, roof => roofWithPolygonMetrics(roof, nextPoints, trace));
+  };
+
+  const endGeometryDrag = event => {
+    const drag = geometryDragRef.current;
+    if (!drag) return;
+    event?.stopPropagation?.();
+    geometryDragRef.current = null;
+    const roof = layout.roofs.find(item => String(item.id) === String(drag.roofId));
+    setStatus(`${roof?.name || 'Takritningen'} har justerats.`);
   };
 
   const save = async () => {
@@ -406,7 +498,7 @@ export default function InlinePanelMapTools({ project, onUpdate, toolbarTarget, 
     };
     const payload = {
       ...layout,
-      version: Math.max(11, Number(layout.version) || 0),
+      version: Math.max(12, Number(layout.version) || 0),
       mapTrace,
       roofs: layout.roofs,
       savedAt: new Date().toISOString(),
@@ -417,10 +509,10 @@ export default function InlinePanelMapTools({ project, onUpdate, toolbarTarget, 
         solar_roof_planner_data: JSON.stringify(payload),
         panel_layout_data: JSON.stringify(payload),
         ...(remoteUrl ? { roof_image_url: remoteUrl } : {}),
-        roof_width_m: payload.roofs?.[0]?.widthM || project?.roof_width_m || '',
-        roof_height_m: payload.roofs?.[0]?.roofFallM || project?.roof_height_m || '',
+        roof_width_m: payload.roofs?.[0]?.widthM || '',
+        roof_height_m: payload.roofs?.[0]?.roofFallM || '',
       });
-      setStatus(remoteUrl ? 'Kartbild och tak är sparade i projektet.' : 'Tak och kalibrering är sparade. Bilden sparades lokalt eftersom molnuppladdningen misslyckades.');
+      setStatus(remoteUrl ? 'Kartbild, taklinjer, mått och paneler är sparade i projektet.' : 'Taklinjer, mått och paneler är sparade. Bilden sparades lokalt eftersom molnuppladdningen misslyckades.');
     } catch (error) {
       setStatus(error?.message || 'Kartprojekteringen kunde inte sparas.');
     } finally {
@@ -485,7 +577,7 @@ export default function InlinePanelMapTools({ project, onUpdate, toolbarTarget, 
       <ToolbarButton title="Panorera kartbild" active={mode === 'map' && tool === 'pan'} disabled={!trace.imageUrl} onClick={() => { setMode('map'); setTool('pan'); }}><Hand className="h-4 w-4" /></ToolbarButton>
       <ToolbarButton title="Kalibrera känd sträcka" active={mode === 'map' && tool === 'calibrate'} disabled={!trace.imageUrl} onClick={() => { setMode('map'); setTool('calibrate'); setCalibrationPoints([]); }}><Ruler className="h-4 w-4" /></ToolbarButton>
       <ToolbarButton title="Rita takpolygon" active={mode === 'map' && tool === 'draw'} disabled={!trace.imageUrl} onClick={() => { setMode('map'); setTool('draw'); setDraft([]); }}><Pentagon className="h-4 w-4" /></ToolbarButton>
-      <ToolbarButton title="Redigera hörnpunkter" active={mode === 'map' && tool === 'edit'} disabled={!mappedRoofs.length} onClick={() => { setMode('map'); setTool('edit'); }}><MousePointer2 className="h-4 w-4" /></ToolbarButton>
+      <ToolbarButton title="Redigera eller flytta taklinjer" active={mode === 'map' && tool === 'edit'} disabled={!mappedRoofs.length} onClick={() => { setMode('map'); setTool('edit'); setStatus('Dra orange hörn, blå linjehandtag eller själva takytan.'); }}><MousePointer2 className="h-4 w-4" /></ToolbarButton>
       <ToolbarButton title="Lägg till hinder" active={mode === 'map' && tool === 'obstacle'} disabled={!selectedRoof?.mapPolygon?.length} onClick={() => { setMode('map'); setTool('obstacle'); setObstacleStart(null); }}><SquareDashed className="h-4 w-4" /></ToolbarButton>
       <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => handleImage(event.target.files?.[0])} />
     </div>
@@ -515,25 +607,91 @@ export default function InlinePanelMapTools({ project, onUpdate, toolbarTarget, 
           onPointerDown={beginPan}
         >
           <img src={trace.imageUrl} alt="Kartbild" draggable={false} className="absolute inset-0 h-full w-full" style={{ opacity: trace.opacity ?? 1 }} />
-          <svg viewBox={`0 0 ${stageWidth} ${stageHeight}`} className="absolute inset-0 h-full w-full touch-none" onClick={handleCanvasClick}>
-            {mappedRoofs.map(roof => (
-              <g key={roof.id} onClick={event => { event.stopPropagation(); focusRoof(roof); }}>
-                <polygon className="cursor-zoom-in" points={roof.mapPolygon.map(point => `${point.x * stageWidth},${point.y * stageHeight}`).join(' ')} fill={String(roof.id) === String(selectedRoofId) ? 'rgba(249,115,22,.20)' : 'rgba(37,99,235,.16)'} stroke={String(roof.id) === String(selectedRoofId) ? '#f97316' : '#2563eb'} strokeWidth="4" />
-                {roof.mapPolygon.map((point, index) => {
-                  const next = roof.mapPolygon[(index + 1) % roof.mapPolygon.length];
-                  const length = edgeLength(point, next, trace);
-                  const x = point.x * stageWidth;
-                  const y = point.y * stageHeight;
-                  return (
-                    <React.Fragment key={`${roof.id}-${index}`}>
-                      {length != null && <text x={(point.x + next.x) * stageWidth / 2} y={(point.y + next.y) * stageHeight / 2 - 8} textAnchor="middle" fill="#fff" stroke="#0f172a" strokeWidth="4" paintOrder="stroke" fontSize="18" fontWeight="800">{length.toFixed(2)} m</text>}
-                      {tool === 'edit' && <circle cx={x} cy={y} r="10" fill="#fff" stroke="#f97316" strokeWidth="4" onClick={event => event.stopPropagation()} onPointerDown={event => { event.stopPropagation(); setDragPoint({ roofId: roof.id, pointIndex: index }); event.currentTarget.setPointerCapture?.(event.pointerId); }} onPointerMove={event => { if (!dragPoint || dragPoint.roofId !== roof.id || dragPoint.pointIndex !== index) return; moveRoofPoint(roof.id, index, normalizedPoint(event)); }} onPointerUp={() => setDragPoint(null)} />}
-                    </React.Fragment>
-                  );
-                })}
-                {(roof.obstacles || []).map(obstacle => <rect key={obstacle.id} x={obstacle.x * stageWidth} y={obstacle.y * stageHeight} width={obstacle.width * stageWidth} height={obstacle.height * stageHeight} fill="rgba(220,38,38,.25)" stroke="#dc2626" strokeWidth="3" strokeDasharray="10 6" />)}
-              </g>
-            ))}
+          <svg
+            viewBox={`0 0 ${stageWidth} ${stageHeight}`}
+            className="absolute inset-0 h-full w-full touch-none"
+            onClick={handleCanvasClick}
+            onPointerMove={moveGeometryDrag}
+            onPointerUp={endGeometryDrag}
+            onPointerCancel={endGeometryDrag}
+            onPointerLeave={endGeometryDrag}
+          >
+            {mappedRoofs.map(roof => {
+              const isSelectedRoof = String(roof.id) === String(selectedRoofId);
+              return (
+                <g key={roof.id} onClick={event => {
+                  if (tool === 'edit') {
+                    event.stopPropagation();
+                    setSelectedRoofId(roof.id);
+                    return;
+                  }
+                  event.stopPropagation();
+                  focusRoof(roof);
+                }}>
+                  <polygon
+                    className={tool === 'edit' ? 'cursor-move' : 'cursor-zoom-in'}
+                    points={roof.mapPolygon.map(point => `${point.x * stageWidth},${point.y * stageHeight}`).join(' ')}
+                    fill={isSelectedRoof ? 'rgba(249,115,22,.20)' : 'rgba(37,99,235,.16)'}
+                    stroke={isSelectedRoof ? '#f97316' : '#2563eb'}
+                    strokeWidth="4"
+                    onPointerDown={event => beginGeometryDrag(event, 'polygon', roof)}
+                  />
+                  {roof.mapPolygon.map((point, index) => {
+                    const next = roof.mapPolygon[(index + 1) % roof.mapPolygon.length];
+                    const length = edgeLength(point, next, trace);
+                    const x = point.x * stageWidth;
+                    const y = point.y * stageHeight;
+                    const nextX = next.x * stageWidth;
+                    const nextY = next.y * stageHeight;
+                    const middleX = (x + nextX) / 2;
+                    const middleY = (y + nextY) / 2;
+                    return (
+                      <React.Fragment key={`${roof.id}-${index}`}>
+                        {tool === 'edit' && isSelectedRoof && (
+                          <>
+                            <line
+                              x1={x}
+                              y1={y}
+                              x2={nextX}
+                              y2={nextY}
+                              stroke="transparent"
+                              strokeWidth="20"
+                              className="cursor-move"
+                              onPointerDown={event => beginGeometryDrag(event, 'edge', roof, index)}
+                            />
+                            <circle
+                              cx={middleX}
+                              cy={middleY}
+                              r="8"
+                              fill="#ffffff"
+                              stroke="#2563eb"
+                              strokeWidth="4"
+                              className="cursor-move"
+                              onPointerDown={event => beginGeometryDrag(event, 'edge', roof, index)}
+                            />
+                          </>
+                        )}
+                        {length != null && <text pointerEvents="none" x={middleX} y={middleY - 8} textAnchor="middle" fill="#fff" stroke="#0f172a" strokeWidth="4" paintOrder="stroke" fontSize="18" fontWeight="800">{length.toFixed(2)} m</text>}
+                        {tool === 'edit' && isSelectedRoof && (
+                          <circle
+                            cx={x}
+                            cy={y}
+                            r="10"
+                            fill="#fff"
+                            stroke="#f97316"
+                            strokeWidth="4"
+                            className="cursor-move"
+                            onClick={event => event.stopPropagation()}
+                            onPointerDown={event => beginGeometryDrag(event, 'point', roof, index)}
+                          />
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                  {(roof.obstacles || []).map(obstacle => <rect pointerEvents="none" key={obstacle.id} x={obstacle.x * stageWidth} y={obstacle.y * stageHeight} width={obstacle.width * stageWidth} height={obstacle.height * stageHeight} fill="rgba(220,38,38,.25)" stroke="#dc2626" strokeWidth="3" strokeDasharray="10 6" />)}
+                </g>
+              );
+            })}
             {draft.length > 0 && <polyline points={draft.map(point => `${point.x * stageWidth},${point.y * stageHeight}`).join(' ')} fill="rgba(249,115,22,.12)" stroke="#f97316" strokeWidth="4" strokeDasharray="10 6" />}
             {draft.map((point, index) => <circle key={index} cx={point.x * stageWidth} cy={point.y * stageHeight} r="9" fill="#fff" stroke="#f97316" strokeWidth="4" />)}
             {calibrationPoints.length > 0 && <polyline points={calibrationPoints.map(point => `${point.x * stageWidth},${point.y * stageHeight}`).join(' ')} fill="none" stroke="#22c55e" strokeWidth="5" />}
@@ -546,7 +704,7 @@ export default function InlinePanelMapTools({ project, onUpdate, toolbarTarget, 
         <ToolbarButton title="Zooma ut" onClick={() => setZoom(current => Math.max(0.2, current - 0.15))}><ZoomOut className="h-4 w-4" /></ToolbarButton>
         <ToolbarButton title="Centrera bild" onClick={() => { setZoom(0.8); setPan({ x: 0, y: 0 }); }}><Crosshair className="h-4 w-4" /></ToolbarButton>
       </div>
-      {status && <div className="absolute bottom-3 left-3 z-50 max-w-[520px] rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-xs text-slate-700 shadow-sm">{status}</div>}
+      {status && <div className="absolute bottom-3 left-3 z-50 max-w-[620px] rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-xs text-slate-700 shadow-sm">{status}</div>}
     </div>
   ) : null;
 
@@ -568,7 +726,25 @@ export default function InlinePanelMapTools({ project, onUpdate, toolbarTarget, 
 
       <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
         <div className="flex items-center justify-between"><div className="text-sm font-semibold">Takpolygoner</div><span className="text-xs text-slate-500">{mappedRoofs.length} st</span></div>
-        <div className="mt-2 space-y-1.5">{layout.roofs.map(roof => <button key={roof.id} type="button" onClick={() => roof.mapPolygon?.length ? focusRoof(roof) : setSelectedRoofId(roof.id)} className={`w-full rounded-xl border px-3 py-2 text-left text-xs ${String(roof.id) === String(selectedRoofId) ? 'border-orange-300 bg-orange-50 text-orange-800' : 'border-slate-200 bg-white text-slate-600'}`}><span className="block font-semibold">{roof.name}</span><span>{roof.mapPolygon?.length ? `${number(roof.widthM).toFixed(2)} × ${number(roof.roofFallM).toFixed(2)} m${roof.mapAreaM2 ? ` · ${roof.mapAreaM2.toFixed(1)} m²` : ''}` : 'Ingen polygon ritad'}</span></button>)}</div>
+        <div className="mt-2 text-[11px] leading-4 text-slate-500">Välj redigeringsverktyget och dra orange hörn, blå linjehandtag eller hela takytan.</div>
+        <div className="mt-2 space-y-1.5">
+          {layout.roofs.map(roof => {
+            const activeRoof = String(roof.id) === String(selectedRoofId);
+            return (
+              <div key={roof.id} className={`flex items-stretch overflow-hidden rounded-xl border ${activeRoof ? 'border-orange-300 bg-orange-50 text-orange-800' : 'border-slate-200 bg-white text-slate-600'}`}>
+                <button type="button" onClick={() => roof.mapPolygon?.length ? focusRoof(roof) : setSelectedRoofId(roof.id)} className="min-w-0 flex-1 px-3 py-2 text-left text-xs">
+                  <span className="block font-semibold">{roof.name}</span>
+                  <span>{roof.mapPolygon?.length ? `${number(roof.widthM).toFixed(2)} × ${number(roof.roofFallM).toFixed(2)} m${roof.mapAreaM2 ? ` · ${roof.mapAreaM2.toFixed(1)} m²` : ''}` : 'Ingen polygon ritad'}</span>
+                </button>
+                {roof.mapPolygon?.length ? (
+                  <button type="button" title="Ta bort takritning och kartmått" aria-label={`Ta bort takritning och kartmått för ${roof.name}`} onClick={() => clearRoofDrawing(roof.id)} className="flex w-10 items-center justify-center border-l border-current/10 text-red-600 hover:bg-red-50">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
       </section>
 
       <Button onClick={save} disabled={saving} className="w-full gap-2 bg-orange-500 text-white hover:bg-orange-600"><Save className="h-4 w-4" />{saving ? 'Sparar...' : 'Spara kartprojektering'}</Button>
