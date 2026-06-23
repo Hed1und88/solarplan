@@ -48,8 +48,6 @@ function MapIntegration({ project, onUpdate }) {
   const [targets, setTargets] = useState(null);
 
   useEffect(() => {
-    let currentTargets = null;
-
     const sync = () => {
       const found = findPanelWorkbench();
       if (!found) {
@@ -67,10 +65,10 @@ function MapIntegration({ project, onUpdate }) {
       const settingsTarget = createHost(found.settingsList, 'settings', found.settingsList.firstChild);
       settingsTarget.className = 'contents';
 
-      currentTargets = { toolbarTarget, canvasTarget, settingsTarget };
+      const nextTargets = { toolbarTarget, canvasTarget, settingsTarget };
       setTargets(current => {
         if (current?.toolbarTarget === toolbarTarget && current?.canvasTarget === canvasTarget && current?.settingsTarget === settingsTarget) return current;
-        return currentTargets;
+        return nextTargets;
       });
     };
 
@@ -111,6 +109,10 @@ export default function ProjectDetailMapWrapper() {
 
   return (
     <>
+      <style>{`
+        [data-map-host="canvas"]:empty { pointer-events: none; }
+        [data-map-host="canvas"]:not(:empty) { pointer-events: auto; }
+      `}</style>
       <ProjectDetail />
       {project && <MapIntegration project={project} onUpdate={saveMapData} />}
     </>
