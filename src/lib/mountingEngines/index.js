@@ -1,4 +1,4 @@
-import { calculateNordmountRoof, isNordmountProduct } from '@/lib/mountingEngines/nordmount';
+import { calculateNordmountRoof, isNordmountProduct } from '@/lib/mountingEngines/nordmountValidated';
 
 export function resolveMountingEngine(mountingProduct = {}) {
   if (isNordmountProduct(mountingProduct)) {
@@ -16,9 +16,15 @@ export function calculateMountingRoof(input = {}) {
   if (!engine) {
     return {
       engineId: null,
-      status: 'blocked',
+      state: 'blocked',
+      status: {
+        loadsValidated: false,
+        preliminaryAngle: false,
+        capacityValidated: false,
+      },
       errors: ['Det valda montagesystemet saknar en färdig systemmotor.'],
       warnings: [],
+      materials: null,
     };
   }
   return engine.calculateRoof(input);
