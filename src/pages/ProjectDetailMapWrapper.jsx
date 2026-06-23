@@ -11,17 +11,25 @@ function safeJson(raw, fallback = null) {
   try { return JSON.parse(raw || '') || fallback; } catch { return fallback; }
 }
 
+function mergePanelGroupsIntoLayout(layout, panelLayout) {
+  if (!layout?.roofs?.length || !panelLayout?.roofs?.length) return layout;
+  return {
+    ...layout,
+    roofs: layout.roofs.map(roof => {
+      const panelRoof = panelLayout.roofs.find(item => String(item.id) === String(roof.id));
+      return panelRoof ? { ...roof, panelGroups: panelRoof.panelGroups || [] } : roof;
+    }),
+  };
+}
+
 function mergePanelGroupsIntoPatch(patch, panelLayout) {
   if (!panelLayout?.roofs?.length) return patch;
 
   const mergeRaw = raw => {
     const parsed = safeJson(raw, null);
     if (!parsed?.roofs?.length) return raw;
-    const roofs = parsed.roofs.map(roof => {
-      const panelRoof = panelLayout.roofs.find(item => String(item.id) === String(roof.id));
-      return panelRoof ? { ...roof, panelGroups: panelRoof.panelGroups || [] } : roof;
-    });
-    return JSON.stringify({ ...parsed, version: Math.max(12, Number(parsed.version) || 0), roofs });
+    const merged = mergePanelGroupsIntoLayout(parsed, panelLayout);
+    return JSON.stringify({ ...merged, version: Math.max(12, Number(merged.version) || 0) });
   };
 
   return {
@@ -71,7 +79,24 @@ function createHost(parent, name, before = null) {
 
 function MapIntegration({ project, onUpdate }) {
   const [targets, setTargets] = useState(null);
+  const [liveMapLayout, setLiveMapLayout] = useState(null);
   const panelLayoutRef = useRef(null);
+
+  useEffect(() => {
+    const handleMapLayout = event => {
+      if (String(event?.detail?.projectId || '') !== String(project?.id || '')) return;
+      const incoming = event?.detail?.layout;
+      if (!incoming?.roofs?.length) return;
+      setLiveMapLayout(mergePanelGroupsIntoLayout(incoming, panelLayoutRef.current));
+    };
+    window.addEventListener('solarplan:map-layout-change', handleMapLayout);
+    return () => window.removeEventListener('solarplan:map-layout-change', handleMapLayout);
+  }, [project?.id]);
+
+  useEffect(() => {
+    setLiveMapLayout(null);
+    panelLayoutRef.current = null;
+  }, [project?.id]);
 
   useEffect(() => {
     const sync = () => {
@@ -124,14 +149,22 @@ function MapIntegration({ project, onUpdate }) {
   if (!targets) return null;
 
   const saveWithPanelPlacement = patch => onUpdate(mergePanelGroupsIntoPatch(patch, panelLayoutRef.current));
+  const panelProject = liveMapLayout ? {
+    ...project,
+    solar_roof_planner_data: JSON.stringify(liveMapLayout),
+    panel_layout_data: JSON.stringify(liveMapLayout),
+  } : project;
 
   return (
     <>
       <InlinePanelMapTools project={project} onUpdate={saveWithPanelPlacement} {...targets} />
       <MapPanelPlacementLayer
-        project={project}
+        project={panelProject}
         {...targets}
-        onLayoutChange={layout => { panelLayoutRef.current = layout; }}
+        onLayoutChange={layout => {
+          panelLayoutRef.current = layout;
+          setLiveMapLayout(current => current ? mergePanelGroupsIntoLayout(current, layout) : current);
+        }}
       />
     </>
   );
