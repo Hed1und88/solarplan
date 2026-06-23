@@ -11,6 +11,25 @@ function safeJson(raw, fallback = null) {
   try { return JSON.parse(raw || '') || fallback; } catch { return fallback; }
 }
 
+function withLocalMapImageFallback(project) {
+  if (!project?.id) return project;
+
+  const parsed = safeJson(project.solar_roof_planner_data || project.panel_layout_data, null);
+  if (!Array.isArray(parsed?.roofs)) return project;
+
+  const mapTrace = {
+    ...(parsed.mapTrace || {}),
+    imageKey: parsed.mapTrace?.imageKey || `project-${project.id}-map`,
+  };
+  const payload = JSON.stringify({ ...parsed, mapTrace });
+
+  return {
+    ...project,
+    solar_roof_planner_data: payload,
+    panel_layout_data: payload,
+  };
+}
+
 function mergePanelGroupsIntoLayout(layout, panelLayout) {
   if (!Array.isArray(layout?.roofs) || !panelLayout?.roofs?.length) return layout;
   return {
@@ -173,6 +192,7 @@ function MapIntegration({ project, onUpdate }) {
   if (!targets) return null;
 
   const saveWithPanelPlacement = patch => onUpdate(mergePanelGroupsIntoPatch(patch, panelLayoutRef.current));
+  const mapProject = withLocalMapImageFallback(project);
   const panelProject = liveMapLayout ? {
     ...project,
     solar_roof_planner_data: JSON.stringify(liveMapLayout),
@@ -181,7 +201,7 @@ function MapIntegration({ project, onUpdate }) {
 
   return (
     <>
-      <InlinePanelMapTools project={project} onUpdate={saveWithPanelPlacement} {...targets} />
+      <InlinePanelMapTools project={mapProject} onUpdate={saveWithPanelPlacement} {...targets} />
       <MapPanelPlacementLayer
         project={panelProject}
         {...targets}
