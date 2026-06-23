@@ -44,7 +44,59 @@ function serverPatch(patch = {}) {
     }));
 }
 
-function roofData(raw) { const data = typeof raw === 'string' ? parse(raw) : raw; return Array.isArray(data?.roofs) ? data : null; }
+function plannerObject(raw) {
+  const value = typeof raw === 'string' ? parse(raw) : raw;
+  return value && typeof value === 'object' && Array.isArray(value.roofs) ? value : null;
+}
+
+function currentPlannerPayload(project = {}) {
+  const candidates = [
+    plannerObject(project.solar_roof_planner_data),
+    plannerObject(project.panel_layout_data),
+  ].filter(Boolean);
+
+  return candidates.find(candidate => candidate?.mapTrace?.imageUrl || candidate?.mapTrace?.imageKey)
+    || candidates[0]
+    || null;
+}
+
+function mergePlannerPayload(currentProject, nextRaw) {
+  const next = plannerObject(nextRaw);
+  if (!next) return nextRaw;
+
+  const current = currentPlannerPayload(currentProject);
+  if (!current) return typeof nextRaw === 'string' ? JSON.stringify(next) : next;
+
+  const currentRoofs = new Map((current.roofs || []).map(roof => [String(roof.id), roof]));
+  const roofs = next.roofs.map(roof => ({
+    ...(currentRoofs.get(String(roof.id)) || {}),
+    ...roof,
+  }));
+
+  const merged = {
+    ...current,
+    ...next,
+    roofs,
+  };
+
+  return typeof nextRaw === 'string' ? JSON.stringify(merged) : merged;
+}
+
+function preservePlannerData(currentProject, patch = {}) {
+  const next = { ...patch };
+  const hasSolar = next.solar_roof_planner_data !== undefined;
+  const hasPanel = next.panel_layout_data !== undefined;
+
+  if (hasSolar) next.solar_roof_planner_data = mergePlannerPayload(currentProject, next.solar_roof_planner_data);
+  if (hasPanel) next.panel_layout_data = mergePlannerPayload(currentProject, next.panel_layout_data);
+
+  if (hasSolar && !hasPanel) next.panel_layout_data = next.solar_roof_planner_data;
+  if (hasPanel && !hasSolar) next.solar_roof_planner_data = next.panel_layout_data;
+
+  return next;
+}
+
+function roofData(raw) { const data = plannerObject(raw); return Array.isArray(data?.roofs) ? data : null; }
 function panelScore(raw) {
   const data = roofData(raw); if (!data) return -1;
   let panels = 0; let moved = 0;
@@ -139,12 +191,23 @@ export async function saveProjectPatch(base44, currentProject, patch) {
   const user = await currentUser(base44);
   const access = resolveAccessContext(user || {});
   if (!canEditProject(user || {}, currentProject)) throw new Error(`Åtkomst nekad. Rollen ${access.role} får inte ändra detta projekt.`);
-  const filtered = serverPatch(attachCompanyOwnership(patch || {}, user || {}));
-  const optimistic = { ...currentProject, ...patch, ...filtered, updated_date: new Date().toISOString() };
+
+  const protectedPatch = preservePlannerData(currentProject, patch || {});
+  const filtered = serverPatch(attachCompanyOwnership(protectedPatch, user || {}));
+  const optimistic = { ...currentProject, ...protectedPatch, ...filtered, updated_date: new Date().toISOString() };
   writeProjectBackup(optimistic);
+
   const updated = Object.keys(filtered).length ? await base44.entities.Project.update(currentProject.id, filtered) : null;
   const fresh = await fetchProjectById(base44, currentProject.id).catch(() => null);
-  const merged = mergeProjectWithBackup({ ...optimistic, ...(updated || {}), ...(fresh || {}), ...patch, ...filtered, id: currentProject.id, _last_save_ok_at: new Date().toISOString() });
+  const merged = mergeProjectWithBackup({
+    ...optimistic,
+    ...(updated || {}),
+    ...(fresh || {}),
+    ...protectedPatch,
+    ...filtered,
+    id: currentProject.id,
+    _last_save_ok_at: new Date().toISOString(),
+  });
   writeProjectBackup(merged);
   return merged;
 }
