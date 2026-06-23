@@ -4,7 +4,7 @@ import { AlertTriangle, Plus, Trash2, Zap } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { productMeta } from '@/lib/productDocuments';
 import { Button } from '@/components/ui/button';
-import StringMarkingTabV7 from './StringMarkingTabV7.jsx';
+import StringMarkingTabV7 from './StringMarkingCanvasWorkspace.jsx';
 
 const COLORS = ['#ef4444', '#2563eb', '#16a34a', '#f59e0b', '#8b5cf6', '#db2777', '#0891b2', '#65a30d'];
 const localKey = projectId => `solarplan:project:${projectId}:string_layout_data`;
@@ -153,6 +153,7 @@ function buildPayload(base, configs, strings) {
     source: 'inverter-mppt-pv-input-workspace',
     inverterConfigs: configs,
     inverterProductId: configs[0]?.productId || '',
+    inverterProductSnapshot: configs[0]?.productSnapshot || null,
     stringCount: strings.length,
     strings,
     savedAt: new Date().toISOString(),
@@ -164,7 +165,7 @@ export default function StringMarkingEntry({ project, onUpdate, ...rest }) {
   const initialConfigs = useMemo(() => {
     const source = Array.isArray(original.inverterConfigs) && original.inverterConfigs.length
       ? original.inverterConfigs
-      : [{ id: 'default-inverter', name: 'Växelriktare 1', productId: original.inverterProductId || '' }];
+      : [{ id: 'default-inverter', name: 'Växelriktare 1', productId: original.inverterProductId || '', productSnapshot: original.inverterProductSnapshot || null }];
     return source.map((config, index) => createConfig(index, config));
   }, [project?.id]);
   const [configs, setConfigs] = useState(initialConfigs);
