@@ -9,7 +9,7 @@ import UserNotRegisteredError from '@/components/UserNotRegisteredError';
 import Layout from '@/components/Layout';
 import Dashboard from '@/pages/Dashboard';
 import Projects from '@/pages/Projects';
-import ProjectDetail from '@/pages/ProjectDetail';
+import ProjectDetail from '@/pages/ProjectDetailStringFix.jsx';
 import CalendarPage from '@/pages/Calendar';
 import SalesPipeline from '@/pages/Leads';
 import Products from '@/pages/Products';
