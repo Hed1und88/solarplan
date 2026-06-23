@@ -3,7 +3,7 @@ import './BatteryPlannerGlobals';
 import BatteryPlannerV3 from './BatteryPlannerV3';
 import ElectricalProductQuickAdd from './ElectricalProductQuickAdd';
 
-const AUTOSAVE_DELAY_MS = 700;
+const AUTOSAVE_DELAY_MS = 400;
 
 function batteryLocalKey(projectId) {
   return `solarplan:project:${projectId}:battery_layout_data`;
@@ -69,26 +69,39 @@ export default function BatteryTab({ project, onUpdate }) {
       timerRef.current = window.setTimeout(runSave, AUTOSAVE_DELAY_MS);
     };
 
-    const flushOnPageHide = () => {
+    const flushPending = () => {
       if (pendingRef.current) runSave();
+    };
+
+    const flushBeforeExternalNavigation = event => {
+      if (!pendingRef.current || root.contains(event.target)) return;
+      flushPending();
+    };
+
+    const flushWhenHidden = () => {
+      if (document.hidden) flushPending();
     };
 
     root.addEventListener('input', scheduleSave, true);
     root.addEventListener('change', scheduleSave, true);
     root.addEventListener('click', scheduleSave, true);
     root.addEventListener('pointerup', scheduleSave, true);
-    window.addEventListener('pagehide', flushOnPageHide);
-    document.addEventListener('visibilitychange', flushOnPageHide);
+    document.addEventListener('pointerdown', flushBeforeExternalNavigation, true);
+    document.addEventListener('visibilitychange', flushWhenHidden);
+    window.addEventListener('pagehide', flushPending);
+    window.addEventListener('beforeunload', flushPending);
 
     return () => {
       root.removeEventListener('input', scheduleSave, true);
       root.removeEventListener('change', scheduleSave, true);
       root.removeEventListener('click', scheduleSave, true);
       root.removeEventListener('pointerup', scheduleSave, true);
-      window.removeEventListener('pagehide', flushOnPageHide);
-      document.removeEventListener('visibilitychange', flushOnPageHide);
+      document.removeEventListener('pointerdown', flushBeforeExternalNavigation, true);
+      document.removeEventListener('visibilitychange', flushWhenHidden);
+      window.removeEventListener('pagehide', flushPending);
+      window.removeEventListener('beforeunload', flushPending);
       window.clearTimeout(timerRef.current);
-      if (pendingRef.current) runSave();
+      flushPending();
     };
   }, []);
 
