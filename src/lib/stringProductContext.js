@@ -27,6 +27,30 @@ function ensureExactProduct(products, source, exactId) {
   return [...products, { ...mergeMeta(source), id }];
 }
 
+function selectedInverterCount(data = {}) {
+  const configs = Array.isArray(data.inverterConfigs) ? data.inverterConfigs : [];
+  const selected = configs.filter(config => config?.productId || config?.product_id || config?.productSnapshot?.id || config?.productSnapshot?.product_id).length;
+  return selected + (data.inverterProductId || data.inverterProductSnapshot ? 1 : 0);
+}
+
+function stringDataScore(data = {}) {
+  const selected = selectedInverterCount(data);
+  const strings = Array.isArray(data.strings) ? data.strings.length : 0;
+  const panels = (data.strings || []).reduce((sum, item) => sum + new Set((item.nodes || []).map(node => node.panelId).filter(Boolean)).size, 0);
+  const time = new Date(data.savedAt || data.updatedAt || 0).getTime() || 0;
+  return selected * 1e15 + panels * 1e10 + strings * 1e8 + time;
+}
+
+function readStringData(project = {}) {
+  const server = safeJson(project?.string_layout_data, {});
+  if (typeof window === 'undefined' || !project?.id) return server;
+  let local = {};
+  try { local = safeJson(window.localStorage.getItem(`solarplan:project:${project.id}:string_layout_data`), {}); } catch {}
+  if (!local || !Object.keys(local).length) return server;
+  if (!server || !Object.keys(server).length) return local;
+  return stringDataScore(local) >= stringDataScore(server) ? { ...server, ...local } : { ...local, ...server };
+}
+
 function buildPanelMap(project, products) {
   const planner = safeJson(project?.solar_roof_planner_data || project?.panel_layout_data, {});
   const panelMap = new Map();
@@ -58,7 +82,7 @@ function buildPanelMap(project, products) {
 
 export function normalizeStringProductContext(project = {}, sourceProducts = []) {
   let products = (sourceProducts || []).map(mergeMeta).filter(Boolean);
-  const data = safeJson(project?.string_layout_data, {});
+  const data = readStringData(project);
   const panelMap = buildPanelMap(project, products);
 
   const configsSource = Array.isArray(data.inverterConfigs) && data.inverterConfigs.length
