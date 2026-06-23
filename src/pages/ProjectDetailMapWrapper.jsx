@@ -11,15 +11,17 @@ function safeJson(raw, fallback = null) {
   try { return JSON.parse(raw || '') || fallback; } catch { return fallback; }
 }
 
-function withLocalMapImageFallback(project) {
+function withLocalMapImageFallback(project, liveImageUrl = '') {
   if (!project?.id) return project;
 
   const parsed = safeJson(project.solar_roof_planner_data || project.panel_layout_data, null);
   if (!Array.isArray(parsed?.roofs)) return project;
 
+  const reusableLiveImageUrl = /^(blob:|data:|https?:)/i.test(liveImageUrl || '') ? liveImageUrl : '';
   const mapTrace = {
     ...(parsed.mapTrace || {}),
     imageKey: parsed.mapTrace?.imageKey || `project-${project.id}-map`,
+    imageUrl: parsed.mapTrace?.imageUrl || reusableLiveImageUrl || '',
   };
   const payload = JSON.stringify({ ...parsed, mapTrace });
 
@@ -118,6 +120,7 @@ function MapIntegration({ project, onUpdate }) {
   const [targets, setTargets] = useState(null);
   const [liveMapLayout, setLiveMapLayout] = useState(null);
   const panelLayoutRef = useRef(null);
+  const liveMapImageUrlRef = useRef('');
 
   useEffect(() => {
     const handleMapLayout = event => {
@@ -133,6 +136,7 @@ function MapIntegration({ project, onUpdate }) {
   useEffect(() => {
     setLiveMapLayout(null);
     panelLayoutRef.current = null;
+    liveMapImageUrlRef.current = '';
   }, [project?.id]);
 
   useEffect(() => {
@@ -163,6 +167,9 @@ function MapIntegration({ project, onUpdate }) {
         overflow: 'hidden',
       });
 
+      const visibleMapImageUrl = canvasTarget.querySelector('img[alt="Kartbild"]')?.src || '';
+      if (visibleMapImageUrl) liveMapImageUrlRef.current = visibleMapImageUrl;
+
       const settingsTarget = createHost(found.settingsList, 'settings', found.settingsList.firstChild);
       settingsTarget.className = 'contents';
       hideDuplicatePanelGroupControls(found.settingsList);
@@ -177,7 +184,7 @@ function MapIntegration({ project, onUpdate }) {
 
     sync();
     const observer = new MutationObserver(sync);
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-state'] });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-state', 'src'] });
 
     return () => {
       observer.disconnect();
@@ -191,8 +198,11 @@ function MapIntegration({ project, onUpdate }) {
 
   if (!targets) return null;
 
+  const visibleMapImageUrl = targets.canvasTarget?.querySelector('img[alt="Kartbild"]')?.src || '';
+  if (visibleMapImageUrl) liveMapImageUrlRef.current = visibleMapImageUrl;
+
   const saveWithPanelPlacement = patch => onUpdate(mergePanelGroupsIntoPatch(patch, panelLayoutRef.current));
-  const mapProject = withLocalMapImageFallback(project);
+  const mapProject = withLocalMapImageFallback(project, liveMapImageUrlRef.current);
   const panelProject = liveMapLayout ? {
     ...project,
     solar_roof_planner_data: JSON.stringify(liveMapLayout),
