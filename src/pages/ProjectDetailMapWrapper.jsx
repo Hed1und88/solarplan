@@ -59,8 +59,22 @@ function MapIntegration({ project, onUpdate }) {
       const toolbarTarget = createHost(found.toolbar, 'toolbar', bottomTools);
       toolbarTarget.className = 'flex flex-col items-center gap-1';
 
-      const canvasTarget = createHost(found.canvasArea, 'canvas');
+      // Keep the map portal anchored to the visible drawing surface. Creating the
+      // host first and assigning explicit positioning prevents it from inheriting
+      // a static position below the existing RoofPreview content in Base44.
+      const canvasTarget = createHost(found.canvasArea, 'canvas', found.canvasArea.firstChild);
       canvasTarget.className = 'absolute inset-3 z-40';
+      found.canvasArea.style.position = 'relative';
+      Object.assign(canvasTarget.style, {
+        position: 'absolute',
+        top: '12px',
+        right: '12px',
+        bottom: '12px',
+        left: '12px',
+        zIndex: '40',
+        margin: '0',
+        overflow: 'hidden',
+      });
 
       const settingsTarget = createHost(found.settingsList, 'settings', found.settingsList.firstChild);
       settingsTarget.className = 'contents';
