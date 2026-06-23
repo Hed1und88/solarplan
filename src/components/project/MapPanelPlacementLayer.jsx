@@ -159,8 +159,10 @@ function ToolButton({ active, disabled, onClick }) {
 export default function MapPanelPlacementLayer({ project, toolbarTarget, canvasTarget, settingsTarget, onLayoutChange }) {
   const dragRef = useRef(null);
   const [layout, setLayout] = useState(() => readLayout(project));
+  const layoutRef = useRef(layout);
   const [svgHost, setSvgHost] = useState(null);
   const [stage, setStage] = useState({ width: 1600, height: 1000 });
+  const stageRef = useRef(stage);
   const [selectedRoofId, setSelectedRoofId] = useState(() => readLayout(project).roofs?.[0]?.id || '');
   const [selectedGroupId, setSelectedGroupId] = useState('');
   const [dragMode, setDragMode] = useState('group');
@@ -169,6 +171,9 @@ export default function MapPanelPlacementLayer({ project, toolbarTarget, canvasT
   const selectedRoof = layout.roofs.find(roof => String(roof.id) === String(selectedRoofId)) || layout.roofs[0] || null;
   const selectedGroup = (selectedRoof?.panelGroups || []).find(group => String(group.id) === String(selectedGroupId)) || selectedRoof?.panelGroups?.[0] || null;
   const panelCount = useMemo(() => (selectedRoof?.panelGroups || []).reduce((sum, group) => sum + Math.max(1, Math.round(number(group.rows, 1))) * Math.max(1, Math.round(number(group.cols, 1))), 0), [selectedRoof]);
+
+  useEffect(() => { layoutRef.current = layout; }, [layout]);
+  useEffect(() => { stageRef.current = stage; }, [stage]);
 
   useEffect(() => {
     const next = readLayout(project);
@@ -196,7 +201,11 @@ export default function MapPanelPlacementLayer({ project, toolbarTarget, canvasT
         return;
       }
       const viewBox = svg.viewBox?.baseVal;
-      if (viewBox?.width && viewBox?.height) setStage({ width: viewBox.width, height: viewBox.height });
+      if (viewBox?.width && viewBox?.height) {
+        const nextStage = { width: viewBox.width, height: viewBox.height };
+        stageRef.current = nextStage;
+        setStage(current => current.width === nextStage.width && current.height === nextStage.height ? current : nextStage);
+      }
 
       let host = svg.querySelector(':scope > g[data-map-panel-placement-layer]');
       if (!host) {
@@ -211,7 +220,8 @@ export default function MapPanelPlacementLayer({ project, toolbarTarget, canvasT
       const activePolygon = roofPolygons.find(polygon => String(polygon.getAttribute('stroke') || '').toLowerCase() === '#f97316');
       if (activePolygon) {
         const activePoints = normalizePoints(activePolygon.getAttribute('points') || '');
-        const roof = layout.roofs.find(item => normalizePoints(polygonPoints(item, viewBox?.width || stage.width, viewBox?.height || stage.height)) === activePoints);
+        const currentStage = stageRef.current;
+        const roof = layoutRef.current.roofs.find(item => normalizePoints(polygonPoints(item, viewBox?.width || currentStage.width, viewBox?.height || currentStage.height)) === activePoints);
         if (roof) setSelectedRoofId(current => String(current) === String(roof.id) ? current : roof.id);
       }
     };
@@ -223,7 +233,7 @@ export default function MapPanelPlacementLayer({ project, toolbarTarget, canvasT
       observer.disconnect();
       currentHost?.remove();
     };
-  }, [canvasTarget, layout.roofs, stage.width, stage.height]);
+  }, [canvasTarget]);
 
   const updateGroup = (groupId, updater) => {
     if (!selectedRoof) return;
