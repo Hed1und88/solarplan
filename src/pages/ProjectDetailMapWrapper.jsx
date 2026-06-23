@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
@@ -146,6 +146,10 @@ function MapIntegration({ project, onUpdate }) {
     };
   }, []);
 
+  const handlePanelLayoutChange = useCallback(layout => {
+    panelLayoutRef.current = layout;
+  }, []);
+
   if (!targets) return null;
 
   const saveWithPanelPlacement = patch => onUpdate(mergePanelGroupsIntoPatch(patch, panelLayoutRef.current));
@@ -161,10 +165,7 @@ function MapIntegration({ project, onUpdate }) {
       <MapPanelPlacementLayer
         project={panelProject}
         {...targets}
-        onLayoutChange={layout => {
-          panelLayoutRef.current = layout;
-          setLiveMapLayout(current => current ? mergePanelGroupsIntoLayout(current, layout) : current);
-        }}
+        onLayoutChange={handlePanelLayoutChange}
       />
     </>
   );
