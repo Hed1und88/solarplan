@@ -1,10 +1,35 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
 import { fetchProjectById, mergeProjectWithBackup, saveProjectPatch, writeProjectBackup } from '@/lib/projectPersistence';
 import InlinePanelMapTools from '@/components/project/InlinePanelMapTools.jsx';
+import MapPanelPlacementLayer from '@/components/project/MapPanelPlacementLayer.jsx';
 import ProjectDetail from './ProjectDetail.jsx';
+
+function safeJson(raw, fallback = null) {
+  try { return JSON.parse(raw || '') || fallback; } catch { return fallback; }
+}
+
+function mergePanelGroupsIntoPatch(patch, panelLayout) {
+  if (!panelLayout?.roofs?.length) return patch;
+
+  const mergeRaw = raw => {
+    const parsed = safeJson(raw, null);
+    if (!parsed?.roofs?.length) return raw;
+    const roofs = parsed.roofs.map(roof => {
+      const panelRoof = panelLayout.roofs.find(item => String(item.id) === String(roof.id));
+      return panelRoof ? { ...roof, panelGroups: panelRoof.panelGroups || [] } : roof;
+    });
+    return JSON.stringify({ ...parsed, version: Math.max(12, Number(parsed.version) || 0), roofs });
+  };
+
+  return {
+    ...patch,
+    ...(patch.solar_roof_planner_data ? { solar_roof_planner_data: mergeRaw(patch.solar_roof_planner_data) } : {}),
+    ...(patch.panel_layout_data ? { panel_layout_data: mergeRaw(patch.panel_layout_data) } : {}),
+  };
+}
 
 function findPanelWorkbench() {
   const panelTab = Array.from(document.querySelectorAll('[role="tab"]')).find(tab => /Paneler/i.test(tab.textContent || ''));
@@ -46,6 +71,7 @@ function createHost(parent, name, before = null) {
 
 function MapIntegration({ project, onUpdate }) {
   const [targets, setTargets] = useState(null);
+  const panelLayoutRef = useRef(null);
 
   useEffect(() => {
     const sync = () => {
@@ -59,9 +85,6 @@ function MapIntegration({ project, onUpdate }) {
       const toolbarTarget = createHost(found.toolbar, 'toolbar', bottomTools);
       toolbarTarget.className = 'flex flex-col items-center gap-1';
 
-      // The inspector can make the entire workbench much taller than the visible
-      // browser area. Limit the map host to the visible Paneler canvas so the map
-      // image is centered in the area the user actually sees instead of far below it.
       const canvasTarget = createHost(found.canvasArea, 'canvas', found.canvasArea.firstChild);
       canvasTarget.className = 'absolute z-40';
       found.canvasArea.style.position = 'relative';
@@ -99,7 +122,19 @@ function MapIntegration({ project, onUpdate }) {
   }, []);
 
   if (!targets) return null;
-  return <InlinePanelMapTools project={project} onUpdate={onUpdate} {...targets} />;
+
+  const saveWithPanelPlacement = patch => onUpdate(mergePanelGroupsIntoPatch(patch, panelLayoutRef.current));
+
+  return (
+    <>
+      <InlinePanelMapTools project={project} onUpdate={saveWithPanelPlacement} {...targets} />
+      <MapPanelPlacementLayer
+        project={project}
+        {...targets}
+        onLayoutChange={layout => { panelLayoutRef.current = layout; }}
+      />
+    </>
+  );
 }
 
 export default function ProjectDetailMapWrapper() {
