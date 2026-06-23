@@ -59,18 +59,20 @@ function MapIntegration({ project, onUpdate }) {
       const toolbarTarget = createHost(found.toolbar, 'toolbar', bottomTools);
       toolbarTarget.className = 'flex flex-col items-center gap-1';
 
-      // Keep the map portal anchored to the visible drawing surface. Creating the
-      // host first and assigning explicit positioning prevents it from inheriting
-      // a static position below the existing RoofPreview content in Base44.
+      // The inspector can make the entire workbench much taller than the visible
+      // browser area. Limit the map host to the visible Paneler canvas so the map
+      // image is centered in the area the user actually sees instead of far below it.
       const canvasTarget = createHost(found.canvasArea, 'canvas', found.canvasArea.firstChild);
-      canvasTarget.className = 'absolute inset-3 z-40';
+      canvasTarget.className = 'absolute z-40';
       found.canvasArea.style.position = 'relative';
       Object.assign(canvasTarget.style, {
         position: 'absolute',
         top: '12px',
         right: '12px',
-        bottom: '12px',
+        bottom: 'auto',
         left: '12px',
+        height: 'calc(100vh - 175px)',
+        maxHeight: 'calc(100% - 24px)',
         zIndex: '40',
         margin: '0',
         overflow: 'hidden',
