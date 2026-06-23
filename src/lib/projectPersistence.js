@@ -26,12 +26,22 @@ const localJson = key => {
 };
 const jsonValue = value => value === undefined ? undefined : value === null || value === '' || typeof value === 'string' ? value : JSON.stringify(value);
 
+const NUMERIC_FIELDS = new Set(['roof_width_m', 'roof_height_m', 'latitude', 'longitude', 'snow_load_kn_m2', 'wind_load_ms', 'total_cost']);
+
 function serverPatch(patch = {}) {
   const normalized = { ...patch };
   if (normalized.solar_roof_planner_data !== undefined && normalized.panel_layout_data === undefined) normalized.panel_layout_data = normalized.solar_roof_planner_data;
   return Object.fromEntries(Object.entries(normalized)
     .filter(([key, value]) => SERVER_FIELDS.has(key) && value !== undefined)
-    .map(([key, value]) => [key, JSON_FIELDS.has(key) ? jsonValue(value) : value]));
+    .map(([key, value]) => {
+      if (JSON_FIELDS.has(key)) return [key, jsonValue(value)];
+      if (NUMERIC_FIELDS.has(key)) {
+        if (value === '' || value === null) return [key, null];
+        const num = Number(value);
+        return [key, Number.isFinite(num) ? num : null];
+      }
+      return [key, value];
+    }));
 }
 
 function roofData(raw) { const data = typeof raw === 'string' ? parse(raw) : raw; return Array.isArray(data?.roofs) ? data : null; }
