@@ -54,6 +54,18 @@ function stringScore(raw) {
   const time = new Date(data.savedAt || data._local_string_backup_at || 0).getTime() || 0;
   return panels * 100000 + useful.length * 1000 + inverters * 100 + Math.floor(time / 1000000000);
 }
+function batteryScore(raw) {
+  const data = typeof raw === 'string' ? parse(raw) : raw;
+  if (!data || typeof data !== 'object') return -1;
+  const rooms = Array.isArray(data.rooms) ? data.rooms : [];
+  const walls = rooms.reduce((sum, room) => sum + (Array.isArray(room.walls) ? room.walls.length : 0), Array.isArray(data.walls) ? data.walls.length : 0);
+  const doors = rooms.reduce((sum, room) => sum + (Array.isArray(room.doors) ? room.doors.length : 0), Array.isArray(data.doors) ? data.doors.length : 0);
+  const devices = Array.isArray(data.devices) ? data.devices.length : 0;
+  const obstacles = Array.isArray(data.obstacles) ? data.obstacles.length : 0;
+  const photos = Array.isArray(data.photoItems) ? data.photoItems.length : 0;
+  const time = new Date(data.savedAt || data.updatedAt || data._local_battery_backup_at || 0).getTime() || 0;
+  return devices * 1000000 + rooms.length * 100000 + walls * 1000 + doors * 100 + obstacles * 10 + photos + Math.floor(time / 1000000000);
+}
 function best(candidates, scorer) {
   return candidates.filter(value => value !== undefined && value !== null && value !== '')
     .map(value => ({ value, score: scorer(value) })).filter(item => item.score >= 0).sort((a,b) => b.score - a.score)[0]?.value;
@@ -73,6 +85,7 @@ export function writeProjectBackup(project) {
       next.panel_layout_data = existing.panel_layout_data || existing.solar_roof_planner_data;
     }
     if (stringScore(existing?.string_layout_data) > stringScore(next.string_layout_data)) next.string_layout_data = existing.string_layout_data;
+    if (batteryScore(existing?.battery_layout_data) > batteryScore(next.battery_layout_data)) next.battery_layout_data = existing.battery_layout_data;
     window.localStorage.setItem(key, JSON.stringify(next));
   } catch {}
 }
@@ -82,7 +95,8 @@ export function mergeProjectWithBackup(project) {
   const backup = readProjectBackup(project.id);
   const panelLocal = localJson(`solarplan:project:${project.id}:solar_roof_planner_data`);
   const stringLocal = localJson(`solarplan:project:${project.id}:string_layout_data`);
-  if (!backup && !panelLocal && !stringLocal) return project;
+  const batteryLocal = localJson(`solarplan:project:${project.id}:battery_layout_data`);
+  if (!backup && !panelLocal && !stringLocal && !batteryLocal) return project;
   const projectTime = new Date(project.updated_date || project.updated_at || project.modified_date || 0).getTime() || 0;
   const backupTime = new Date(backup?._local_backup_at || backup?.updated_date || backup?.updated_at || 0).getTime() || 0;
   const merged = backupTime > projectTime ? { ...project, ...(backup || {}), id: project.id } : { ...(backup || {}), ...project, id: project.id };
@@ -90,6 +104,8 @@ export function mergeProjectWithBackup(project) {
   if (panel) merged.solar_roof_planner_data = merged.panel_layout_data = typeof panel === 'string' ? panel : JSON.stringify(panel);
   const strings = best([project.string_layout_data,backup?.string_layout_data,stringLocal], stringScore);
   if (strings) merged.string_layout_data = typeof strings === 'string' ? strings : JSON.stringify(strings);
+  const battery = best([project.battery_layout_data, backup?.battery_layout_data, batteryLocal], batteryScore);
+  if (battery) merged.battery_layout_data = typeof battery === 'string' ? battery : JSON.stringify(battery);
   return merged;
 }
 
