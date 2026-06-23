@@ -202,6 +202,7 @@ function ToolbarButton({ title, active, disabled, onClick, children }) {
 export default function InlinePanelMapTools({ project, onUpdate, toolbarTarget, canvasTarget, settingsTarget }) {
   const fileInputRef = useRef(null);
   const dragRef = useRef(null);
+  const canvasRef = useRef(null);
   const [layout, setLayout] = useState(() => readLayout(project));
   const [trace, setTrace] = useState(() => ({ ...DEFAULT_TRACE, ...(readLayout(project).mapTrace || {}) }));
   const [mode, setMode] = useState('panels');
@@ -221,6 +222,8 @@ export default function InlinePanelMapTools({ project, onUpdate, toolbarTarget, 
   const selectedRoof = layout.roofs.find(roof => String(roof.id) === String(selectedRoofId)) || layout.roofs[0] || null;
   const mappedRoofs = layout.roofs.filter(roof => Array.isArray(roof.mapPolygon) && roof.mapPolygon.length >= 3);
   const address = projectAddress(project);
+  const stageWidth = trace.naturalWidth || 1600;
+  const stageHeight = trace.naturalHeight || 1000;
 
   useEffect(() => {
     const nextLayout = readLayout(project);
@@ -279,6 +282,8 @@ export default function InlinePanelMapTools({ project, onUpdate, toolbarTarget, 
         naturalWidth: width,
         naturalHeight: height,
       }));
+      setZoom(0.8);
+      setPan({ x: 0, y: 0 });
       setStatus(`Bilden är klar (${width} × ${height}px). Markera en känd sträcka för kalibrering.`);
     } catch (error) {
       setStatus(error?.message || 'Bilden kunde inte läsas.');
@@ -447,6 +452,30 @@ export default function InlinePanelMapTools({ project, onUpdate, toolbarTarget, 
 
   const stopPan = () => { dragRef.current = null; };
 
+  const focusRoof = roof => {
+    const bounds = polygonBounds(roof?.mapPolygon || []);
+    const viewport = canvasRef.current;
+    if (!bounds || !viewport) return;
+
+    const viewportRect = viewport.getBoundingClientRect();
+    const roofWidthPx = Math.max(1, (bounds.maxX - bounds.minX) * stageWidth);
+    const roofHeightPx = Math.max(1, (bounds.maxY - bounds.minY) * stageHeight);
+    const padding = 56;
+    const availableWidth = Math.max(80, viewportRect.width - padding * 2);
+    const availableHeight = Math.max(80, viewportRect.height - padding * 2);
+    const nextZoom = clamp(Math.min(availableWidth / roofWidthPx, availableHeight / roofHeightPx), 0.2, 8);
+    const roofCenterX = ((bounds.minX + bounds.maxX) / 2) * stageWidth;
+    const roofCenterY = ((bounds.minY + bounds.maxY) / 2) * stageHeight;
+
+    setSelectedRoofId(roof.id);
+    setZoom(nextZoom);
+    setPan({
+      x: -(roofCenterX - stageWidth / 2) * nextZoom,
+      y: -(roofCenterY - stageHeight / 2) * nextZoom,
+    });
+    setStatus(`${roof.name} är fokuserat. Centrera bild för att visa hela kartan igen.`);
+  };
+
   const toolbar = (
     <div className="flex flex-col items-center gap-1">
       <div className="my-1 h-px w-8 bg-slate-200" />
@@ -462,11 +491,8 @@ export default function InlinePanelMapTools({ project, onUpdate, toolbarTarget, 
     </div>
   );
 
-  const stageWidth = trace.naturalWidth || 1600;
-  const stageHeight = trace.naturalHeight || 1000;
-
   const canvas = mode === 'map' ? (
-    <div className="absolute inset-0 z-40 overflow-hidden rounded-2xl border border-slate-200 bg-slate-200 shadow-inner" onPointerMove={movePan} onPointerUp={stopPan} onPointerLeave={stopPan}>
+    <div ref={canvasRef} className="absolute inset-0 z-40 overflow-hidden rounded-2xl border border-slate-200 bg-slate-200 shadow-inner" onPointerMove={movePan} onPointerUp={stopPan} onPointerLeave={stopPan}>
       {!trace.imageUrl ? (
         <div className="flex h-full items-center justify-center p-6">
           <div className="max-w-lg rounded-2xl border border-dashed border-slate-300 bg-white p-7 text-center shadow-sm">
@@ -478,15 +504,21 @@ export default function InlinePanelMapTools({ project, onUpdate, toolbarTarget, 
         </div>
       ) : (
         <div
-          className="absolute left-1/2 top-1/2 origin-center select-none"
-          style={{ width: stageWidth, height: stageHeight, transform: `translate(calc(-50% + ${pan.x}px), calc(-50% + ${pan.y}px)) scale(${zoom})` }}
+          className="absolute origin-center select-none"
+          style={{
+            width: stageWidth,
+            height: stageHeight,
+            left: `calc(50% + ${pan.x}px)`,
+            top: `calc(50% + ${pan.y}px)`,
+            transform: `translate(-50%, -50%) scale(${zoom})`,
+          }}
           onPointerDown={beginPan}
         >
           <img src={trace.imageUrl} alt="Kartbild" draggable={false} className="absolute inset-0 h-full w-full" style={{ opacity: trace.opacity ?? 1 }} />
           <svg viewBox={`0 0 ${stageWidth} ${stageHeight}`} className="absolute inset-0 h-full w-full touch-none" onClick={handleCanvasClick}>
             {mappedRoofs.map(roof => (
-              <g key={roof.id} onClick={event => { event.stopPropagation(); setSelectedRoofId(roof.id); }}>
-                <polygon points={roof.mapPolygon.map(point => `${point.x * stageWidth},${point.y * stageHeight}`).join(' ')} fill={String(roof.id) === String(selectedRoofId) ? 'rgba(249,115,22,.20)' : 'rgba(37,99,235,.16)'} stroke={String(roof.id) === String(selectedRoofId) ? '#f97316' : '#2563eb'} strokeWidth="4" />
+              <g key={roof.id} onClick={event => { event.stopPropagation(); focusRoof(roof); }}>
+                <polygon className="cursor-zoom-in" points={roof.mapPolygon.map(point => `${point.x * stageWidth},${point.y * stageHeight}`).join(' ')} fill={String(roof.id) === String(selectedRoofId) ? 'rgba(249,115,22,.20)' : 'rgba(37,99,235,.16)'} stroke={String(roof.id) === String(selectedRoofId) ? '#f97316' : '#2563eb'} strokeWidth="4" />
                 {roof.mapPolygon.map((point, index) => {
                   const next = roof.mapPolygon[(index + 1) % roof.mapPolygon.length];
                   const length = edgeLength(point, next, trace);
@@ -495,7 +527,7 @@ export default function InlinePanelMapTools({ project, onUpdate, toolbarTarget, 
                   return (
                     <React.Fragment key={`${roof.id}-${index}`}>
                       {length != null && <text x={(point.x + next.x) * stageWidth / 2} y={(point.y + next.y) * stageHeight / 2 - 8} textAnchor="middle" fill="#fff" stroke="#0f172a" strokeWidth="4" paintOrder="stroke" fontSize="18" fontWeight="800">{length.toFixed(2)} m</text>}
-                      {tool === 'edit' && <circle cx={x} cy={y} r="10" fill="#fff" stroke="#f97316" strokeWidth="4" onPointerDown={event => { event.stopPropagation(); setDragPoint({ roofId: roof.id, pointIndex: index }); event.currentTarget.setPointerCapture?.(event.pointerId); }} onPointerMove={event => { if (!dragPoint || dragPoint.roofId !== roof.id || dragPoint.pointIndex !== index) return; moveRoofPoint(roof.id, index, normalizedPoint(event)); }} onPointerUp={() => setDragPoint(null)} />}
+                      {tool === 'edit' && <circle cx={x} cy={y} r="10" fill="#fff" stroke="#f97316" strokeWidth="4" onClick={event => event.stopPropagation()} onPointerDown={event => { event.stopPropagation(); setDragPoint({ roofId: roof.id, pointIndex: index }); event.currentTarget.setPointerCapture?.(event.pointerId); }} onPointerMove={event => { if (!dragPoint || dragPoint.roofId !== roof.id || dragPoint.pointIndex !== index) return; moveRoofPoint(roof.id, index, normalizedPoint(event)); }} onPointerUp={() => setDragPoint(null)} />}
                     </React.Fragment>
                   );
                 })}
@@ -510,7 +542,7 @@ export default function InlinePanelMapTools({ project, onUpdate, toolbarTarget, 
         </div>
       )}
       <div className="absolute right-3 top-3 z-50 flex gap-1 rounded-xl border border-slate-200 bg-white/95 p-1 shadow-sm">
-        <ToolbarButton title="Zooma in" onClick={() => setZoom(current => Math.min(3, current + 0.15))}><ZoomIn className="h-4 w-4" /></ToolbarButton>
+        <ToolbarButton title="Zooma in" onClick={() => setZoom(current => Math.min(8, current + 0.15))}><ZoomIn className="h-4 w-4" /></ToolbarButton>
         <ToolbarButton title="Zooma ut" onClick={() => setZoom(current => Math.max(0.2, current - 0.15))}><ZoomOut className="h-4 w-4" /></ToolbarButton>
         <ToolbarButton title="Centrera bild" onClick={() => { setZoom(0.8); setPan({ x: 0, y: 0 }); }}><Crosshair className="h-4 w-4" /></ToolbarButton>
       </div>
@@ -536,7 +568,7 @@ export default function InlinePanelMapTools({ project, onUpdate, toolbarTarget, 
 
       <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
         <div className="flex items-center justify-between"><div className="text-sm font-semibold">Takpolygoner</div><span className="text-xs text-slate-500">{mappedRoofs.length} st</span></div>
-        <div className="mt-2 space-y-1.5">{layout.roofs.map(roof => <button key={roof.id} type="button" onClick={() => setSelectedRoofId(roof.id)} className={`w-full rounded-xl border px-3 py-2 text-left text-xs ${String(roof.id) === String(selectedRoofId) ? 'border-orange-300 bg-orange-50 text-orange-800' : 'border-slate-200 bg-white text-slate-600'}`}><span className="block font-semibold">{roof.name}</span><span>{roof.mapPolygon?.length ? `${number(roof.widthM).toFixed(2)} × ${number(roof.roofFallM).toFixed(2)} m${roof.mapAreaM2 ? ` · ${roof.mapAreaM2.toFixed(1)} m²` : ''}` : 'Ingen polygon ritad'}</span></button>)}</div>
+        <div className="mt-2 space-y-1.5">{layout.roofs.map(roof => <button key={roof.id} type="button" onClick={() => roof.mapPolygon?.length ? focusRoof(roof) : setSelectedRoofId(roof.id)} className={`w-full rounded-xl border px-3 py-2 text-left text-xs ${String(roof.id) === String(selectedRoofId) ? 'border-orange-300 bg-orange-50 text-orange-800' : 'border-slate-200 bg-white text-slate-600'}`}><span className="block font-semibold">{roof.name}</span><span>{roof.mapPolygon?.length ? `${number(roof.widthM).toFixed(2)} × ${number(roof.roofFallM).toFixed(2)} m${roof.mapAreaM2 ? ` · ${roof.mapAreaM2.toFixed(1)} m²` : ''}` : 'Ingen polygon ritad'}</span></button>)}</div>
       </section>
 
       <Button onClick={save} disabled={saving} className="w-full gap-2 bg-orange-500 text-white hover:bg-orange-600"><Save className="h-4 w-4" />{saving ? 'Sparar...' : 'Spara kartprojektering'}</Button>
