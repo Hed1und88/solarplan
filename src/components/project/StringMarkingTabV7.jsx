@@ -1,1 +1,1 @@
-export { default } from './StringMarkingInsideSettings.jsx';
+export { default } from './StringMarkingEntryIntegrated.jsx';
