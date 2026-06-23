@@ -64,7 +64,8 @@ function batteryScore(raw) {
   const obstacles = Array.isArray(data.obstacles) ? data.obstacles.length : 0;
   const photos = Array.isArray(data.photoItems) ? data.photoItems.length : 0;
   const time = new Date(data.savedAt || data.updatedAt || data._local_battery_backup_at || 0).getTime() || 0;
-  return devices * 1000000 + rooms.length * 100000 + walls * 1000 + doors * 100 + obstacles * 10 + photos + Math.floor(time / 1000000000);
+  const contentScore = devices * 100000 + rooms.length * 10000 + walls * 100 + doors * 10 + obstacles + photos;
+  return time > 0 ? Math.floor(time / 1000) * 1000000 + contentScore : contentScore;
 }
 function best(candidates, scorer) {
   return candidates.filter(value => value !== undefined && value !== null && value !== '')
