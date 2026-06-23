@@ -12,7 +12,7 @@ function safeJson(raw, fallback = null) {
 }
 
 function mergePanelGroupsIntoLayout(layout, panelLayout) {
-  if (!layout?.roofs?.length || !panelLayout?.roofs?.length) return layout;
+  if (!Array.isArray(layout?.roofs) || !panelLayout?.roofs?.length) return layout;
   return {
     ...layout,
     roofs: layout.roofs.map(roof => {
@@ -27,7 +27,7 @@ function mergePanelGroupsIntoPatch(patch, panelLayout) {
 
   const mergeRaw = raw => {
     const parsed = safeJson(raw, null);
-    if (!parsed?.roofs?.length) return raw;
+    if (!Array.isArray(parsed?.roofs)) return raw;
     const merged = mergePanelGroupsIntoLayout(parsed, panelLayout);
     return JSON.stringify({ ...merged, version: Math.max(12, Number(merged.version) || 0) });
   };
@@ -77,6 +77,24 @@ function createHost(parent, name, before = null) {
   return host;
 }
 
+function hideDuplicatePanelGroupControls(settingsList) {
+  if (!settingsList) return;
+
+  const mapPanelSection = Array.from(settingsList.querySelectorAll(':scope > section'))
+    .find(section => /Paneler på aktivt tak/i.test(section.textContent || ''));
+
+  if (!mapPanelSection) return;
+
+  Array.from(mapPanelSection.children).forEach(child => {
+    const text = child.textContent || '';
+    const duplicatePanelGroupControl = /Panelgrupp|Rader|Kolumner|Orientering|Ta bort aktiv panelgrupp|Lägg till panelgrupp|Det finns ingen panelgrupp/i.test(text);
+    if (duplicatePanelGroupControl) {
+      child.style.display = 'none';
+      child.dataset.duplicatePanelGroupControl = 'hidden';
+    }
+  });
+}
+
 function MapIntegration({ project, onUpdate }) {
   const [targets, setTargets] = useState(null);
   const [liveMapLayout, setLiveMapLayout] = useState(null);
@@ -86,7 +104,7 @@ function MapIntegration({ project, onUpdate }) {
     const handleMapLayout = event => {
       if (String(event?.detail?.projectId || '') !== String(project?.id || '')) return;
       const incoming = event?.detail?.layout;
-      if (!incoming?.roofs?.length) return;
+      if (!Array.isArray(incoming?.roofs)) return;
       setLiveMapLayout(mergePanelGroupsIntoLayout(incoming, panelLayoutRef.current));
     };
     window.addEventListener('solarplan:map-layout-change', handleMapLayout);
@@ -128,6 +146,8 @@ function MapIntegration({ project, onUpdate }) {
 
       const settingsTarget = createHost(found.settingsList, 'settings', found.settingsList.firstChild);
       settingsTarget.className = 'contents';
+      hideDuplicatePanelGroupControls(found.settingsList);
+      requestAnimationFrame(() => hideDuplicatePanelGroupControls(found.settingsList));
 
       const nextTargets = { toolbarTarget, canvasTarget, settingsTarget };
       setTargets(current => {
