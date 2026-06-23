@@ -1,1 +1,1 @@
-export { default } from './StringMarkingEntry.jsx';
+export { default } from './StringMarkingIntegratedFix.jsx';
