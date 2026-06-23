@@ -6,7 +6,7 @@ import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 
 const PANEL_GAP_M = 0.03;
-const DEFAULT_PANEL = { id: 'standard', width_mm: 1134, height_mm: 1953, power_watts: 500, name: 'Standardpanel 500 W', model: 'Standardpanel 500 W' };
+const DEFAULT_PANEL = { id: 'standard', width_mm: 1134, height_mm: 1762, power_watts: 500, name: 'Standardpanel 500 W', model: 'Standardpanel 500 W' };
 const number = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const positive = (value, fallback = 0) => number(value, fallback) > 0 ? number(value, fallback) : fallback;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
@@ -32,18 +32,30 @@ function panelLabel(product) {
   return [product?.brand, product?.model].filter(Boolean).join(' ') || product?.name || product?.model || 'Standardpanel';
 }
 
-function panelSize(group, product) {
-  const widthM = positive(product?.width_mm, DEFAULT_PANEL.width_mm) / 1000;
-  const heightM = positive(product?.height_mm, DEFAULT_PANEL.height_mm) / 1000;
-  return String(group?.orientation || '').toLowerCase().includes('ligg')
+// Beräkna panelens verkliga storlek i meter från vald produkt.
+function panelSize(orientation, product) {
+  const widthM = (Number(product?.width_mm) || 1134) / 1000;
+  const heightM = (Number(product?.height_mm) || 1762) / 1000;
+
+  return String(orientation || '').toLowerCase().includes('ligg')
     ? { w: heightM, h: widthM }
     : { w: widthM, h: heightM };
 }
 
+// Beräkna en skala som låter hela taket rymmas i den tillgängliga ytan.
+const getWorkspaceScale = (roof, containerWidth, containerHeight) => {
+  const padding = 60;
+  const roofW = Number(roof?.widthM) || 10;
+  const roofH = Number(roof?.roofFallM) || 8;
+  const usableWidth = Math.max(1, containerWidth - padding);
+  const usableHeight = Math.max(1, containerHeight - padding);
+  return Math.max(0.01, Math.min(usableWidth / roofW, usableHeight / roofH));
+};
+
 function panelPosition(group, product, row, col) {
   const override = group?.panelOverrides?.[`${row}-${col}`];
   if (override) return { xM: number(override.xM), yM: number(override.yM) };
-  const size = panelSize(group, product);
+  const size = panelSize(group?.orientation, product);
   return {
     xM: number(group?.xM) + col * (size.w + PANEL_GAP_M),
     yM: number(group?.yM) + row * (size.h + PANEL_GAP_M),
@@ -51,7 +63,7 @@ function panelPosition(group, product, row, col) {
 }
 
 function groupSize(group, roof, products) {
-  const size = panelSize(group, panelProductForRoof(roof, products));
+  const size = panelSize(group?.orientation, panelProductForRoof(roof, products));
   const rows = Math.max(1, Math.round(number(group?.rows, 1)));
   const cols = Math.max(1, Math.round(number(group?.cols, 1)));
   return {
@@ -196,6 +208,33 @@ export default function MapPanelPlacementLayer({ project, toolbarTarget, canvasT
   const selectedProduct = panelProductForRoof(selectedRoof, panelProducts);
   const panelCount = useMemo(() => (selectedRoof?.panelGroups || []).reduce((sum, group) => sum + Math.max(1, Math.round(number(group.rows, 1))) * Math.max(1, Math.round(number(group.cols, 1))), 0), [selectedRoof]);
 
+  const previewPanels = useMemo(() => {
+    if (!selectedRoof) return [];
+    const product = panelProductForRoof(selectedRoof, panelProducts);
+    const result = [];
+    (selectedRoof.panelGroups || []).forEach(group => {
+      const rows = Math.max(1, Math.round(number(group.rows, 1)));
+      const cols = Math.max(1, Math.round(number(group.cols, 1)));
+      const size = panelSize(group.orientation, product);
+      for (let row = 0; row < rows; row += 1) {
+        for (let col = 0; col < cols; col += 1) {
+          const position = panelPosition(group, product, row, col);
+          result.push({
+            id: `${group.id}-${row}-${col}`,
+            groupId: group.id,
+            row,
+            col,
+            xM: position.xM,
+            yM: position.yM,
+            wM: size.w,
+            hM: size.h,
+          });
+        }
+      }
+    });
+    return result;
+  }, [selectedRoof, panelProducts]);
+
   useEffect(() => { layoutRef.current = layout; }, [layout]);
   useEffect(() => { stageRef.current = stage; }, [stage]);
 
@@ -334,7 +373,7 @@ export default function MapPanelPlacementLayer({ project, toolbarTarget, canvasT
             const base = drag.baseGroup;
             if (drag.mode === 'panel') {
               const product = panelProductForRoof(roof, panelProducts);
-              const size = panelSize(base, product);
+              const size = panelSize(base.orientation, product);
               const position = panelPosition(base, product, drag.row, drag.col);
               return {
                 ...base,
@@ -370,6 +409,65 @@ export default function MapPanelPlacementLayer({ project, toolbarTarget, canvasT
     dragRef.current = null;
   };
 
+  const previewRoofW = positive(selectedRoof?.widthM, 10);
+  const previewRoofH = positive(selectedRoof?.roofFallM, 8);
+  const previewScale = getWorkspaceScale(selectedRoof, 420, 192);
+  const previewStroke = Math.max(0.01, 1.5 / previewScale);
+  const previewClipId = `scaled-roof-preview-${selectedRoof?.id || 'none'}`;
+
+  const preview = svgHost && selectedRoof?.mapPolygon?.length ? (
+    <div
+      className="pointer-events-none absolute left-1/2 top-3 h-48 -translate-x-1/2 overflow-hidden rounded-xl border-2 border-purple-400 bg-slate-950/90 shadow-xl backdrop-blur-sm"
+      style={{ width: 'min(440px, calc(100% - 96px))', zIndex: 70 }}
+    >
+      <div className="absolute inset-x-0 top-2 z-10 flex justify-center">
+        <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest text-purple-600 shadow-sm">
+          Skalenlig förhandsgranskning
+        </span>
+      </div>
+      <div className="absolute inset-0 flex items-center justify-center px-3 pb-3 pt-9">
+        <svg
+          viewBox={`0 0 ${previewRoofW} ${previewRoofH}`}
+          preserveAspectRatio="xMidYMid meet"
+          style={{ width: `${previewRoofW * previewScale}px`, height: `${previewRoofH * previewScale}px`, maxWidth: '100%', maxHeight: '100%' }}
+        >
+          <defs>
+            <clipPath id={previewClipId}>
+              <rect width={previewRoofW} height={previewRoofH} rx={0.08} />
+            </clipPath>
+          </defs>
+          <rect width={previewRoofW} height={previewRoofH} rx={0.08} fill="rgba(249,115,22,.20)" stroke="#f97316" strokeWidth={previewStroke} />
+          <g clipPath={`url(#${previewClipId})`}>
+            {previewPanels.map(panel => {
+              const selected = String(panel.groupId) === String(selectedGroup?.id);
+              const lineStroke = Math.max(0.006, previewStroke * 0.55);
+              const fontSize = Math.max(0.11, Math.min(panel.wM, panel.hM) * 0.18);
+              return (
+                <g key={panel.id}>
+                  <rect
+                    x={panel.xM}
+                    y={panel.yM}
+                    width={panel.wM}
+                    height={panel.hM}
+                    rx={0.04}
+                    fill={selected ? '#bfdbfe' : '#dbeafe'}
+                    stroke={selected ? '#f97316' : '#2563eb'}
+                    strokeWidth={previewStroke}
+                  />
+                  <line x1={panel.xM + panel.wM / 3} y1={panel.yM} x2={panel.xM + panel.wM / 3} y2={panel.yM + panel.hM} stroke="#93c5fd" strokeWidth={lineStroke} />
+                  <line x1={panel.xM + panel.wM * 2 / 3} y1={panel.yM} x2={panel.xM + panel.wM * 2 / 3} y2={panel.yM + panel.hM} stroke="#93c5fd" strokeWidth={lineStroke} />
+                  <text x={panel.xM + panel.wM / 2} y={panel.yM + panel.hM / 2 + fontSize * 0.35} textAnchor="middle" fontSize={fontSize} fontWeight="800" fill="#1d4ed8">
+                    {panel.row + 1}:{panel.col + 1}
+                  </text>
+                </g>
+              );
+            })}
+          </g>
+        </svg>
+      </div>
+    </div>
+  ) : null;
+
   const overlay = svgHost && selectedRoof?.mapPolygon?.length ? (
     <>
       <defs>
@@ -382,7 +480,7 @@ export default function MapPanelPlacementLayer({ project, toolbarTarget, canvasT
           const rows = Math.max(1, Math.round(number(group.rows, 1)));
           const cols = Math.max(1, Math.round(number(group.cols, 1)));
           const product = panelProductForRoof(selectedRoof, panelProducts);
-          const size = panelSize(group, product);
+          const size = panelSize(group.orientation, product);
           const frame = roofFrame(selectedRoof, stage.width, stage.height);
           if (!frame) return null;
           const selected = String(group.id) === String(selectedGroup?.id);
@@ -449,9 +547,9 @@ export default function MapPanelPlacementLayer({ project, toolbarTarget, canvasT
       </div>
       <div className="mt-2 rounded-xl border border-blue-200 bg-blue-50 px-2.5 py-2 text-xs text-blue-900">
         <div className="font-semibold">{panelLabel(selectedProduct)}</div>
-        <div className="mt-0.5 text-blue-700">Skalas efter verkligt panelmått: {positive(selectedProduct?.width_mm, DEFAULT_PANEL.width_mm)} × {positive(selectedProduct?.height_mm, DEFAULT_PANEL.height_mm)} mm.</div>
+        <div className="mt-0.5 text-blue-700">Skalas efter verkligt panelmått: {positive(selectedProduct?.width_mm, 1134)} × {positive(selectedProduct?.height_mm, 1762)} mm.</div>
       </div>
-      <div className="mt-2 text-xs text-slate-500">Panelerna följer det valda takets verkliga bredd och takfall. Ändringarna sparas med knappen Spara kartprojektering.</div>
+      <div className="mt-2 text-xs text-slate-500">Panelerna följer det valda takets verkliga bredd och takfall. Den lila ramen visar placeringen live i samma skala.</div>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <button type="button" onClick={() => { setDragMode('group'); setActive(true); }} className={`rounded-xl border px-2 py-2 text-xs font-semibold ${dragMode === 'group' ? 'border-orange-300 bg-orange-50 text-orange-700' : 'border-slate-200 text-slate-600'}`}>Flytta grupp</button>
         <button type="button" onClick={() => { setDragMode('panel'); setActive(true); }} className={`rounded-xl border px-2 py-2 text-xs font-semibold ${dragMode === 'panel' ? 'border-orange-300 bg-orange-50 text-orange-700' : 'border-slate-200 text-slate-600'}`}>Flytta panel</button>
@@ -487,6 +585,7 @@ export default function MapPanelPlacementLayer({ project, toolbarTarget, canvasT
   return (
     <>
       {svgHost && overlay && createPortal(overlay, svgHost)}
+      {canvasTarget && preview && createPortal(preview, canvasTarget)}
       {toolbarTarget && toolbar && createPortal(toolbar, toolbarTarget)}
       {settingsTarget && settings && createPortal(settings, settingsTarget)}
     </>
