@@ -79,14 +79,14 @@ function parseProjectLayout(project) {
   for (const raw of rawCandidates) {
     try {
       const data = JSON.parse(raw || 'null');
-      if (Array.isArray(data?.roofs) && data.roofs.length) return removeLegacyClampFromRoofs(data.roofs);
+      if (Array.isArray(data?.roofs)) return removeLegacyClampFromRoofs(data.roofs);
     } catch {}
   }
 
   if (typeof window !== 'undefined' && project?.id) {
     try {
       const backup = JSON.parse(window.localStorage.getItem(`solarplan:project:${project.id}:solar_roof_planner_data`) || 'null');
-      if (Array.isArray(backup?.roofs) && backup.roofs.length) return removeLegacyClampFromRoofs(backup.roofs);
+      if (Array.isArray(backup?.roofs)) return removeLegacyClampFromRoofs(backup.roofs);
     } catch {}
   }
 
@@ -500,8 +500,7 @@ export default function SolarRoofPlannerV2({ project, onUpdate }) {
 
   const deleteRoof = roofId => setRoofs(current => {
     const next = current.filter(roof => String(roof.id) !== String(roofId));
-    if (!next.length) return current;
-    setSelectedRoofId(next[0].id);
+    setSelectedRoofId(next[0]?.id || '');
     setSelectedItem(null);
     return next;
   });
@@ -602,7 +601,7 @@ export default function SolarRoofPlannerV2({ project, onUpdate }) {
           <header className="flex min-h-[58px] items-center justify-between gap-3 border-b border-slate-200 bg-white px-3 sm:px-4">
             <div className="min-w-0">
               <div className="flex min-w-0 items-center gap-2">
-                <h2 className="truncate text-sm font-bold text-slate-950">{selectedRoof?.name || 'Tak'}</h2>
+                <h2 className="truncate text-sm font-bold text-slate-950">{selectedRoof?.name || 'Inga tak'}</h2>
                 {selectedRoof && <span className="truncate text-xs text-slate-400">{selectedRoof.widthM} × {selectedRoof.roofFallM} m · {selectedRoof.angleDeg || 0}°</span>}
               </div>
               <div className="mt-1 flex items-center gap-1.5">
@@ -611,13 +610,13 @@ export default function SolarRoofPlannerV2({ project, onUpdate }) {
               </div>
             </div>
             <div className="flex items-center gap-1">
-              <IconButton title="Zooma in" onClick={() => setZoom(current => clamp(round(current + 0.15, 2), 0.55, 2.2))}>
+              <IconButton title="Zooma in" onClick={() => setZoom(current => clamp(round(current + 0.15, 2), 0.55, 2.2))} disabled={!roofs.length}>
                 <ZoomIn className="h-4 w-4" />
               </IconButton>
-              <IconButton title="Zooma ut" onClick={() => setZoom(current => clamp(round(current - 0.15, 2), 0.55, 2.2))}>
+              <IconButton title="Zooma ut" onClick={() => setZoom(current => clamp(round(current - 0.15, 2), 0.55, 2.2))} disabled={!roofs.length}>
                 <ZoomOut className="h-4 w-4" />
               </IconButton>
-              <IconButton title="Centrera aktivt tak" onClick={resetView}>
+              <IconButton title="Centrera aktivt tak" onClick={resetView} disabled={!roofs.length}>
                 <Crosshair className="h-4 w-4" />
               </IconButton>
               {!showInspector && (
@@ -635,22 +634,38 @@ export default function SolarRoofPlannerV2({ project, onUpdate }) {
                 {warnings.length} panelgrupp ligger helt eller delvis utanför takytan.
               </div>
             )}
-            <RoofPreview
-              roofs={roofs}
-              products={panelProducts}
-              dragMode={dragMode}
-              selectedItem={selectedItem}
-              setSelectedItem={setSelectedItem}
-              selectedRoofId={selectedRoofId}
-              setSelectedRoofId={setSelectedRoofId}
-              onMovePanel={movePanel}
-              onMoveGroup={moveGroup}
-              zoom={zoom}
-              fitKey={fitKey}
-            />
-            <div className="pointer-events-none absolute bottom-5 left-6 rounded-lg border border-slate-200 bg-white/90 px-2.5 py-1.5 text-[10px] text-slate-500 shadow-sm backdrop-blur">
-              {dragMode === 'group' ? 'Dra i en panel för att flytta hela gruppen' : 'Dra i en panel för att flytta endast panelen'}
-            </div>
+            {roofs.length ? (
+              <RoofPreview
+                roofs={roofs}
+                products={panelProducts}
+                dragMode={dragMode}
+                selectedItem={selectedItem}
+                setSelectedItem={setSelectedItem}
+                selectedRoofId={selectedRoofId}
+                setSelectedRoofId={setSelectedRoofId}
+                onMovePanel={movePanel}
+                onMoveGroup={moveGroup}
+                zoom={zoom}
+                fitKey={fitKey}
+              />
+            ) : (
+              <div className="flex h-full min-h-[560px] items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-inner">
+                <div className="max-w-sm">
+                  <Home className="mx-auto h-10 w-10 text-slate-300" />
+                  <div className="mt-3 text-sm font-semibold text-slate-900">Alla tak är borttagna</div>
+                  <div className="mt-1 text-xs text-slate-500">Spara den tomma ritningen eller lägg till ett nytt tak.</div>
+                  <div className="mt-4 flex justify-center gap-2">
+                    <Button variant="outline" onClick={addRoof}><Plus className="mr-2 h-4 w-4" />Lägg till tak</Button>
+                    <Button onClick={save} disabled={saving} className="bg-orange-500 text-white hover:bg-orange-600"><Save className="mr-2 h-4 w-4" />{saving ? 'Sparar...' : 'Spara tom ritning'}</Button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {roofs.length > 0 && (
+              <div className="pointer-events-none absolute bottom-5 left-6 rounded-lg border border-slate-200 bg-white/90 px-2.5 py-1.5 text-[10px] text-slate-500 shadow-sm backdrop-blur">
+                {dragMode === 'group' ? 'Dra i en panel för att flytta hela gruppen' : 'Dra i en panel för att flytta endast panelen'}
+              </div>
+            )}
           </div>
         </main>
 
@@ -673,23 +688,27 @@ export default function SolarRoofPlannerV2({ project, onUpdate }) {
                   </IconButton>
                 }
               >
-                <div className="space-y-1">
-                  {roofs.map(roof => (
-                    <button
-                      type="button"
-                      key={roof.id}
-                      onClick={() => {
-                        setSelectedRoofId(roof.id);
-                        setSelectedItem(null);
-                        setFitKey(current => current + 1);
-                      }}
-                      className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-sm transition ${String(roof.id) === String(selectedRoof?.id) ? 'bg-orange-50 font-semibold text-orange-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
-                    >
-                      <span className="truncate">{roof.name}</span>
-                      <span className={`h-3 w-3 rounded-sm border ${String(roof.id) === String(selectedRoof?.id) ? 'border-orange-500 bg-orange-500' : 'border-slate-300'}`} />
-                    </button>
-                  ))}
-                </div>
+                {roofs.length ? (
+                  <div className="space-y-1">
+                    {roofs.map(roof => (
+                      <button
+                        type="button"
+                        key={roof.id}
+                        onClick={() => {
+                          setSelectedRoofId(roof.id);
+                          setSelectedItem(null);
+                          setFitKey(current => current + 1);
+                        }}
+                        className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-sm transition ${String(roof.id) === String(selectedRoof?.id) ? 'bg-orange-50 font-semibold text-orange-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
+                      >
+                        <span className="truncate">{roof.name}</span>
+                        <span className={`h-3 w-3 rounded-sm border ${String(roof.id) === String(selectedRoof?.id) ? 'border-orange-500 bg-orange-500' : 'border-slate-300'}`} />
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">Inga tak finns i projektet.</div>
+                )}
               </InspectorSection>
 
               {selectedRoof && (
@@ -697,11 +716,11 @@ export default function SolarRoofPlannerV2({ project, onUpdate }) {
                   <InspectorSection
                     title="Takmått"
                     icon={Crosshair}
-                    action={roofs.length > 1 ? (
+                    action={
                       <IconButton title="Ta bort aktivt tak" danger onClick={() => deleteRoof(selectedRoof.id)} className="h-8 w-8">
                         <Trash2 className="h-4 w-4" />
                       </IconButton>
-                    ) : null}
+                    }
                   >
                     <div className="space-y-2">
                       <Input label="Namn" value={selectedRoof.name} onChange={value => setRoof(selectedRoof.id, { name: value })} />
@@ -834,13 +853,13 @@ export default function SolarRoofPlannerV2({ project, onUpdate }) {
                       </Button>
                     )}
                   </InspectorSection>
-
-                  <Button onClick={save} disabled={saving} className="w-full gap-2 bg-orange-500 text-white hover:bg-orange-600">
-                    <Save className="h-4 w-4" />
-                    {saving ? 'Sparar...' : 'Spara ritning'}
-                  </Button>
                 </>
               )}
+
+              <Button onClick={save} disabled={saving} className="w-full gap-2 bg-orange-500 text-white hover:bg-orange-600">
+                <Save className="h-4 w-4" />
+                {saving ? 'Sparar...' : roofs.length ? 'Spara ritning' : 'Spara tom ritning'}
+              </Button>
             </div>
           </aside>
         ) : (
