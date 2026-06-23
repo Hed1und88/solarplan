@@ -80,7 +80,7 @@ function createHost(parent, name, before = null) {
 function hideDuplicatePanelGroupControls(settingsList) {
   if (!settingsList) return;
 
-  const mapPanelSection = Array.from(settingsList.querySelectorAll(':scope > section'))
+  const mapPanelSection = Array.from(settingsList.querySelectorAll('section'))
     .find(section => /Paneler på aktivt tak/i.test(section.textContent || ''));
 
   if (!mapPanelSection) return;
