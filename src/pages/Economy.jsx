@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Banknote, CheckCircle2, FileCheck2, Receipt, RefreshCw, Send, Settings2 } from 'lucide-react';
-import { listWorkOrders, readEconomySettings, saveEconomySettings, saveWorkOrder, sendWorkOrderToFortnox } from '@/lib/workOrderStore';
+import { listWorkOrders, readEconomySettings, saveEconomySettings, saveWorkOrder, sendWorkOrderToFortnox, subscribeToWorkOrders, syncWorkOrdersFromCloud } from '@/lib/workOrderStore';
 
 const money = value => Number(value || 0).toLocaleString('sv-SE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const inputClass = 'mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-orange-400';
@@ -19,10 +19,22 @@ export default function Economy() {
   const [message, setMessage] = useState('');
 
   useEffect(() => {
+    let active = true;
     const refresh = () => setOrders(listWorkOrders());
+    const unsubscribe = subscribeToWorkOrders(rows => {
+      if (active) setOrders(rows);
+    });
     window.addEventListener('solarplan:work-orders-change', refresh);
     window.addEventListener('storage', refresh);
-    return () => { window.removeEventListener('solarplan:work-orders-change', refresh); window.removeEventListener('storage', refresh); };
+    syncWorkOrdersFromCloud().then(rows => {
+      if (active) setOrders(rows);
+    });
+    return () => {
+      active = false;
+      unsubscribe?.();
+      window.removeEventListener('solarplan:work-orders-change', refresh);
+      window.removeEventListener('storage', refresh);
+    };
   }, []);
 
   const ready = orders.filter(order => order.status === 'ready_to_invoice');
@@ -80,7 +92,7 @@ export default function Economy() {
         <label className="text-xs font-medium text-slate-600">Milersättning per mil<input className={inputClass} type="number" value={settings.mileageRate} onChange={event => updateSettings({ mileageRate: Number(event.target.value) })} /></label>
         <label className="text-xs font-medium text-slate-600">Moms %<input className={inputClass} type="number" value={settings.vatRate} onChange={event => updateSettings({ vatRate: Number(event.target.value) })} /></label>
         <label className="text-xs font-medium text-slate-600">Betalningsvillkor dagar<input className={inputClass} type="number" value={settings.defaultPaymentTermsDays} onChange={event => updateSettings({ defaultPaymentTermsDays: Number(event.target.value) })} /></label>
-      </div><label className="mt-4 flex items-start gap-3 rounded-xl border border-slate-200 p-3"><input className="mt-1" type="checkbox" checked={Boolean(settings.fortnoxEnabled)} onChange={event => updateSettings({ fortnoxEnabled: event.target.checked })} /><span><span className="block text-sm font-semibold">Fortnox-integration aktiverad</span><span className="block text-xs text-slate-500">Kräver att backendfunktionen fortnoxCreateInvoice är distribuerad och att OAuth-token lagras som hemlighet.</span></span></label><Button onClick={persistSettings} className="mt-4 w-full gap-2"><RefreshCw className="h-4 w-4" />Spara inställningar</Button></section>
+      </div><label className="mt-4 flex items-start gap-3 rounded-xl border border-slate-200 p-3"><input className="mt-1" type="checkbox" checked={Boolean(settings.fortnoxEnabled)} onChange={event => updateSettings({ fortnoxEnabled: event.target.checked })} /><span><span className="block text-sm font-semibold">Fortnox-integration aktiverad</span><span className="block text-xs text-slate-500">Kräver distribuerad backendfunktion och Fortnox-hemligheter i Base44.</span></span></label><Button onClick={persistSettings} className="mt-4 w-full gap-2"><RefreshCw className="h-4 w-4" />Spara inställningar</Button></section>
     </div>
   </div>;
 }
