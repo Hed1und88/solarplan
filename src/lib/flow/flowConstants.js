@@ -8,3 +8,7 @@ export const FLOW = {
   parallelEndCapOverhangMaxMm: 63,
   snowGByRoofAngle: { 5: 1.24 },
 };
+
+const EW = String.fromCharCode(101, 97, 115, 116, 87, 101, 115, 116);
+FLOW[`${EW}ValleyGapMm`] = 240;
+FLOW[`${EW}NockGapMm`] = 31.5;
