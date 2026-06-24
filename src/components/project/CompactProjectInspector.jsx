@@ -6,13 +6,13 @@ const SECTION_ORDER = [
   'Manuell kalibrering',
   'Takpolygoner',
   'Paneler på aktivt tak',
-  'Tak',
   'Takmått',
   'Taktyp',
   'Lutning',
   'Solpanel',
   'Montagesystem',
   'Panelgrupp',
+  'Tak',
 ];
 
 let activeTitle = 'Kartbild';
@@ -48,7 +48,10 @@ function sectionTitle(section) {
   const headerText = (section.firstElementChild?.textContent || section.textContent || '')
     .replace(/\s+/g, ' ')
     .trim();
-  return SECTION_ORDER.find(title => headerText.startsWith(title) || headerText.includes(title)) || '';
+  const specificTitles = [...SECTION_ORDER].sort((a, b) => b.length - a.length);
+  return specificTitles.find(title => headerText.startsWith(title))
+    || specificTitles.find(title => headerText.includes(title))
+    || '';
 }
 
 function removeLegacyDecoration(root) {
