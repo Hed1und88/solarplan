@@ -2,6 +2,7 @@ import React from 'react';
 import MapWorkbenchBehaviorController from './MapWorkbenchBehaviorController.jsx';
 import MapViewportLock from './MapViewportLock.jsx';
 import MapCanvasPositionFix from './MapCanvasPositionFix.jsx';
+import MapTabPersistenceController from './MapTabPersistenceController.jsx';
 
 export default function PanelMapViewportController() {
   return (
@@ -9,6 +10,7 @@ export default function PanelMapViewportController() {
       <MapWorkbenchBehaviorController />
       <MapViewportLock />
       <MapCanvasPositionFix />
+      <MapTabPersistenceController />
     </>
   );
 }
