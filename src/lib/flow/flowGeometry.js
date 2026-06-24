@@ -7,7 +7,8 @@ export function calculateFlowGeometry(input = {}, systemVariant = '') {
   if (systemVariant.includes('parallel')) {
     const zone = resolveProductClampZone(input.panelProduct || {});
     const dock = selectDockPosition({ minMm: zone.minMm, maxMm: zone.maxMm });
-    return { geometry: { dock, sideGapMm: parallelSideGapMm() }, errors: dock.ok ? [] : [dock.reason], warnings: [] };
+    const issues = checkRailOverhang({ overhangMm: num(input.config?.railOverhangMm), usesEndCap: Boolean(input.config?.usesEndCap) });
+    return { geometry: { dock, sideGapMm: parallelSideGapMm(), overhangIssues: issues }, errors: [...(dock.ok ? [] : [dock.reason]), ...issues], warnings: [] };
   }
   return { input, systemVariant };
 }
