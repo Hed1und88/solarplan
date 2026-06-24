@@ -7,6 +7,7 @@ const nowIso = () => new Date().toISOString();
 const uid = prefix => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 const number = value => Number.isFinite(Number(value)) ? Number(value) : 0;
 const roundMoney = value => Math.round(number(value) * 100) / 100;
+const hasValue = value => value !== undefined && value !== null && value !== '';
 
 export const WORK_ORDER_TYPES = [
   { value: 'service', label: 'Service' },
@@ -62,12 +63,13 @@ export function saveEconomySettings(settings = {}) {
 }
 
 function normalizeLine(line = {}, type = 'material') {
+  const defaultUnit = type === 'time' ? 'tim' : type === 'mileage' ? 'mil' : 'st';
   return {
     id: line.id || uid(type),
     type,
     description: String(line.description || ''),
-    quantity: number(line.quantity || 1),
-    unit: String(line.unit || (type === 'time' ? 'tim' : type === 'mileage' ? 'mil' : 'st')),
+    quantity: number(hasValue(line.quantity) ? line.quantity : 1),
+    unit: String(line.unit || defaultUnit),
     unitPrice: roundMoney(line.unitPrice),
     vatRate: number(line.vatRate ?? 25),
     supplier: String(line.supplier || ''),
@@ -88,9 +90,12 @@ export function calculateWorkOrder(order = {}) {
   const allLines = [...timeLines, ...mileageLines, ...materialLines, ...expenseLines];
 
   const lineNet = line => roundMoney(number(line.quantity) * number(line.unitPrice));
-  const variableNet = roundMoney(allLines.reduce((sum, line) => sum + (line.reimbursable === false ? 0 : lineNet(line)), 0));
+  const sumBillable = lines => roundMoney(lines.reduce((sum, line) => sum + (line.reimbursable === false ? 0 : lineNet(line)), 0));
+  const variableNet = sumBillable(allLines);
+  const nonTimeNet = sumBillable([...mileageLines, ...materialLines, ...expenseLines]);
   const fixedNet = pricingMode === 'fixed' ? roundMoney(order.fixedPrice) : 0;
-  const invoiceNet = warranty ? 0 : pricingMode === 'fixed' ? fixedNet + roundMoney(order.additionalBillableNet) : variableNet;
+  const additionalNet = pricingMode === 'fixed' ? roundMoney(order.additionalBillableNet) : 0;
+  const invoiceNet = warranty ? 0 : pricingMode === 'fixed' ? roundMoney(fixedNet + additionalNet + nonTimeNet) : variableNet;
   const vat = warranty ? 0 : roundMoney(invoiceNet * number(order.vatRate ?? 25) / 100);
   const invoiceTotal = roundMoney(invoiceNet + vat);
   const privateExpenses = roundMoney(expenseLines.filter(line => line.privateExpense).reduce((sum, line) => sum + lineNet(line), 0));
@@ -105,7 +110,9 @@ export function calculateWorkOrder(order = {}) {
     expenseLines,
     calculation: {
       variableNet,
+      nonTimeNet,
       fixedNet,
+      additionalNet,
       invoiceNet,
       vat,
       invoiceTotal,
@@ -172,14 +179,14 @@ export function saveWorkOrder(order) {
   if (index >= 0) rows[index] = calculated;
   else rows.unshift(calculated);
   writeJson(STORAGE_KEY, rows);
-  window.dispatchEvent(new CustomEvent('solarplan:work-orders-change', { detail: { id: calculated.id } }));
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('solarplan:work-orders-change', { detail: { id: calculated.id } }));
   return calculated;
 }
 
 export function deleteWorkOrder(id) {
   const rows = listWorkOrders().filter(order => String(order.id) !== String(id));
   writeJson(STORAGE_KEY, rows);
-  window.dispatchEvent(new CustomEvent('solarplan:work-orders-change', { detail: { id } }));
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('solarplan:work-orders-change', { detail: { id } }));
 }
 
 export async function uploadWorkOrderFile(file) {
@@ -211,6 +218,7 @@ export function buildFortnoxInvoicePayload(order) {
   if (calculated.pricingMode === 'fixed') {
     rows.push({ Description: calculated.title || calculated.type || 'Fast pris', DeliveredQuantity: 1, Unit: 'st', Price: roundMoney(calculated.fixedPrice), VAT: number(calculated.vatRate ?? 25) });
     if (number(calculated.additionalBillableNet) > 0) rows.push({ Description: 'Tilläggsarbete', DeliveredQuantity: 1, Unit: 'st', Price: roundMoney(calculated.additionalBillableNet), VAT: number(calculated.vatRate ?? 25) });
+    [...calculated.mileageLines, ...calculated.materialLines, ...calculated.expenseLines].forEach(pushLine);
   } else {
     [...calculated.timeLines, ...calculated.mileageLines, ...calculated.materialLines, ...calculated.expenseLines].forEach(pushLine);
   }
