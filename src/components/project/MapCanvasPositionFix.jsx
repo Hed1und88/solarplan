@@ -31,12 +31,15 @@ function applyCanvasPosition() {
     Math.min(Math.floor(availableHeight), maximumHeight),
   );
   const height = `${nextHeight}px`;
+  const heightChanged = host.style.getPropertyValue('height') !== height
+    || host.style.getPropertyPriority('height') !== 'important'
+    || host.style.getPropertyValue('max-height') !== height
+    || host.style.getPropertyPriority('max-height') !== 'important';
 
-  if (host.style.getPropertyValue('height') !== height || host.style.getPropertyPriority('height') !== 'important') {
+  if (heightChanged) {
     host.style.setProperty('height', height, 'important');
-  }
-  if (host.style.getPropertyValue('max-height') !== height || host.style.getPropertyPriority('max-height') !== 'important') {
     host.style.setProperty('max-height', height, 'important');
+    window.dispatchEvent(new CustomEvent('solarplan:map-viewport-resized'));
   }
 }
 
