@@ -15,6 +15,7 @@ import SalesPipeline from '@/pages/Leads';
 import Products from '@/pages/Products';
 import Settings from '@/pages/SettingsRestoreWrapper.jsx';
 import SolarShadowAnalysis from '@/pages/SolarShadowAnalysis';
+import MapWorkbenchBehaviorFix from '@/components/project/MapWorkbenchBehaviorFix.jsx';
 import '@/styles/solarWorkbenchLight.css';
 
 const AuthenticatedApp = () => {
@@ -43,7 +44,17 @@ const AuthenticatedApp = () => {
 };
 
 function App() {
-  return <AuthProvider><QueryClientProvider client={queryClientInstance}><Router><AuthenticatedApp /></Router><Toaster /></QueryClientProvider></AuthProvider>;
+  return (
+    <AuthProvider>
+      <QueryClientProvider client={queryClientInstance}>
+        <Router>
+          <MapWorkbenchBehaviorFix />
+          <AuthenticatedApp />
+        </Router>
+        <Toaster />
+      </QueryClientProvider>
+    </AuthProvider>
+  );
 }
 
 export default App;
