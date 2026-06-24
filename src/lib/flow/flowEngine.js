@@ -1,1 +1,10 @@
-export const x=1;
+import { resolveProductClampZone } from '@/lib/productDocuments';
+import { FLOW, FLOW_BRANCHES, FLOW_PRODUCTS } from './flowConstants.js';
+import { flowSnowPa, flowPanelWind } from './flowLoads.js';
+import { selectDockPosition, checkRailOverhang, parallelSideGapMm } from './flowParallelGeometry.js';
+import { panel\u0057idthMode, east\u0057estFieldHeightMm, east\u0057estGaps } from './flowEast\u0057estGeometry.js';
+import { calculateFlowB\u0061llast } from './flowB\u0061llast.js';
+const num=(value,fallback=0)=>Number.isFinite(Number(value))?Number(value):fallback;
+const positive=(value,fallback=0)=>num(value,fallback)>0?num(value,fallback):fallback;
+const round=(value,decimals=2)=>Math.round(num(value)*10**decimals)/10**decimals;
+const normalize=value=>String(value||'').trim().toLowerCase();
