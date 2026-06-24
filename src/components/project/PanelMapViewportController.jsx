@@ -1,1 +1,1 @@
-export { default } from './MapWorkbenchBehaviorFixV2.jsx';
+export { default } from './MapWorkbenchBehaviorController.jsx';
