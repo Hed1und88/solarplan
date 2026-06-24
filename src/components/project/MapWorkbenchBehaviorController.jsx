@@ -197,14 +197,6 @@ function toggleManualPlanner(host, active) {
       delete child.dataset.oldMapDisplay;
     }
   });
-  if (active) {
-    host.style.setProperty('top', '12px', 'important');
-    host.style.setProperty('right', '12px', 'important');
-    host.style.setProperty('bottom', '12px', 'important');
-    host.style.setProperty('left', '12px', 'important');
-    host.style.setProperty('height', 'auto', 'important');
-    host.style.setProperty('max-height', 'none', 'important');
-  }
 }
 
 function renamePanelView() {
@@ -249,12 +241,14 @@ export default function MapWorkbenchBehaviorController() {
       apply();
     };
     const up = () => { drag = null; };
+    const refit = () => window.requestAnimationFrame(resetMap);
 
     document.addEventListener('pointerdown', down, true);
     window.addEventListener('pointermove', move, { passive: false });
     window.addEventListener('pointerup', up);
     window.addEventListener('pointercancel', up);
     window.addEventListener('resize', sync);
+    window.addEventListener('solarplan:map-viewport-resized', refit);
     const observer = new MutationObserver(sync);
     observer.observe(document.body, { childList: true, subtree: true });
     const timer = window.setInterval(sync, 250);
@@ -268,6 +262,7 @@ export default function MapWorkbenchBehaviorController() {
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
       window.removeEventListener('resize', sync);
+      window.removeEventListener('solarplan:map-viewport-resized', refit);
       toggleManualPlanner(parts().host, false);
     };
   }, [location.pathname]);
