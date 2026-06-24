@@ -1,0 +1,31 @@
+name: Generate ESLint Fix Artifact
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  lint-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply safe ESLint fixes
+        run: npm run lint:fix || true
+      - name: Collect changed source files
+        run: |
+          mkdir -p lint-fixed
+          git diff --name-only -- src | while read file; do
+            mkdir -p "lint-fixed/$(dirname "$file")"
+            cp "$file" "lint-fixed/$file"
+          done
+          git diff --stat > lint-fixed/DIFF_STAT.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eslint-fixed-files
+          path: lint-fixed
