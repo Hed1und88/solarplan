@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, PanelTop, Plus, Trash2 } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
+import { groupSizeM, panelPositions } from '@/lib/panelLayout.js';
 
 const PANEL_GAP_M = 0.03;
 const DEFAULT_PANEL = {
@@ -54,46 +55,51 @@ function panelSize(orientation, product) {
     : { w: widthM, h: heightM };
 }
 
-function panelPosition(group, product, row, col) {
-  const override = group?.panelOverrides?.[`${row}-${col}`];
-  if (override) return { xM: number(override.xM), yM: number(override.yM) };
-
-  const size = panelSize(group?.orientation, product);
+function layoutGroup(group) {
   return {
-    xM: number(group?.xM) + col * (size.w + PANEL_GAP_M),
-    yM: number(group?.yM) + row * (size.h + PANEL_GAP_M),
+    ...group,
+    rows: Math.max(1, Math.round(number(group?.rows, 1))),
+    cols: Math.max(1, Math.round(number(group?.cols, 1))),
   };
+}
+
+function panelPosition(group, roof, product, row, col) {
+  const size = panelSize(group?.orientation, product);
+  const position = panelPositions({
+    group: layoutGroup(group),
+    panelSize: size,
+    variant: roof?.mountingSystemVariant,
+    gapFallbackM: PANEL_GAP_M,
+  }).find(item => item.row === row && item.col === col);
+
+  return position ? { xM: position.xM, yM: position.yM } : { xM: number(group?.xM), yM: number(group?.yM) };
 }
 
 function groupSize(group, roof, products) {
   const size = panelSize(group?.orientation, panelProductForRoof(roof, products));
-  const rows = Math.max(1, Math.round(number(group?.rows, 1)));
-  const cols = Math.max(1, Math.round(number(group?.cols, 1)));
-
-  return {
-    w: cols * size.w + Math.max(0, cols - 1) * PANEL_GAP_M,
-    h: rows * size.h + Math.max(0, rows - 1) * PANEL_GAP_M,
-  };
+  return groupSizeM({
+    group: layoutGroup(group),
+    panelSize: size,
+    variant: roof?.mountingSystemVariant,
+    gapFallbackM: PANEL_GAP_M,
+  });
 }
 
-function groupBounds(group, product) {
-  const rows = Math.max(1, Math.round(number(group?.rows, 1)));
-  const cols = Math.max(1, Math.round(number(group?.cols, 1)));
+function groupBounds(group, roof, product) {
   const size = panelSize(group?.orientation, product);
-  const positions = [];
-
-  for (let row = 0; row < rows; row += 1) {
-    for (let col = 0; col < cols; col += 1) {
-      positions.push(panelPosition(group, product, row, col));
-    }
-  }
+  const positions = panelPositions({
+    group: layoutGroup(group),
+    panelSize: size,
+    variant: roof?.mountingSystemVariant,
+    gapFallbackM: PANEL_GAP_M,
+  });
 
   if (!positions.length) return null;
 
   const minX = Math.min(...positions.map(item => item.xM));
   const minY = Math.min(...positions.map(item => item.yM));
-  const maxX = Math.max(...positions.map(item => item.xM + size.w));
-  const maxY = Math.max(...positions.map(item => item.yM + size.h));
+  const maxX = Math.max(...positions.map(item => item.xM + item.wM));
+  const maxY = Math.max(...positions.map(item => item.yM + item.hM));
 
   return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
 }
@@ -528,7 +534,7 @@ export default function MapPanelPlacementLayer({
 
             if (drag.mode === 'panel') {
               const size = panelSize(base.orientation, product);
-              const position = panelPosition(base, product, drag.row, drag.col);
+              const position = panelPosition(base, roof, product, drag.row, drag.col);
 
               return {
                 ...base,
@@ -650,7 +656,7 @@ export default function MapPanelPlacementLayer({
 
       for (let row = 0; row < rows; row += 1) {
         for (let col = 0; col < cols; col += 1) {
-          const position = panelPosition(group, product, row, col);
+          const position = panelPosition(group, roof, product, row, col);
           const geometry = panelGeometry(frame, position.xM, position.yM, size.w, size.h);
           const fontSize = clamp(Math.min(size.w, size.h) * frame.scale * 0.22, 5, 11);
 
@@ -844,12 +850,12 @@ export default function MapPanelPlacementLayer({
               const cols = Math.max(1, Math.round(number(group.cols, 1)));
               const size = panelSize(group.orientation, selectedProduct);
               const selected = String(group.id) === String(selectedGroup?.id);
-              const bounds = groupBounds(group, selectedProduct);
+              const bounds = groupBounds(group, selectedRoof, selectedProduct);
               const panels = [];
 
               for (let row = 0; row < rows; row += 1) {
                 for (let col = 0; col < cols; col += 1) {
-                  const position = panelPosition(group, selectedProduct, row, col);
+                  const position = panelPosition(group, selectedRoof, selectedProduct, row, col);
                   const fontSize = Math.max(0.11, Math.min(size.w, size.h) * 0.18);
 
                   panels.push(

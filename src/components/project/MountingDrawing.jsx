@@ -1,8 +1,87 @@
 import React, { useMemo } from 'react';
 import { resolveProductClampZone } from '@/lib/productDocuments';
+import { panelPositions } from '@/lib/panelLayout.js';
+import { FLOW } from '@/lib/flow/flowConstants.js';
+import { flowSpacingM, isFlowVariant } from '@/lib/flow/flowPanelSpacing.js';
+import { selectDockPosition } from '@/lib/flow/flowParallelGeometry.js';
 
 const MAX_HOOK_SPACING_MM = 1200;
 const RAIL_OVERHANG_MM = 150;
+const PANEL_GAP_M = 0.03;
+const DEFAULT_PANEL = {
+  width_mm: 1134,
+  height_mm: 1762,
+  power_watts: 500,
+  name: 'Standardpanel 500 W',
+  model: 'Standardpanel 500 W',
+};
+
+const number = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+const positive = (value, fallback = 0) => number(value, fallback) > 0 ? number(value, fallback) : fallback;
+
+function safeJson(raw, fallback = {}) {
+  try { return JSON.parse(raw || '') || fallback; } catch { return fallback; }
+}
+
+function readPlannerLayout(project) {
+  for (const raw of [project?.solar_roof_planner_data, project?.panel_layout_data]) {
+    const parsed = safeJson(raw, null);
+    if (parsed && Array.isArray(parsed.roofs)) return parsed;
+  }
+  return { roofs: [] };
+}
+
+function readMountingData(project) {
+  return safeJson(project?.mounting_data, {});
+}
+
+function variantForRoof(roof, mounting) {
+  const saved = (mounting?.perRoofSystems || []).find(item => String(item.roofId) === String(roof?.id)) || {};
+  return roof?.mountingSystemVariant || saved.systemVariant || mounting?.systemVariant || '';
+}
+
+function productForRoof(roof, selectedProduct) {
+  return roof?.panelProductSnapshot || selectedProduct || DEFAULT_PANEL;
+}
+
+function panelSize(orientation, product) {
+  const base = {
+    w: positive(product?.width_mm, DEFAULT_PANEL.width_mm) / 1000,
+    h: positive(product?.height_mm, DEFAULT_PANEL.height_mm) / 1000,
+  };
+  return String(orientation || '').toLowerCase().includes('ligg') ? { w: base.h, h: base.w } : base;
+}
+
+function buildFlowContext(project, selectedProduct) {
+  const layout = readPlannerLayout(project);
+  const mounting = readMountingData(project);
+  const roofs = layout.roofs || [];
+  const roof = roofs.find(item => isFlowVariant(variantForRoof(item, mounting)) && (item.panelGroups || []).length)
+    || roofs.find(item => isFlowVariant(variantForRoof(item, mounting)));
+  if (!roof) return null;
+
+  const variant = variantForRoof(roof, mounting);
+  if (!isFlowVariant(variant)) return null;
+
+  return {
+    roof,
+    variant,
+    product: productForRoof(roof, selectedProduct),
+  };
+}
+
+function formatMm(value) {
+  if (value == null || Number.isNaN(Number(value))) return 'Saknas';
+  const rounded = Math.round(Number(value) * 10) / 10;
+  return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)} mm`;
+}
+
+function flowVariantLabel(variant) {
+  if (variant.includes('east_west')) return 'Flow east/west ballasted';
+  if (variant.includes('south')) return 'Flow south ballasted';
+  if (variant.includes('parallel')) return 'Flow parallel ballasted';
+  return variant;
+}
 
 function DimLine({ x1, y1, x2, y2, label, textOffset = { x: 0, y: -6 }, color = '#1d4ed8' }) {
   const mx = (x1 + x2) / 2;
@@ -17,7 +96,205 @@ function DimLine({ x1, y1, x2, y2, label, textOffset = { x: 0, y: -6 }, color = 
   );
 }
 
-export default function MountingDrawing({ project, selectedProduct, systemBrand, systemModel, panelCount, recommendedHookSpacingMM }) {
+export default function MountingDrawing(props) {
+  const flowContext = useMemo(
+    () => buildFlowContext(props.project, props.selectedProduct),
+    [props.project, props.selectedProduct],
+  );
+
+  if (flowContext) return <FlowMountingDrawing {...props} flowContext={flowContext} />;
+  return <HookMountingDrawing {...props} />;
+}
+
+function FlowMountingDrawing({ project, selectedProduct, systemBrand, systemModel, flowContext }) {
+  const { roof, variant } = flowContext;
+  const product = productForRoof(roof, selectedProduct);
+  const roofW = positive(roof?.widthM, positive(project?.roof_width_m, 8));
+  const roofH = positive(roof?.roofFallM, positive(project?.roof_height_m, 5));
+  const panelItems = (roof.panelGroups || []).flatMap(group => {
+    const size = panelSize(group.orientation, product);
+    return panelPositions({
+      group,
+      panelSize: size,
+      variant,
+      gapFallbackM: PANEL_GAP_M,
+    }).map(position => ({ ...position, groupId: group.id, groupName: group.name }));
+  });
+  const panelCount = panelItems.length;
+  const spacing = flowSpacingM(variant, Math.max(0, ...((roof.panelGroups || []).map(group => Math.round(number(group.rows))))));
+  const clampZone = resolveProductClampZone(product || DEFAULT_PANEL);
+  const dock = variant.includes('parallel') ? selectDockPosition(clampZone) : null;
+
+  const margin = { left: 58, right: 44, top: 38, bottom: 56 };
+  const svgW = 700;
+  const svgH = 420;
+  const drawW = svgW - margin.left - margin.right;
+  const drawH = svgH - margin.top - margin.bottom;
+  const scale = Math.min(drawW / roofW, drawH / roofH);
+  const roofDrawW = roofW * scale;
+  const roofDrawH = roofH * scale;
+
+  const colGapPair = panelItems.find(item => panelItems.some(next => (
+    String(next.groupId) === String(item.groupId)
+    && next.row === item.row
+    && next.col === item.col + 1
+  )));
+  const colGapNext = colGapPair && panelItems.find(next => (
+    String(next.groupId) === String(colGapPair.groupId)
+    && next.row === colGapPair.row
+    && next.col === colGapPair.col + 1
+  ));
+  const nockPair = panelItems.find(item => item.row === 0 && panelItems.some(next => (
+    String(next.groupId) === String(item.groupId)
+    && next.row === 1
+    && next.col === item.col
+  )));
+  const nockNext = nockPair && panelItems.find(next => (
+    String(next.groupId) === String(nockPair.groupId)
+    && next.row === 1
+    && next.col === nockPair.col
+  ));
+  const valleyPair = panelItems.find(item => item.row === 1 && panelItems.some(next => (
+    String(next.groupId) === String(item.groupId)
+    && next.row === 2
+    && next.col === item.col
+  )));
+  const valleyNext = valleyPair && panelItems.find(next => (
+    String(next.groupId) === String(valleyPair.groupId)
+    && next.row === 2
+    && next.col === valleyPair.col
+  ));
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-3 text-xs">
+        <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 space-y-0.5">
+          <p className="font-semibold text-blue-800">Flow-geometri</p>
+          <p className="text-blue-700">System: <strong>{flowVariantLabel(variant)}</strong></p>
+          <p className="text-blue-700">Sidomellanrum: <strong>{formatMm(FLOW.sideGapMm)}</strong></p>
+          <p className="text-blue-700">Radmellanrum: <strong>{spacing.rowGaps ? `${formatMm(FLOW.eastWestNockGapMm)} / ${formatMm(FLOW.eastWestValleyGapMm)}` : formatMm(FLOW.sideGapMm)}</strong></p>
+        </div>
+        {dock && (
+          <div className={`${dock.ok ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'} border rounded-lg px-3 py-2 space-y-0.5`}>
+            <p className={`font-semibold ${dock.ok ? 'text-emerald-800' : 'text-amber-800'}`}>Flow Dock</p>
+            {dock.ok ? (
+              <p className="text-emerald-700">Lage: <strong>{formatMm(dock.dockPositionMm)}</strong></p>
+            ) : (
+              <p className="text-amber-700">{dock.reason}</p>
+            )}
+            <p className={dock.ok ? 'text-emerald-700' : 'text-amber-700'}>Krok c/c visas ej for Flow.</p>
+          </div>
+        )}
+        <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 space-y-0.5">
+          <p className="font-semibold text-slate-800">Tak</p>
+          <p className="text-slate-700">{roof?.name || 'Aktivt tak'}</p>
+          <p className="text-slate-700">{roofW.toFixed(2)} x {roofH.toFixed(2)} m</p>
+        </div>
+        <div className="bg-purple-50 border border-purple-200 rounded-lg px-3 py-2 space-y-0.5">
+          <p className="font-semibold text-purple-800">Paneler</p>
+          <p className="text-purple-700">{product?.name || product?.model || 'Standardpanel'}</p>
+          <p className="text-purple-700">{positive(product?.width_mm, DEFAULT_PANEL.width_mm)} x {positive(product?.height_mm, DEFAULT_PANEL.height_mm)} mm</p>
+          <p className="text-purple-700">Antal: <strong>{panelCount}</strong></p>
+        </div>
+      </div>
+
+      <div className="bg-white border border-border rounded-xl overflow-hidden shadow-sm">
+        <div className="px-4 py-2 bg-muted/30 border-b border-border flex items-center justify-between">
+          <p className="text-xs font-semibold">Montageritning - Flow takvy uppifran</p>
+          {systemBrand && <p className="text-xs text-muted-foreground">{systemBrand} / {systemModel}</p>}
+        </div>
+        <div className="overflow-x-auto">
+          <svg width={svgW} height={svgH} style={{ fontFamily: 'monospace' }}>
+            <g transform={`translate(${margin.left}, ${margin.top})`}>
+              <rect x={0} y={0} width={roofDrawW} height={roofDrawH} fill="#f8fafc" stroke="#94a3b8" strokeWidth={1.5} />
+              <text x={roofDrawW / 2} y={-14} textAnchor="middle" fontSize={10} fill="#475569" fontWeight="700">
+                Takyta {roofW.toFixed(2)} x {roofH.toFixed(2)} m
+              </text>
+
+              {panelItems.map(item => {
+                const x = item.xM * scale;
+                const y = item.yM * scale;
+                const w = item.wM * scale;
+                const h = item.hM * scale;
+                const outside = item.xM < 0 || item.yM < 0 || item.xM + item.wM > roofW || item.yM + item.hM > roofH;
+                const dockY = dock?.ok ? y + Math.min(h - 2, Math.max(2, (dock.dockPositionMm / 1000) * scale)) : null;
+
+                return (
+                  <g key={`${item.groupId}-${item.row}-${item.col}`}>
+                    <rect x={x} y={y} width={w} height={h} fill={outside ? '#fee2e2' : '#dbeafe'} stroke={outside ? '#dc2626' : '#2563eb'} strokeWidth={1.2} rx={1} />
+                    <line x1={x + w / 3} y1={y + 2} x2={x + w / 3} y2={y + h - 2} stroke={outside ? '#fca5a5' : '#93c5fd'} strokeWidth={0.6} />
+                    <line x1={x + (w * 2) / 3} y1={y + 2} x2={x + (w * 2) / 3} y2={y + h - 2} stroke={outside ? '#fca5a5' : '#93c5fd'} strokeWidth={0.6} />
+                    {dockY != null && <line x1={x + 2} y1={dockY} x2={x + w - 2} y2={dockY} stroke="#92400e" strokeWidth={2} />}
+                  </g>
+                );
+              })}
+
+              {colGapPair && colGapNext && (
+                <DimLine
+                  x1={(colGapPair.xM + colGapPair.wM) * scale}
+                  y1={(colGapPair.yM + colGapPair.hM + 0.18) * scale}
+                  x2={colGapNext.xM * scale}
+                  y2={(colGapPair.yM + colGapPair.hM + 0.18) * scale}
+                  label={formatMm((colGapNext.xM - (colGapPair.xM + colGapPair.wM)) * 1000)}
+                  textOffset={{ x: 0, y: -5 }}
+                />
+              )}
+              {nockPair && nockNext && (
+                <DimLine
+                  x1={(nockPair.xM + nockPair.wM + 0.2) * scale}
+                  y1={(nockPair.yM + nockPair.hM) * scale}
+                  x2={(nockPair.xM + nockPair.wM + 0.2) * scale}
+                  y2={nockNext.yM * scale}
+                  label={formatMm((nockNext.yM - (nockPair.yM + nockPair.hM)) * 1000)}
+                  textOffset={{ x: 31, y: 0 }}
+                  color="#0f766e"
+                />
+              )}
+              {valleyPair && valleyNext && (
+                <DimLine
+                  x1={(valleyPair.xM + valleyPair.wM + 0.35) * scale}
+                  y1={(valleyPair.yM + valleyPair.hM) * scale}
+                  x2={(valleyPair.xM + valleyPair.wM + 0.35) * scale}
+                  y2={valleyNext.yM * scale}
+                  label={formatMm((valleyNext.yM - (valleyPair.yM + valleyPair.hM)) * 1000)}
+                  textOffset={{ x: 36, y: 0 }}
+                  color="#7c3aed"
+                />
+              )}
+
+              <g transform={`translate(${roofDrawW + 12}, 12)`}>
+                <rect x={0} y={0} width={9} height={7} fill="#dbeafe" stroke="#2563eb" strokeWidth={0.8} />
+                <text x={14} y={7} fontSize={8} fill="#1d4ed8">Panel</text>
+                {dock?.ok && (
+                  <>
+                    <line x1={0} y1={20} x2={9} y2={20} stroke="#92400e" strokeWidth={2} />
+                    <text x={14} y={23} fontSize={8} fill="#78350f">Flow Dock</text>
+                  </>
+                )}
+                {variant.includes('east_west') && (
+                  <>
+                    <line x1={0} y1={35} x2={9} y2={35} stroke="#0f766e" strokeWidth={1.5} strokeDasharray="3 2" />
+                    <text x={14} y={38} fontSize={8} fill="#0f766e">Nock/valley</text>
+                  </>
+                )}
+              </g>
+
+              <text x={roofDrawW / 2} y={roofDrawH + 38} textAnchor="middle" fontSize={9} fill="#64748b">
+                {flowVariantLabel(variant)} | {panelCount} paneler | {systemBrand || '-'} {systemModel || ''}
+              </text>
+            </g>
+          </svg>
+        </div>
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        * Flow Dock visas endast for parallellt Flow nar panelens klamzon matchar 730/980/1110 mm.
+      </p>
+    </div>
+  );
+}
+
+function HookMountingDrawing({ project, selectedProduct, systemBrand, systemModel, panelCount, recommendedHookSpacingMM }) {
   const roofW = parseFloat(project?.roof_width_m) || 8;
   const roofH = parseFloat(project?.roof_height_m) || 5;
 

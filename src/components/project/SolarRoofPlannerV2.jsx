@@ -25,6 +25,7 @@ import {
 import ProductSearchSelect from '@/components/products/ProductSearchSelect';
 import { Select as UISelect, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { createProductSnapshot, resolveProductClampZone } from '@/lib/productDocuments';
+import { groupSizeM, panelPositions } from '@/lib/panelLayout.js';
 
 const DEFAULT_PANEL = { id: 'standard', name: 'Standardpanel 500 W', model: 'Standardpanel 500 W', width_mm: 1134, height_mm: 1953, power_watts: 500 };
 const PANEL_GAP_M = 0.03;
@@ -133,14 +134,16 @@ function panelSize(orientation, product) {
   return String(orientation || '').toLowerCase().includes('ligg') ? { w: base.h, h: base.w } : base;
 }
 
-function panelPositionM(group, product, row, col) {
-  const override = group.panelOverrides?.[`${row}-${col}`];
-  if (override) return { xM: n(override.xM), yM: n(override.yM) };
+function panelPositionM(group, roof, product, row, col) {
   const size = panelSize(group.orientation, product);
-  return {
-    xM: n(group.xM) + col * (size.w + PANEL_GAP_M),
-    yM: n(group.yM) + row * (size.h + PANEL_GAP_M),
-  };
+  const position = panelPositions({
+    group,
+    panelSize: size,
+    variant: roof?.mountingSystemVariant,
+    gapFallbackM: PANEL_GAP_M,
+  }).find(item => item.row === row && item.col === col);
+
+  return position ? { xM: position.xM, yM: position.yM } : { xM: n(group.xM), yM: n(group.yM) };
 }
 
 function polygonPoints(x, y, w, h, shape) {
@@ -167,12 +170,12 @@ function totals(roofs, products) {
 
 function groupSize(group, roof, products) {
   const size = panelSize(group.orientation, panelProductForRoof(roof, products));
-  const cols = Math.max(0, Math.round(n(group.cols)));
-  const rows = Math.max(0, Math.round(n(group.rows)));
-  return {
-    w: cols * size.w + Math.max(0, cols - 1) * PANEL_GAP_M,
-    h: rows * size.h + Math.max(0, rows - 1) * PANEL_GAP_M,
-  };
+  return groupSizeM({
+    group,
+    panelSize: size,
+    variant: roof?.mountingSystemVariant,
+    gapFallbackM: PANEL_GAP_M,
+  });
 }
 
 function Input({ label, value, onChange, type = 'text', step, min }) {
@@ -363,7 +366,7 @@ function RoofPreview({ roofs, products, dragMode, selectedItem, setSelectedItem,
                 const panels = [];
                 for (let row = 0; row < rows; row++) {
                   for (let col = 0; col < cols; col++) {
-                    const pos = panelPositionM(group, product, row, col);
+                    const pos = panelPositionM(group, layout.roof, product, row, col);
                     const shift = shiftFor(group.id, row, col);
                     const px = layout.x + pos.xM * SCALE + shift.dx;
                     const py = layout.y + pos.yM * SCALE + shift.dy;
@@ -459,7 +462,7 @@ export default function SolarRoofPlannerV2({ project, onUpdate }) {
           if (String(group.id) !== String(groupId)) return group;
           const product = panelProductForRoof(roof, panelProducts);
           const size = panelSize(group.orientation, product);
-          const pos = panelPositionM(group, product, row, col);
+          const pos = panelPositionM(group, roof, product, row, col);
           const key = `${row}-${col}`;
           return {
             ...group,
