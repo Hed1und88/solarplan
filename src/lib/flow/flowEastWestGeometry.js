@@ -1,4 +1,26 @@
-import { FLOW, FLOW_PANEL_\u0057IDTH_RANGES } from './flowConstants.js';
-export function panel\u0057idthMode(panel\u0057idthMm){const r=FLOW_PANEL_\u0057IDTH_RANGES.find(x=>panel\u0057idthMm>=x.minMm&&panel\u0057idthMm<=x.maxMm);return r?{ok:true,mode:r.mode}:{ok:false,reason:`Panelbredd ${panel\u0057idthMm} mm utanför To\u0077er/\u0057ing (984–1040 eller 1118–1174 mm).`};}
-export function east\u0057estFieldHeightMm({rows,panelLengthMm}){const proj=panelLengthMm*Math.cos(FLOW.tiltDeg*Math.PI/180);const blocks=Math.floor(rows/2);const nockGaps=blocks;const valleyGaps=Math.max(0,blocks-1);return rows*proj+nockGaps*FLOW.east\u0057estNockGapMm+valleyGaps*FLOW.east\u0057estValleyGapMm;}
-export const east\u0057estGaps=()=>({sideGapMm:FLOW.sideGapMm,valleyGapMm:FLOW.east\u0057estValleyGapMm,nockGapMm:FLOW.east\u0057estNockGapMm});
+import { FLOW, FLOW_PANEL_WIDTH_RANGES } from './flowConstants.js';
+
+// Tillaten panelbredd for Tower/Wing
+export function panelWidthMode(panelWidthMm) {
+  const r = FLOW_PANEL_WIDTH_RANGES.find(x => panelWidthMm >= x.minMm && panelWidthMm <= x.maxMm);
+  return r ? { ok: true, mode: r.mode } : {
+    ok: false,
+    reason: `Panelbredd ${panelWidthMm} mm utanfor Tower/Wing (984-1040 eller 1118-1174 mm).`,
+  };
+}
+
+// Faltets hojd for N panelrader (ost/vast, taltstruktur).
+// rader grupperas i block om 2 (ost+vast). nock per block, valley mellan block.
+export function eastWestFieldHeightMm({ rows, panelLengthMm }) {
+  const proj = panelLengthMm * Math.cos(FLOW.tiltDeg * Math.PI / 180);
+  const blocks = Math.floor(rows / 2);
+  const nockGaps = blocks;
+  const valleyGaps = Math.max(0, blocks - 1);
+  return rows * proj + nockGaps * FLOW.eastWestNockGapMm + valleyGaps * FLOW.eastWestValleyGapMm;
+}
+
+export const eastWestGaps = () => ({
+  sideGapMm: FLOW.sideGapMm,
+  valleyGapMm: FLOW.eastWestValleyGapMm,
+  nockGapMm: FLOW.eastWestNockGapMm,
+});

@@ -57,13 +57,18 @@ function correctParallelWeights(result) {
   return { ...result, materials: { ...result.materials, materials, mountingWeightKg, systemWeightKg: round(mountingWeightKg + panelWeightKg) } };
 }
 
-function blockedResult(input, message, loads = null, branchStatus = 'blocked') {
+function blockedResult({ input, message, loads = null, branchStatus = 'blocked' }) {
   return {
     engineId: 'nordmount',
     engineVersion: '3.0.0-flow',
     systemVariant: normalize(input.config?.systemVariant || input.roof?.mountingSystemVariant || 'parallel'),
     state: 'blocked',
-    status: { loadsValidated: false, preliminaryAngle: Boolean(loads?.snow?.preliminary), capacityValidated: false, branchStatus },
+    status: {
+      loadsValidated: false,
+      preliminaryAngle: Boolean(loads?.snow?.preliminary),
+      capacityValidated: false,
+      branchStatus,
+    },
     errors: [message],
     warnings: [],
     loads,
@@ -76,11 +81,24 @@ function blockedResult(input, message, loads = null, branchStatus = 'blocked') {
 export function calculateNordmountRoof(input = {}) {
   const variant = normalize(input.config?.systemVariant || input.roof?.mountingSystemVariant || 'parallel');
   if (variant === 'parallel') return correctParallelWeights(calculateParallelRoof(input));
-  if (!FLOW_BRANCHES[variant]) return blockedResult(input, 'Kräver Nordmounts Cross-data');
+  if (!FLOW_BRANCHES[variant]) return blockedResult({ input, message: 'Kraver Nordmounts Cross-data' });
 
   const value = calculateFlowRoof(input, variant);
-  if (variant === 'flow_south_ballasted') return blockedResult(input, 'Kräver Planner-validering för syd', value.loads, FLOW_BRANCHES[variant].status);
-  if (variant === 'flow_welded_hybrid') return blockedResult(input, 'Kräver infästnings-/tätskiktsmodell', null, FLOW_BRANCHES[variant].status);
+  if (variant === 'flow_south_ballasted') {
+    return blockedResult({
+      input,
+      message: 'Kraver Planner-validering for syd',
+      loads: value.loads,
+      branchStatus: FLOW_BRANCHES[variant].status,
+    });
+  }
+  if (variant === 'flow_welded_hybrid') {
+    return blockedResult({
+      input,
+      message: 'Kraver infastnings-/tatskiktsmodell',
+      branchStatus: FLOW_BRANCHES[variant].status,
+    });
+  }
 
   return {
     engineId: 'nordmount',
