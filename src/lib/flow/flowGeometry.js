@@ -12,5 +12,6 @@ export function calculateFlowGeometry(input = {}, systemVariant = '') {
   }
   const panelWidthMm = positive(input.panelProduct?.width_mm, 1134);
   const widthMode = panelWidthMode(panelWidthMm);
-  return { geometry: { widthMode }, errors: widthMode.ok ? [] : [widthMode.reason], warnings: [] };
+  const rows = (input.roof?.panelGroups || []).reduce((sum, group) => sum + Math.max(0, Math.round(num(group.rows))), 0);
+  return { geometry: { widthMode, rows }, errors: widthMode.ok ? [] : [widthMode.reason], warnings: [] };
 }
