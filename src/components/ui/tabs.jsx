@@ -27,15 +27,31 @@ const TabsTrigger = React.forwardRef(({ className, ...props }, ref) => (
 ))
 TabsTrigger.displayName = TabsPrimitive.Trigger.displayName
 
-const TabsContent = React.forwardRef(({ className, ...props }, ref) => (
-  <TabsPrimitive.Content
-    ref={ref}
-    className={cn(
-      "mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-      className
-    )}
-    {...props} />
-))
+const TabsContent = React.forwardRef(({
+  className,
+  forceMount,
+  keepMounted = false,
+  value,
+  ...props
+}, ref) => {
+  // The panel workspace contains map/canvas state that must survive navigation
+  // to Slingor, Batteri and the other project tabs.
+  const shouldKeepMounted = keepMounted || value === "panels"
+
+  return (
+    <TabsPrimitive.Content
+      ref={ref}
+      value={value}
+      forceMount={forceMount ?? (shouldKeepMounted ? true : undefined)}
+      className={cn(
+        "mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        shouldKeepMounted && "data-[state=inactive]:hidden",
+        className
+      )}
+      {...props}
+    />
+  )
+})
 TabsContent.displayName = TabsPrimitive.Content.displayName
 
 export { Tabs, TabsList, TabsTrigger, TabsContent }
