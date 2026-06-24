@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { AlertTriangle, CheckCircle2, CloudRain, Cpu, Info, Loader2, PanelTop, RefreshCw, Sun, ThermometerSun, Zap } from 'lucide-react';
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 
 const WEATHER_FACTORS = {
   Soligt: { factor: 1, icon: Sun, description: 'Klar himmel och hög instrålning.' },
@@ -129,10 +130,6 @@ function Field({ label, children }) {
 
 function Input(props) {
   return <input {...props} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none ring-emerald-500/20 focus:ring-4" />;
-}
-
-function Select({ children, ...props }) {
-  return <select {...props} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none ring-emerald-500/20 focus:ring-4">{children}</select>;
 }
 
 function Metric({ label, value, unit, sub }) {
@@ -372,21 +369,36 @@ export default function AdvancedStringCalculator() {
         <div className="space-y-4 rounded-3xl bg-slate-50 p-4">
           <div className="grid gap-3 md:grid-cols-2">
             <Field label="Solpanel från produkter">
-              <Select value={panelId} onChange={(event) => setPanelId(event.target.value)} disabled={panelProducts.length === 0}>
-                {panelProducts.length === 0 ? <option value="">Ingen solpanel hittad</option> : panelProducts.map((item) => <option key={item.id} value={item.id}>{productLabel(item)}</option>)}
+              <Select value={panelId} onValueChange={setPanelId} disabled={panelProducts.length === 0}>
+                <SelectTrigger className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm ring-emerald-500/20 focus:ring-4">
+                  <SelectValue placeholder="Ingen solpanel hittad" />
+                </SelectTrigger>
+                <SelectContent>
+                  {panelProducts.map((item) => <SelectItem key={item.id} value={item.id}>{productLabel(item)}</SelectItem>)}
+                </SelectContent>
               </Select>
             </Field>
             <Field label="Växelriktare från produkter">
-              <Select value={inverterId} onChange={(event) => { setInverterId(event.target.value); setMpptNumber(1); }} disabled={inverterProducts.length === 0}>
-                {inverterProducts.length === 0 ? <option value="">Ingen växelriktare hittad</option> : inverterProducts.map((item) => <option key={item.id} value={item.id}>{productLabel(item)}</option>)}
+              <Select value={inverterId} onValueChange={(value) => { setInverterId(value); setMpptNumber(1); }} disabled={inverterProducts.length === 0}>
+                <SelectTrigger className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm ring-emerald-500/20 focus:ring-4">
+                  <SelectValue placeholder="Ingen växelriktare hittad" />
+                </SelectTrigger>
+                <SelectContent>
+                  {inverterProducts.map((item) => <SelectItem key={item.id} value={item.id}>{productLabel(item)}</SelectItem>)}
+                </SelectContent>
               </Select>
             </Field>
           </div>
 
           <div className="grid gap-3 md:grid-cols-4">
             <Field label="MPPT-ingång">
-              <Select value={selectedMppt} onChange={(event) => setMpptNumber(Number(event.target.value))} disabled={!inverter}>
-                {Array.from({ length: inverter?.mppt_count || 1 }, (_, index) => <option key={index + 1} value={index + 1}>MPPT {index + 1}</option>)}
+              <Select value={String(selectedMppt)} onValueChange={(value) => setMpptNumber(Number(value))} disabled={!inverter}>
+                <SelectTrigger className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm ring-emerald-500/20 focus:ring-4">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: inverter?.mppt_count || 1 }, (_, index) => <SelectItem key={index + 1} value={String(index + 1)}>MPPT {index + 1}</SelectItem>)}
+                </SelectContent>
               </Select>
             </Field>
             <Field label="Paneler i serie">
@@ -402,13 +414,23 @@ export default function AdvancedStringCalculator() {
 
           <div className="grid gap-3 md:grid-cols-4">
             <Field label="Tid på dygnet">
-              <Select value={timeOfDay} onChange={(event) => setTimeOfDay(event.target.value)}>
-                {Object.keys(TIME_FACTORS).map((item) => <option key={item} value={item}>{item}</option>)}
+              <Select value={timeOfDay} onValueChange={setTimeOfDay}>
+                <SelectTrigger className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm ring-emerald-500/20 focus:ring-4">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.keys(TIME_FACTORS).map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                </SelectContent>
               </Select>
             </Field>
             <Field label="Väderläge">
-              <Select value={weather} onChange={(event) => setWeather(event.target.value)}>
-                {Object.keys(WEATHER_FACTORS).map((item) => <option key={item} value={item}>{item}</option>)}
+              <Select value={weather} onValueChange={setWeather}>
+                <SelectTrigger className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm ring-emerald-500/20 focus:ring-4">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.keys(WEATHER_FACTORS).map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                </SelectContent>
               </Select>
             </Field>
             <Field label="Taklutning °">

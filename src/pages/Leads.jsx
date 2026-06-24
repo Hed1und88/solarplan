@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
+import PullToRefresh from '@/components/PullToRefresh';
 import {
   Building2,
   CalendarClock,
@@ -173,30 +175,44 @@ function LeadCard({ prospect, currentUser, onEdit, onStatus }) {
 }
 
 export default function Leads() {
-  const [prospects, setProspects] = useState([]);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [sourceFilter, setSourceFilter] = useState('all');
   const [modal, setModal] = useState(null);
+  const [mutationError, setMutationError] = useState('');
 
-  const load = async () => {
-    setLoading(true);
-    setError('');
-    try {
+  const { data, isLoading: loading, error: queryError, refetch } = useQuery({
+    queryKey: ['sales-leads'],
+    queryFn: async () => {
       const user = await currentUserSafe(base44);
       const rows = await base44.entities.SalesLead.list('-created_date');
-      setCurrentUser(user);
-      setProspects(filterWorkspaceRecords(rows, user || {}));
-    } catch (loadError) {
-      setError(loadError?.message || 'Leads kunde inte laddas.');
-    } finally {
-      setLoading(false);
-    }
-  };
+      return { user, prospects: filterWorkspaceRecords(rows, user || {}) };
+    },
+  });
 
-  useEffect(() => { load(); }, []);
+  const currentUser = data?.user || null;
+  const prospects = data?.prospects || [];
+  const error = queryError?.message || mutationError;
+
+  const statusMutation = useMutation({
+    mutationFn: ({ id, status }) => base44.entities.SalesLead.update(id, { status }),
+    onMutate: async ({ id, status }) => {
+      await queryClient.cancelQueries({ queryKey: ['sales-leads'] });
+      const previous = queryClient.getQueryData(['sales-leads']);
+      queryClient.setQueryData(['sales-leads'], (old) => {
+        if (!old) return old;
+        return { ...old, prospects: old.prospects.map(item => item.id === id ? { ...item, status } : item) };
+      });
+      return { previous };
+    },
+    onError: (err, variables, context) => {
+      queryClient.setQueryData(['sales-leads'], context.previous);
+      setMutationError(err?.message || 'Statusen kunde inte ändras.');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['sales-leads'] });
+    },
+  });
 
   const visible = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -215,25 +231,18 @@ export default function Leads() {
   const wonValue = prospects.filter(prospect => prospect.status === 'won').reduce((sum, prospect) => sum + Number(prospect.estimated_value || 0), 0);
   const followUps = prospects.filter(prospect => prospect.next_follow_up && !['won', 'lost'].includes(prospect.status)).length;
 
-  const saved = (record, deletedId) => {
-    if (deletedId) setProspects(current => current.filter(item => item.id !== deletedId));
-    else if (record?.id) setProspects(current => current.some(item => item.id === record.id) ? current.map(item => item.id === record.id ? record : item) : [...current, record]);
+  const saved = () => {
+    queryClient.invalidateQueries({ queryKey: ['sales-leads'] });
     setModal(null);
-    load();
   };
 
-  const changeStatus = async (prospect, status) => {
-    const previous = prospect.status;
-    setProspects(current => current.map(item => item.id === prospect.id ? { ...item, status } : item));
-    try {
-      await base44.entities.SalesLead.update(prospect.id, { status });
-    } catch (statusError) {
-      setProspects(current => current.map(item => item.id === prospect.id ? { ...item, status: previous } : item));
-      setError(statusError?.message || 'Statusen kunde inte ändras.');
-    }
+  const changeStatus = (prospect, status) => {
+    statusMutation.mutate({ id: prospect.id, status });
   };
 
-  return <div className="mx-auto max-w-[1700px] p-4 sm:p-6">
+  return (
+    <PullToRefresh onRefresh={refetch}>
+    <div className="mx-auto max-w-[1700px] p-4 sm:p-6">
     <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
       <div><h1 className="text-2xl font-bold">Leads</h1><p className="mt-1 text-sm text-muted-foreground">Samla potentiella kunder och följ affären från första kontakt till vunnen kund.</p></div>
       <button onClick={() => setModal({ prospect: null })} className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white shadow-md shadow-primary/20"><Plus className="h-4 w-4" />Nytt lead</button>
@@ -267,5 +276,7 @@ export default function Leads() {
       </div></div>}
 
     {modal && <LeadModal prospect={modal.prospect} currentUser={currentUser} onClose={() => setModal(null)} onSaved={saved} />}
-  </div>;
+    </div>
+    </PullToRefresh>
+  );
 }

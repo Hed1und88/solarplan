@@ -52,7 +52,7 @@ export default function Layout() {
         <div className="px-6 py-4 border-t border-sidebar-border"><p className="truncate text-sidebar-foreground/40 text-xs">{companyLogo ? companyName : 'v1.0 · SolarPlan Pro'}</p></div>
       </aside>
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden lg:ml-64">
-        <header className="lg:hidden flex items-center justify-between bg-card border-b border-border" style={{ paddingTop: 'env(safe-area-inset-top)', paddingLeft: 'max(16px, env(safe-area-inset-left))', paddingRight: 'max(16px, env(safe-area-inset-right))', paddingBottom: '10px', minHeight: 56 }}>
+        <header className="lg:hidden flex items-center justify-between bg-card/80 backdrop-blur-md border-b border-border" style={{ paddingTop: 'env(safe-area-inset-top)', paddingLeft: 'max(16px, env(safe-area-inset-left))', paddingRight: 'max(16px, env(safe-area-inset-right))', paddingBottom: '10px', minHeight: 56 }}>
           {!onRoot ? <button onClick={() => navigate(-1)} className="flex items-center gap-1 text-primary font-medium text-sm p-1.5 rounded-lg active:bg-muted"><ChevronLeft className="w-5 h-5" /> Tillbaka</button> : <div className="w-20" />}
           <div className="flex min-w-0 items-center gap-2">
             <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg bg-white p-0.5"><img src={logoSrc} alt={`${companyName} logotyp`} className="h-full w-full object-contain" /></div>
@@ -68,7 +68,7 @@ export default function Layout() {
             <motion.div key={location.pathname} initial={{ x: 24, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -24, opacity: 0 }} transition={{ duration: 0.18, ease: 'easeInOut' }} className="h-full"><Outlet /></motion.div>
           </AnimatePresence>
         </main>
-        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border overflow-x-auto" style={{ paddingBottom: 'env(safe-area-inset-bottom)', paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}>
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-card/80 backdrop-blur-md border-t border-border overflow-x-auto" style={{ paddingBottom: 'env(safe-area-inset-bottom)', paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}>
           <div className="flex min-w-max">
             {navItems.map(({ path, icon: Icon, label }) => {
               const active = location.pathname === path || (path !== '/' && path !== '/settings' && location.pathname.startsWith(path));

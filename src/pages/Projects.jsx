@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
+import PullToRefresh from '@/components/PullToRefresh';
 import { base44 } from '@/api/base44Client';
 import { ArrowRight, MapPin, Pencil, Plus, Shield, Sun, User } from 'lucide-react';
 import NewProjectModal from '@/components/projects/NewProjectModal';
@@ -23,23 +25,21 @@ async function currentUserSafe() {
 }
 
 export default function Projects() {
-  const [projects, setProjects] = useState([]);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingProject, setEditingProject] = useState(null);
+
+  const { data, isLoading: loading, refetch } = useQuery({
+    queryKey: ['projects'],
+    queryFn: async () => {
+      const user = await currentUserSafe();
+      const rows = await base44.entities.Project.list('-created_date');
+      return { user, projects: filterProjectsForUser(rows || [], user || {}) };
+    },
+  });
+
+  const currentUser = data?.user || null;
+  const projects = data?.projects || [];
   const access = resolveAccessContext(currentUser || {});
-
-  const load = async () => {
-    setLoading(true);
-    const user = await currentUserSafe();
-    const data = await base44.entities.Project.list('-created_date');
-    setCurrentUser(user || null);
-    setProjects(filterProjectsForUser(data || [], user || {}));
-    setLoading(false);
-  };
-
-  useEffect(() => { load(); }, []);
 
   const canCreateProject = access.isSuperadmin || access.isCompanyAdmin || access.isEmployee;
   const closeModal = () => {
@@ -48,10 +48,11 @@ export default function Projects() {
   };
   const handleSaved = () => {
     closeModal();
-    load();
+    refetch();
   };
 
   return (
+    <PullToRefresh onRefresh={refetch}>
     <div className="p-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -136,5 +137,6 @@ export default function Projects() {
         />
       )}
     </div>
+    </PullToRefresh>
   );
 }

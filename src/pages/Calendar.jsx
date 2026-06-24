@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
+import PullToRefresh from '@/components/PullToRefresh';
 import {
   addHours,
   addMonths,
@@ -65,7 +67,7 @@ function emptyForm(day = new Date()) {
   };
 }
 
-function EventModal({ event, selectedDay, projects, prospects, currentUser, onClose, onSaved }) {
+function EventModal({ event, selectedDay, projects, prospects, currentUser, onClose, onSave, onRemove }) {
   const [form, setForm] = useState(() => event ? {
     title: event.title || '',
     event_type: event.event_type || 'sales_meeting',
@@ -99,10 +101,8 @@ function EventModal({ event, selectedDay, projects, prospects, currentUser, onCl
       description: form.description.trim(),
     }, currentUser || {});
     try {
-      const saved = event?.id
-        ? await base44.entities.CalendarEvent.update(event.id, payload)
-        : await base44.entities.CalendarEvent.create(payload);
-      onSaved(saved || { ...event, ...payload });
+      await onSave(event, payload);
+      onClose();
     } catch (saveError) {
       setError(saveError?.message || 'Kalenderhändelsen kunde inte sparas.');
     } finally {
@@ -114,8 +114,8 @@ function EventModal({ event, selectedDay, projects, prospects, currentUser, onCl
     if (!event?.id || !confirm('Ta bort kalenderhändelsen?')) return;
     setSaving(true);
     try {
-      await base44.entities.CalendarEvent.delete(event.id);
-      onSaved(null, event.id);
+      await onRemove(event.id);
+      onClose();
     } catch (deleteError) {
       setError(deleteError?.message || 'Kalenderhändelsen kunde inte tas bort.');
       setSaving(false);
@@ -157,38 +157,90 @@ function EventModal({ event, selectedDay, projects, prospects, currentUser, onCl
 }
 
 export default function Calendar() {
+  const queryClient = useQueryClient();
   const [month, setMonth] = useState(startOfMonth(new Date()));
-  const [events, setEvents] = useState([]);
-  const [projects, setProjects] = useState([]);
-  const [prospects, setProspects] = useState([]);
-  const [currentUser, setCurrentUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [modal, setModal] = useState(null);
   const [selectedType, setSelectedType] = useState('all');
 
-  const load = async () => {
-    setLoading(true);
-    setError('');
-    try {
+  const { data, isLoading: loading, error: queryError, refetch } = useQuery({
+    queryKey: ['calendar-data'],
+    queryFn: async () => {
       const user = await currentUserSafe(base44);
       const [eventRows, projectRows, prospectRows] = await Promise.all([
         base44.entities.CalendarEvent.list('-start_time'),
         base44.entities.Project.list('-created_date'),
         base44.entities.SalesLead.list('-created_date'),
       ]);
-      setCurrentUser(user);
-      setEvents(filterWorkspaceRecords(eventRows, user || {}));
-      setProjects(filterWorkspaceRecords(projectRows, user || {}));
-      setProspects(filterWorkspaceRecords(prospectRows, user || {}));
-    } catch (loadError) {
-      setError(loadError?.message || 'Kalendern kunde inte laddas.');
-    } finally {
-      setLoading(false);
-    }
+      return {
+        user,
+        events: filterWorkspaceRecords(eventRows, user || {}),
+        projects: filterWorkspaceRecords(projectRows, user || {}),
+        prospects: filterWorkspaceRecords(prospectRows, user || {}),
+      };
+    },
+  });
+
+  const currentUser = data?.user || null;
+  const events = data?.events || [];
+  const projects = data?.projects || [];
+  const prospects = data?.prospects || [];
+  const error = queryError?.message || '';
+
+  const saveMutation = useMutation({
+    mutationFn: ({ event, payload }) => event?.id
+      ? base44.entities.CalendarEvent.update(event.id, payload)
+      : base44.entities.CalendarEvent.create(payload),
+    onMutate: async ({ event, payload }) => {
+      await queryClient.cancelQueries({ queryKey: ['calendar-data'] });
+      const previous = queryClient.getQueryData(['calendar-data']);
+      queryClient.setQueryData(['calendar-data'], (old) => {
+        if (!old) return old;
+        const id = event?.id || `temp-${Date.now()}`;
+        const updated = { ...payload, id };
+        const exists = old.events.some(item => item.id === id);
+        return {
+          ...old,
+          events: exists
+            ? old.events.map(item => item.id === id ? { ...item, ...updated } : item)
+            : [...old.events, updated],
+        };
+      });
+      return { previous };
+    },
+    onError: (err, variables, context) => {
+      queryClient.setQueryData(['calendar-data'], context.previous);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['calendar-data'] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (eventId) => base44.entities.CalendarEvent.delete(eventId),
+    onMutate: async (eventId) => {
+      await queryClient.cancelQueries({ queryKey: ['calendar-data'] });
+      const previous = queryClient.getQueryData(['calendar-data']);
+      queryClient.setQueryData(['calendar-data'], (old) => {
+        if (!old) return old;
+        return { ...old, events: old.events.filter(item => item.id !== eventId) };
+      });
+      return { previous };
+    },
+    onError: (err, variables, context) => {
+      queryClient.setQueryData(['calendar-data'], context.previous);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['calendar-data'] });
+    },
+  });
+
+  const handleSave = async (event, payload) => {
+    await saveMutation.mutateAsync({ event, payload });
   };
 
-  useEffect(() => { load(); }, []);
+  const handleRemove = async (eventId) => {
+    await deleteMutation.mutateAsync(eventId);
+  };
 
   const gridDays = useMemo(() => eachDayOfInterval({
     start: startOfWeek(startOfMonth(month), { weekStartsOn: 1 }),
@@ -201,14 +253,9 @@ export default function Calendar() {
     .sort((first, second) => (safeDate(first.start_time)?.getTime() || 0) - (safeDate(second.start_time)?.getTime() || 0))
     .slice(0, 8);
 
-  const eventSaved = (saved, deletedId) => {
-    if (deletedId) setEvents(current => current.filter(event => event.id !== deletedId));
-    else if (saved?.id) setEvents(current => current.some(event => event.id === saved.id) ? current.map(event => event.id === saved.id ? saved : event) : [...current, saved]);
-    setModal(null);
-    load();
-  };
-
-  return <div className="mx-auto max-w-[1500px] p-4 sm:p-6">
+  return (
+    <PullToRefresh onRefresh={refetch}>
+    <div className="mx-auto max-w-[1500px] p-4 sm:p-6">
     <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
       <div><h1 className="text-2xl font-bold">Kalender</h1><p className="mt-1 text-sm text-muted-foreground">Boka och hantera säljmöten, projektering, service och installation.</p></div>
       <button onClick={() => setModal({ day: new Date(), event: null })} className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white shadow-md shadow-primary/20"><Plus className="h-4 w-4" />Ny bokning</button>
@@ -265,6 +312,8 @@ export default function Calendar() {
       </aside>
     </div>
 
-    {modal && <EventModal event={modal.event} selectedDay={modal.day} projects={projects} prospects={prospects} currentUser={currentUser} onClose={() => setModal(null)} onSaved={eventSaved} />}
-  </div>;
+    {modal && <EventModal event={modal.event} selectedDay={modal.day} projects={projects} prospects={prospects} currentUser={currentUser} onClose={() => setModal(null)} onSave={handleSave} onRemove={handleRemove} />}
+    </div>
+    </PullToRefresh>
+  );
 }

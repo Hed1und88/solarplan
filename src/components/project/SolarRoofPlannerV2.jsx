@@ -23,6 +23,7 @@ import {
   ZoomOut,
 } from 'lucide-react';
 import ProductSearchSelect from '@/components/products/ProductSearchSelect';
+import { Select as UISelect, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { createProductSnapshot, resolveProductClampZone } from '@/lib/productDocuments';
 
 const DEFAULT_PANEL = { id: 'standard', name: 'Standardpanel 500 W', model: 'Standardpanel 500 W', width_mm: 1134, height_mm: 1953, power_watts: 500 };
@@ -192,16 +193,19 @@ function Input({ label, value, onChange, type = 'text', step, min }) {
 
 function Select({ label, value, onChange, children }) {
   return (
-    <label className="block text-[11px] font-medium text-slate-500">
+    <div className="block text-[11px] font-medium text-slate-500">
       <span>{label}</span>
-      <select
-        value={value ?? ''}
-        onChange={event => onChange(event.target.value)}
-        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-      >
-        {children}
-      </select>
-    </label>
+      <div className="mt-1">
+        <UISelect value={value ?? ''} onValueChange={onChange}>
+          <SelectTrigger className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-orange-400 focus:ring-2 focus:ring-orange-100">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {children}
+          </SelectContent>
+        </UISelect>
+      </div>
+    </div>
   );
 }
 
@@ -729,7 +733,7 @@ export default function SolarRoofPlannerV2({ project, onUpdate }) {
                         <Input label="Takfall B (m)" type="number" step="0.1" min="0" value={selectedRoof.roofFallM} onChange={value => setRoof(selectedRoof.id, { roofFallM: value })} />
                       </div>
                       <Select label="Takform" value={selectedRoof.shape} onChange={value => setRoof(selectedRoof.id, { shape: value })}>
-                        {SHAPES.map(shape => <option key={shape}>{shape}</option>)}
+                        {SHAPES.map(shape => <SelectItem key={shape} value={shape}>{shape}</SelectItem>)}
                       </Select>
                     </div>
                   </InspectorSection>
@@ -837,8 +841,8 @@ export default function SolarRoofPlannerV2({ project, onUpdate }) {
                               <Input label="Y från överkant" type="number" step="0.1" min="0" value={selectedGroup.yM} onChange={value => setGroup(selectedRoof.id, selectedGroup.id, { yM: value })} />
                             </div>
                             <Select label="Montering" value={selectedGroup.orientation} onChange={value => setGroup(selectedRoof.id, selectedGroup.id, { orientation: value, panelOverrides: {} })}>
-                              <option>Stående</option>
-                              <option>Liggande</option>
+                              <SelectItem value="Stående">Stående</SelectItem>
+                              <SelectItem value="Liggande">Liggande</SelectItem>
                             </Select>
                             <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
                               <input type="checkbox" checked={Boolean(selectedGroup.threeRails)} onChange={event => setGroup(selectedRoof.id, selectedGroup.id, { threeRails: event.target.checked })} />
