@@ -6,4 +6,5 @@ export const FLOW = {
   parallelMaxRailOverhangMm: 350,
   parallelEndCapOverhangMinMm: 35,
   parallelEndCapOverhangMaxMm: 63,
+  snowGByRoofAngle: { 5: 1.24 },
 };
