@@ -17,6 +17,7 @@ const SECTION_ORDER = [
 
 let activeTitle = 'Kartbild';
 let expanded = true;
+let decorating = false;
 
 const icon = title => {
   const svg = body => `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${body}</svg>`;
@@ -33,15 +34,15 @@ const icon = title => {
   return svg('<circle cx="12" cy="12" r="8"/>');
 };
 
+function iconMarkup(body) {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${body}</svg>`;
+}
+
 const collapseIcon = isExpanded => iconMarkup(
   isExpanded
     ? '<path d="m14 6-6 6 6 6"/>'
     : '<path d="m10 6 6 6-6 6"/>',
 );
-
-function iconMarkup(body) {
-  return `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${body}</svg>`;
-}
 
 function sectionTitle(section) {
   const headerText = (section.firstElementChild?.textContent || section.textContent || '')
@@ -50,24 +51,17 @@ function sectionTitle(section) {
   return SECTION_ORDER.find(title => headerText.startsWith(title) || headerText.includes(title)) || '';
 }
 
-function clearOldDecoration(root) {
+function removeLegacyDecoration(root) {
   root.querySelectorAll('.compact-section-icon, .roof-material-icon, .compact-roof-row-icon').forEach(node => node.remove());
-  root.querySelectorAll('[data-inspector-title], [data-roof-material], [data-compact-roof-row], [data-compact-help-text]').forEach(node => {
-    delete node.dataset.inspectorTitle;
-    delete node.dataset.roofMaterial;
-    delete node.dataset.compactRoofRow;
-    delete node.dataset.compactHelpText;
-  });
   root.classList.remove('solar-compact-inspector');
   root.closest('aside')?.classList.remove('solar-compact-inspector-aside');
 }
 
 function collectSections(list, mapHost) {
-  const sections = [
+  return [
     ...Array.from(list.querySelectorAll(':scope > section')),
     ...Array.from(mapHost.querySelectorAll(':scope > section')),
-  ];
-  return sections
+  ]
     .map(section => ({ section, title: sectionTitle(section) }))
     .filter(item => item.title);
 }
@@ -88,9 +82,9 @@ function showActiveSection(list, mapHost, sections) {
   if (!available.has(activeTitle)) activeTitle = available.has('Kartbild') ? 'Kartbild' : sections[0]?.title || '';
 
   sections.forEach(({ section, title }) => {
-    const active = title === activeTitle;
     section.dataset.inspectorSection = title;
-    section.style.display = active ? '' : 'none';
+    section.dataset.inspectorManaged = title;
+    section.style.display = title === activeTitle ? '' : 'none';
   });
 
   const mapSectionActive = sections.some(item => item.title === activeTitle && mapHost.contains(item.section));
@@ -145,21 +139,40 @@ function rebuildRail(aside, list, mapHost, sections) {
 }
 
 function decorateInspector() {
-  const mapHost = document.querySelector('[data-map-host="settings"]');
-  const list = mapHost?.parentElement;
-  const aside = list?.closest('aside');
-  if (!mapHost || !list || !aside) return;
+  if (decorating) return;
+  decorating = true;
 
-  clearOldDecoration(list);
-  aside.querySelectorAll('[data-inspector-original-header]').forEach(node => delete node.dataset.inspectorOriginalHeader);
+  try {
+    const mapHost = document.querySelector('[data-map-host="settings"]');
+    const list = mapHost?.parentElement;
+    const aside = list?.closest('aside');
+    if (!mapHost || !list || !aside) return;
 
-  const originalHeader = Array.from(aside.children).find(child => child !== list && !child.hasAttribute('data-right-inspector-rail'));
-  if (originalHeader) originalHeader.dataset.inspectorOriginalHeader = 'true';
+    removeLegacyDecoration(list);
 
-  aside.classList.add('solar-icon-inspector-aside');
-  list.classList.add('solar-icon-inspector-content');
-  const sections = collectSections(list, mapHost);
-  rebuildRail(aside, list, mapHost, sections);
+    const originalHeader = Array.from(aside.children).find(child => child !== list && !child.hasAttribute('data-right-inspector-rail'));
+    if (originalHeader) originalHeader.dataset.inspectorOriginalHeader = 'true';
+
+    aside.classList.add('solar-icon-inspector-aside');
+    list.classList.add('solar-icon-inspector-content');
+
+    const sections = collectSections(list, mapHost);
+    const signature = `${expanded}|${activeTitle}|${sections.map(item => item.title).join('|')}`;
+    const railExists = Boolean(aside.querySelector('[data-right-inspector-rail]'));
+    const allManaged = sections.every(({ section, title }) => section.dataset.inspectorManaged === title);
+
+    if (aside.dataset.inspectorSignature === signature && railExists && allManaged) {
+      aside.dataset.inspectorExpanded = expanded ? 'true' : 'false';
+      list.style.display = expanded ? '' : 'none';
+      showActiveSection(list, mapHost, sections);
+      return;
+    }
+
+    rebuildRail(aside, list, mapHost, sections);
+    aside.dataset.inspectorSignature = `${expanded}|${activeTitle}|${sections.map(item => item.title).join('|')}`;
+  } finally {
+    decorating = false;
+  }
 }
 
 export default function CompactProjectInspector() {
