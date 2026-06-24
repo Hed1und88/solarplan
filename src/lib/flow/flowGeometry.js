@@ -14,5 +14,5 @@ export function calculateFlowGeometry(input = {}, systemVariant = '') {
   const widthMode = panelWidthMode(panelWidthMm);
   const rows = (input.roof?.panelGroups || []).reduce((sum, group) => sum + Math.max(0, Math.round(num(group.rows))), 0);
   const fieldHeightMm = eastWestFieldHeightMm({ rows, panelLengthMm: panelWidthMm });
-  return { geometry: { widthMode, rows, fieldHeightMm }, errors: widthMode.ok ? [] : [widthMode.reason], warnings: [] };
+  return { geometry: { widthMode, rows, fieldHeightMm, gaps: eastWestGaps() }, errors: widthMode.ok ? [] : [widthMode.reason], warnings: [] };
 }
