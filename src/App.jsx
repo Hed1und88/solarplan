@@ -15,7 +15,7 @@ import SalesPipeline from '@/pages/Leads';
 import Products from '@/pages/Products';
 import Settings from '@/pages/SettingsRestoreWrapper.jsx';
 import SolarShadowAnalysis from '@/pages/SolarShadowAnalysis';
-import MapWorkbenchBehaviorFix from '@/components/project/MapWorkbenchBehaviorFix.jsx';
+import PanelMapViewportController from '@/components/project/PanelMapViewportController.jsx';
 import '@/styles/solarWorkbenchLight.css';
 
 const AuthenticatedApp = () => {
@@ -48,7 +48,7 @@ function App() {
     <AuthProvider>
       <QueryClientProvider client={queryClientInstance}>
         <Router>
-          <MapWorkbenchBehaviorFix />
+          <PanelMapViewportController />
           <AuthenticatedApp />
         </Router>
         <Toaster />
