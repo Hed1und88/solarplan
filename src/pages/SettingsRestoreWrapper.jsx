@@ -89,7 +89,7 @@ function RestoreSettingsSection() {
       </div>
 
       {selectedProject ? (
-        <EmergencyRestorePanel project={selectedProject} onRestore={restoreProject} forceVisible />
+        <EmergencyRestorePanel key={selectedProject.id} project={selectedProject} onRestore={restoreProject} forceVisible />
       ) : (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-8 text-center text-sm text-muted-foreground">
           {isLoading ? 'Laddar projekt...' : 'Det finns inget projekt att återställa.'}
