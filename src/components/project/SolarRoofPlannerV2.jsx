@@ -791,6 +791,20 @@ export default function SolarRoofPlannerV2({ project, onUpdate }) {
                         }}
                         placeholder="Sök montagesystem"
                       />
+                      <label className="block text-[11px] font-medium text-slate-500">
+                        <span>System</span>
+                        <select
+                          value={selectedRoof.mountingSystemVariant || 'parallel'}
+                          onChange={event => setRoof(selectedRoof.id, { mountingSystemVariant: event.target.value })}
+                          className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-orange-400"
+                        >
+                          <option value="parallel">Parallel (krok)</option>
+                          <option value="flow_parallel_ballasted">Flow – parallellt ballasterat</option>
+                          <option value="flow_east_west_ballasted">Flow – öst/väst</option>
+                          <option value="flow_south_ballasted">Flow – syd</option>
+                          <option value="flow_welded_hybrid">Flow – svetsad/hybrid</option>
+                        </select>
+                      </label>
                       {selectedMountingProduct ? (
                         <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
                           <div className="font-semibold">{[selectedMountingProduct.brand, selectedMountingProduct.model].filter(Boolean).join(' ') || selectedMountingProduct.name}</div>
