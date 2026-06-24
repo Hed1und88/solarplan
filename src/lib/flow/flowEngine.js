@@ -4,6 +4,7 @@ import { calculateFlowGeometry } from './flowGeometry.js';
 import { calculateFlowBallast } from './flowBallast.js';
 const num=(v,f=0)=>Number.isFinite(Number(v))?Number(v):f;
 const positive=(v,f=0)=>num(v,f)>0?num(v,f):f;
+function countPanels(roof){let total=0;(roof?.panelGroups||[]).forEach(g=>{total+=Math.max(0,Math.round(num(g.rows)))*Math.max(0,Math.round(num(g.cols)));});return total;}
 export function calculateFlowRoof(input={},systemVariant=''){
  const branch=FLOW_BRANCHES[systemVariant];
  const ridgeHeightM=positive(input.config?.ridgeHeightM,positive(input.roof?.ridgeHeightM));
