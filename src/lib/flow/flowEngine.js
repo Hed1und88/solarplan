@@ -28,3 +28,10 @@ function buildPositions(input,perZonePa){
   }
  });return positions;
 }
+export function calculateFlowRoof(input={},systemVariant=''){
+ const branch=FLOW_BRANCHES[systemVariant],ridgeHeightM=positive(input.config?.ridgeHeightM,positive(input.roof?.ridgeHeightM)),terrainCategory=input.config?.terrainCategory||input.roof?.terrainCategory||'II';
+ const snowRaw=flowSnowPa({groundSnowKnM2:input.project?.snow_load_kn_m2,roofAngleDeg:num(input.roof?.angleDeg)}),orientation=systemVariant==='flow_east_west_ballasted'?'eastwest':'parallel';
+ const windRaw=flowPanelWind({orientation,referenceWindMs:input.project?.wind_load_ms,ridgeHeightM,terrainCategory});
+ const snow={...snowRaw,designPa:snowRaw.snowPa},wind={...windRaw,edgePa:windRaw.perZonePa.roofEdge_panelEdge,middlePa:windRaw.perZonePa.roofMid_panelMid};
+ return{branch,loads:{snow,wind},orientation};
+}
