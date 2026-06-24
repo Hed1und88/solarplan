@@ -6,6 +6,7 @@ const num=(v,f=0)=>Number.isFinite(Number(v))?Number(v):f;
 const positive=(v,f=0)=>num(v,f)>0?num(v,f):f;
 const round=(v,d=2)=>Math.round(num(v)*10**d)/10**d;
 function countPanels(roof){let total=0;(roof?.panelGroups||[]).forEach(g=>{total+=Math.max(0,Math.round(num(g.rows)))*Math.max(0,Math.round(num(g.cols)));});return total;}
+function material(type,quantity){const p=FLOW_PRODUCTS[type];return{type,productId:`nordmount:${p.article}`,articleNumber:p.article,name:p.name,quantity,unit:'st',unitWeightKg:p.kg,totalWeightKg:round(quantity*p.kg)};}
 function buildPositions(input,windPa){
  const count=countPanels(input.roof),area=positive(input.panelProduct?.width_mm,1134)*positive(input.panelProduct?.height_mm,2278)/1000000,own=positive(input.panelProduct?.weight_kg,25);
  const edge=Math.min(count,Math.max(0,Math.round(Math.sqrt(count)*4-4)));
