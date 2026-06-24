@@ -247,6 +247,12 @@ export default function ProjectDetailMapWrapper() {
       <style>{`
         [data-map-host="canvas"]:empty { pointer-events: none; }
         [data-map-host="canvas"]:not(:empty) { pointer-events: auto; }
+        [data-map-panel-overlay="true"] text { display: none !important; }
+        [data-map-host="canvas"] svg polygon[stroke="#f97316"],
+        [data-map-host="canvas"] svg polyline[stroke="#f97316"] {
+          stroke-width: 1.5px !important;
+          vector-effect: non-scaling-stroke;
+        }
       `}</style>
       <ProjectDetail />
       {project && <MapIntegration project={project} onUpdate={saveMapData} />}
