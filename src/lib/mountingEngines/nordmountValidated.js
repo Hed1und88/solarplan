@@ -18,6 +18,7 @@ const TERRAIN = {
   IV: { z0: 1, zmin: 10 },
 };
 const normalize = value => String(value || '').trim().toLowerCase();
+const round = (value, decimals = 2) => Math.round((Number(value) || 0) * 10 ** decimals) / 10 ** decimals;
 
 export const UNIT_WEIGHTS_KG = {
   clamp: 0.176,
@@ -44,6 +45,18 @@ export function peakVelocityPressurePa(referenceWindMs, ridgeHeightM, terrainTyp
   };
 }
 
+function correctParallelWeights(result) {
+  const rows = result?.materials?.materials;
+  if (!Array.isArray(rows)) return result;
+  const materials = rows.map(item => {
+    if (item.type !== 'clamp' && item.articleNumber !== '3132') return item;
+    return { ...item, unitWeightKg: UNIT_WEIGHTS_KG.clamp, totalWeightKg: round((Number(item.quantity) || 0) * UNIT_WEIGHTS_KG.clamp) };
+  });
+  const mountingWeightKg = round(materials.reduce((sum, item) => sum + (Number(item.totalWeightKg) || 0), 0));
+  const panelWeightKg = Number(result.materials.panelWeightKg) || 0;
+  return { ...result, materials: { ...result.materials, materials, mountingWeightKg, systemWeightKg: round(mountingWeightKg + panelWeightKg) } };
+}
+
 function blockedResult(input, message, loads = null, branchStatus = 'blocked') {
   return {
     engineId: 'nordmount',
@@ -62,7 +75,7 @@ function blockedResult(input, message, loads = null, branchStatus = 'blocked') {
 
 export function calculateNordmountRoof(input = {}) {
   const variant = normalize(input.config?.systemVariant || input.roof?.mountingSystemVariant || 'parallel');
-  if (variant === 'parallel') return calculateParallelRoof(input);
+  if (variant === 'parallel') return correctParallelWeights(calculateParallelRoof(input));
   if (!FLOW_BRANCHES[variant]) return blockedResult(input, 'Kräver Nordmounts Cross-data');
 
   const value = calculateFlowRoof(input, variant);
