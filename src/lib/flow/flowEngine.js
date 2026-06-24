@@ -26,5 +26,6 @@ export function calculateFlowRoof(input={},systemVariant=''){
  if(systemVariant===keys[2])return{branch,loads,blockedCode:'south'};
  if(systemVariant===keys[3])return{branch,loads:null,blockedCode:'hybrid'};
  const g=calculateFlowGeometry(input,systemVariant);
- return{branch,loads,orientation,geometry:g.geometry,errors:g.errors,warnings:g.warnings};
+ const ballast=calculateFlowBallast({positions:buildPositions(input,wind.perZonePa),frictionCoefficient:FLOW.frictionCoefficient,cfStab:input.config?.cfStab,ballastStepKg:input.config?.ballastStepKg});
+ return{branch,loads,orientation,geometry:g.geometry,ballast,errors:g.errors,warnings:g.warnings};
 }
