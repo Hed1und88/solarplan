@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { AlertTriangle, RotateCcw, Search, ShieldCheck } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+import { RotateCcw, Search, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -82,10 +83,14 @@ function findBackups(project) {
   return { panel: panelCandidates[0] || null, strings: stringCandidates[0] || null };
 }
 
-export default function EmergencyRestorePanel({ project, onRestore }) {
+export default function EmergencyRestorePanel({ project, onRestore, forceVisible = false }) {
+  const location = useLocation();
   const [found, setFound] = useState(null);
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
+
+  const visibleInSettings = forceVisible || location.pathname.startsWith('/settings');
+  if (!visibleInSettings) return null;
 
   const scan = () => {
     const result = findBackups(project);
@@ -133,11 +138,11 @@ export default function EmergencyRestorePanel({ project, onRestore }) {
 
   return (
     <Card className="border-amber-200 bg-amber-50 shadow-sm">
-      <CardContent className="p-4 space-y-3">
+      <CardContent className="space-y-3 p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <div className="flex items-center gap-2 font-bold text-amber-950"><AlertTriangle className="h-4 w-4" />Akut återställning</div>
-            <div className="text-sm text-amber-900">Återställer paneler och slingor från lokal backup för detta projekt.</div>
+            <div className="flex items-center gap-2 font-bold text-amber-950"><RotateCcw className="h-4 w-4" />Återställning</div>
+            <div className="text-sm text-amber-900">Återställer paneler och slingor från lokal backup för valt projekt.</div>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={scan} disabled={busy}><Search className="mr-2 h-4 w-4" />Sök backup</Button>
