@@ -16,6 +16,7 @@ import Products from '@/pages/Products';
 import Settings from '@/pages/SettingsRestoreWrapper.jsx';
 import SolarShadowAnalysis from '@/pages/SolarShadowAnalysis';
 import PanelMapViewportController from '@/components/project/PanelMapViewportController.jsx';
+import CompactProjectInspector from '@/components/project/CompactProjectInspector.jsx';
 import '@/styles/solarWorkbenchLight.css';
 
 const AuthenticatedApp = () => {
@@ -49,6 +50,7 @@ function App() {
       <QueryClientProvider client={queryClientInstance}>
         <Router>
           <PanelMapViewportController />
+          <CompactProjectInspector />
           <AuthenticatedApp />
         </Router>
         <Toaster />
