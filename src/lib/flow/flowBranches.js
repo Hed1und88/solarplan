@@ -3,3 +3,5 @@ export const FLOW_BRANCHES = {
 };
 const k2 = ['flow',String.fromCharCode(101,97,115,116),String.fromCharCode(119,101,115,116),'ballasted'].join('_');
 FLOW_BRANCHES[k2] = { uses: ['tower','wing','link','clamp','setter'], tower: true, status: 'derived' };
+FLOW_BRANCHES.flow_south_ballasted = { uses: ['tower','wing','clamp','setter'], tower: true, status: 'needs_data' };
+FLOW_BRANCHES.flow_welded_hybrid = { uses: ['hyperPlate','flowPad','hyperRail'], tower: false, status: 'blocked' };
