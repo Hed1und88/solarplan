@@ -10,5 +10,7 @@ export function calculateFlowGeometry(input = {}, systemVariant = '') {
     const issues = checkRailOverhang({ overhangMm: num(input.config?.railOverhangMm), usesEndCap: Boolean(input.config?.usesEndCap) });
     return { geometry: { dock, sideGapMm: parallelSideGapMm(), overhangIssues: issues }, errors: [...(dock.ok ? [] : [dock.reason]), ...issues], warnings: [] };
   }
-  return { input, systemVariant };
+  const panelWidthMm = positive(input.panelProduct?.width_mm, 1134);
+  const widthMode = panelWidthMode(panelWidthMm);
+  return { geometry: { widthMode }, errors: widthMode.ok ? [] : [widthMode.reason], warnings: [] };
 }
