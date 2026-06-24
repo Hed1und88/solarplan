@@ -13,7 +13,7 @@ import ProjectDetail from '@/pages/ProjectDetailMapWrapper.jsx';
 import CalendarPage from '@/pages/Calendar';
 import SalesPipeline from '@/pages/Leads';
 import Products from '@/pages/Products';
-import Settings from '@/pages/Settings';
+import Settings from '@/pages/SettingsRestoreWrapper.jsx';
 import SolarShadowAnalysis from '@/pages/SolarShadowAnalysis';
 import '@/styles/solarWorkbenchLight.css';
 
