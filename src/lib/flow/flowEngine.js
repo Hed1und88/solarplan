@@ -5,6 +5,13 @@ import { calculateFlowBallast } from './flowBallast.js';
 const num=(v,f=0)=>Number.isFinite(Number(v))?Number(v):f;
 const positive=(v,f=0)=>num(v,f)>0?num(v,f):f;
 function countPanels(roof){let total=0;(roof?.panelGroups||[]).forEach(g=>{total+=Math.max(0,Math.round(num(g.rows)))*Math.max(0,Math.round(num(g.cols)));});return total;}
+function buildPositions(input,windPa){
+ const count=countPanels(input.roof),area=positive(input.panelProduct?.width_mm,1134)*positive(input.panelProduct?.height_mm,2278)/1000000,own=positive(input.panelProduct?.weight_kg,25);
+ const edge=Math.min(count,Math.max(0,Math.round(Math.sqrt(count)*4-4)));
+ const obstacle=Math.min(Math.max(0,count-edge),input.roof?.obstacles?.length||0);
+ const field=Math.max(0,count-edge-obstacle);
+ return[{id:'roof-edge',priority:'roof_edge',areaM2:area*edge,ownWeightKg:own*edge,windPa:windPa.roofEdge_panelEdge},{id:'obstacles',priority:'obstacle',areaM2:area*obstacle,ownWeightKg:own*obstacle,windPa:windPa.roofEdge_panelMid},{id:'field',priority:'field',areaM2:area*field,ownWeightKg:own*field,windPa:windPa.roofMid_panelMid}].filter(x=>x.areaM2>0);
+}
 export function calculateFlowRoof(input={},systemVariant=''){
  const branch=FLOW_BRANCHES[systemVariant];
  const ridgeHeightM=positive(input.config?.ridgeHeightM,positive(input.roof?.ridgeHeightM));
