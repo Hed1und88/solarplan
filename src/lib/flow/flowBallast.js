@@ -22,5 +22,6 @@ export function calculateFlowB\u0061llast(input = {}) {
     const b\u0061llastKg = ceilStep(Math.max(upliftKg, slidingKg) * edgeBias, step);
     return { id: position.id || `flow-b-${index + 1}`, priority: position.priority || 'field', upliftKg: round(upliftKg), slidingKg: round(slidingKg), edgeBias, b\u0061llastKg };
   }).sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority));
-  return { preliminary: true, cfStab, frictionCoefficient: mu, b\u0061llastStepKg: step, placements };
+  const totalB\u0061llastKg = placements.reduce((sum, item) => sum + item.b\u0061llastKg, 0);
+  return { preliminary: true, cfStab, frictionCoefficient: mu, b\u0061llastStepKg: step, totalB\u0061llastKg: round(totalB\u0061llastKg), placements, priorityOrder: ['roof_edge','obstacle','field'] };
 }
