@@ -174,11 +174,13 @@ function mergePanelGroupsIntoPatch(patch, panelLayout) {
 
 function findPanelWorkbench() {
   const panelTab = Array.from(document.querySelectorAll('[role="tab"]')).find(tab => /Paneler/i.test(tab.textContent || ''));
-  if (!panelTab || panelTab.getAttribute('data-state') !== 'active') return null;
+  if (!panelTab) return null;
 
   const controlledId = panelTab.getAttribute('aria-controls');
   const tabPanel = controlledId ? document.getElementById(controlledId) : null;
-  const scope = tabPanel || Array.from(document.querySelectorAll('[role="tabpanel"]')).find(panel => panel.getAttribute('data-state') === 'active');
+  const scope = tabPanel || (panelTab.getAttribute('data-state') === 'active'
+    ? Array.from(document.querySelectorAll('[role="tabpanel"]')).find(panel => panel.getAttribute('data-state') === 'active')
+    : null);
   if (!scope) return null;
 
   const containers = Array.from(scope.querySelectorAll('div'));
@@ -236,7 +238,7 @@ function MapIntegration({ project, onUpdate }) {
   const panelLayoutRef = useRef(null);
   const liveMapImageUrlRef = useRef('');
   const objectUrlRef = useRef('');
-  const autoOpenedProjectRef = useRef('');
+  const autoOpenedTargetRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -281,14 +283,20 @@ function MapIntegration({ project, onUpdate }) {
     setLiveMapLayout(null);
     panelLayoutRef.current = null;
     liveMapImageUrlRef.current = '';
-    autoOpenedProjectRef.current = '';
+    autoOpenedTargetRef.current = null;
   }, [project?.id]);
 
   useEffect(() => {
     const sync = () => {
       const found = findPanelWorkbench();
       if (!found) {
-        setTargets(null);
+        setTargets(current => {
+          if (!current) return null;
+          const stillConnected = current.toolbarTarget?.isConnected
+            && current.canvasTarget?.isConnected
+            && current.settingsTarget?.isConnected;
+          return stillConnected ? current : null;
+        });
         return;
       }
 
@@ -342,7 +350,7 @@ function MapIntegration({ project, onUpdate }) {
   const mapTrace = plannerPayload(mapProject)?.mapTrace || {};
 
   useEffect(() => {
-    if (!targets || !mapReady || autoOpenedProjectRef.current === String(project?.id || '')) return;
+    if (!targets || !mapReady || autoOpenedTargetRef.current === targets.toolbarTarget) return;
     if (!mapTrace.imageUrl && !mapTrace.imageKey) return;
 
     let attempts = 0;
@@ -355,11 +363,11 @@ function MapIntegration({ project, onUpdate }) {
       }
       if (!button) return;
       if (!String(button.className).includes('bg-orange-50')) button.click();
-      autoOpenedProjectRef.current = String(project.id);
+      autoOpenedTargetRef.current = targets.toolbarTarget;
     };
 
     requestAnimationFrame(openMap);
-  }, [targets, mapReady, mapTrace.imageUrl, mapTrace.imageKey, project?.id]);
+  }, [targets, mapReady, mapTrace.imageUrl, mapTrace.imageKey]);
 
   const handlePanelLayoutChange = useCallback(layout => {
     panelLayoutRef.current = layout;
