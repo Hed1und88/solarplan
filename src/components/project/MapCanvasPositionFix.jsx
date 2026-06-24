@@ -2,9 +2,10 @@ import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 
 const EDGE_GAP = 12;
-const MIN_CANVAS_HEIGHT = 240;
+const WORKSPACE_VERTICAL_OFFSET = 175;
+const MIN_CANVAS_HEIGHT = 320;
 
-function visibleViewportHeight() {
+function viewportHeight() {
   return window.visualViewport?.height
     || document.documentElement.clientHeight
     || window.innerHeight
@@ -22,13 +23,11 @@ function applyCanvasPosition() {
   host.style.setProperty('overflow', 'hidden', 'important');
   host.style.setProperty('min-height', '0', 'important');
 
-  const viewportHeight = visibleViewportHeight();
-  const hostTop = host.getBoundingClientRect().top;
-  const availableHeight = viewportHeight - Math.max(0, hostTop) - EDGE_GAP;
-  const maximumHeight = Math.max(MIN_CANVAS_HEIGHT, viewportHeight - EDGE_GAP * 2);
+  // Height is based only on the browser/preview viewport. It must not change
+  // when the document is scrolled and the canvas gets a different screen Y-position.
   const nextHeight = Math.max(
     MIN_CANVAS_HEIGHT,
-    Math.min(Math.floor(availableHeight), maximumHeight),
+    Math.floor(viewportHeight() - WORKSPACE_VERTICAL_OFFSET),
   );
   const height = `${nextHeight}px`;
   const heightChanged = host.style.getPropertyValue('height') !== height
@@ -58,26 +57,22 @@ export default function MapCanvasPositionFix() {
       });
     };
 
+    // Watch only for the map host being mounted/replaced. Page scrolling must
+    // never trigger a recalculation of the map height.
     const observer = new MutationObserver(schedule);
     observer.observe(document.body, {
       childList: true,
       subtree: true,
-      attributes: true,
-      attributeFilter: ['style'],
     });
 
     schedule();
     window.addEventListener('resize', schedule);
-    window.addEventListener('scroll', schedule, true);
     window.visualViewport?.addEventListener('resize', schedule);
-    window.visualViewport?.addEventListener('scroll', schedule);
 
     return () => {
       observer.disconnect();
       window.removeEventListener('resize', schedule);
-      window.removeEventListener('scroll', schedule, true);
       window.visualViewport?.removeEventListener('resize', schedule);
-      window.visualViewport?.removeEventListener('scroll', schedule);
       if (frame) window.cancelAnimationFrame(frame);
     };
   }, [location.pathname]);
