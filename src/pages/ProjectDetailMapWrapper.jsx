@@ -343,14 +343,14 @@ function MapIntegration({ project, onUpdate }) {
 
   useEffect(() => {
     if (!targets || !mapReady || autoOpenedProjectRef.current === String(project?.id || '')) return;
-    if (!mapTrace.imageUrl) return;
+    if (!mapTrace.imageUrl && !mapTrace.imageKey) return;
 
     let attempts = 0;
     const openMap = () => {
       const button = targets.toolbarTarget?.querySelector('button[title="Kartbild"]');
-      if (!button && attempts < 12) {
+      if (!button && attempts < 40) {
         attempts += 1;
-        window.setTimeout(openMap, 50);
+        window.setTimeout(openMap, 100);
         return;
       }
       if (!button) return;
@@ -359,7 +359,7 @@ function MapIntegration({ project, onUpdate }) {
     };
 
     requestAnimationFrame(openMap);
-  }, [targets, mapReady, mapTrace.imageUrl, project?.id]);
+  }, [targets, mapReady, mapTrace.imageUrl, mapTrace.imageKey, project?.id]);
 
   const handlePanelLayoutChange = useCallback(layout => {
     panelLayoutRef.current = layout;
