@@ -1,0 +1,1 @@
+Run repeated validation for cloud work orders, economy and Fortnox integration.
