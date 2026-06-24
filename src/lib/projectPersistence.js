@@ -49,63 +49,146 @@ function plannerObject(raw) {
   return value && typeof value === 'object' && Array.isArray(value.roofs) ? value : null;
 }
 
-function currentPlannerPayload(project = {}) {
-  const candidates = [
-    plannerObject(project.solar_roof_planner_data),
-    plannerObject(project.panel_layout_data),
-  ].filter(Boolean);
+function plannerTimestamp(data) {
+  if (!data) return 0;
+  return new Date(data.savedAt || data.updatedAt || data.mapTrace?.savedAt || data._local_panel_backup_at || 0).getTime() || 0;
+}
 
-  return candidates.find(candidate => candidate?.mapTrace?.imageUrl || candidate?.mapTrace?.imageKey)
-    || candidates[0]
-    || null;
+function usefulMapValue(key, value) {
+  if (value === undefined || value === null || value === '') return false;
+  if ((key === 'naturalWidth' || key === 'naturalHeight' || key === 'metersPerPixel') && !(Number(value) > 0)) return false;
+  if (key === 'imageUrl' && String(value).startsWith('blob:')) return false;
+  return true;
+}
+
+function mergeMapTraces(planners = []) {
+  const candidates = planners
+    .filter(Boolean)
+    .filter(planner => planner.mapTrace && typeof planner.mapTrace === 'object')
+    .sort((a, b) => plannerTimestamp(a) - plannerTimestamp(b));
+
+  if (!candidates.length) return null;
+
+  let merged = {};
+  for (const planner of candidates) {
+    const trace = planner.mapTrace || {};
+    const explicitRemoval = Boolean(trace.savedAt)
+      && !trace.imageKey
+      && !trace.imageUrl
+      && !trace.imageName
+      && !(Number(trace.naturalWidth) > 0)
+      && !(Number(trace.naturalHeight) > 0)
+      && !(Number(trace.metersPerPixel) > 0)
+      && !trace.calibration;
+
+    if (explicitRemoval) {
+      merged = { ...trace };
+      continue;
+    }
+
+    Object.entries(trace).forEach(([key, value]) => {
+      if (usefulMapValue(key, value)) merged[key] = value;
+    });
+
+    if (trace.opacity !== undefined && trace.opacity !== null) merged.opacity = trace.opacity;
+    if (trace.savedAt) merged.savedAt = trace.savedAt;
+  }
+
+  return Object.keys(merged).length ? merged : null;
+}
+
+function mapRoofFields(baseRoof, planners = []) {
+  const roofId = String(baseRoof?.id ?? '');
+  const matches = planners
+    .filter(Boolean)
+    .map(planner => ({ planner, roof: planner.roofs?.find(item => String(item.id) === roofId) }))
+    .filter(item => item.roof)
+    .sort((a, b) => plannerTimestamp(a.planner) - plannerTimestamp(b.planner));
+
+  const merged = { ...baseRoof };
+  for (const { roof } of matches) {
+    if (Array.isArray(roof.mapPolygon) && roof.mapPolygon.length >= 3) merged.mapPolygon = roof.mapPolygon;
+    if (roof.mapAreaM2 !== undefined && roof.mapAreaM2 !== null) merged.mapAreaM2 = roof.mapAreaM2;
+    if (roof.mapOriginalDimensions) merged.mapOriginalDimensions = roof.mapOriginalDimensions;
+    if (Array.isArray(roof.obstacles)) merged.obstacles = roof.obstacles;
+    if (roof.mapFrame && typeof roof.mapFrame === 'object') merged.mapFrame = roof.mapFrame;
+  }
+  return merged;
+}
+
+function plannerPanelScore(raw) {
+  const data = plannerObject(raw);
+  if (!data) return -1;
+  let panels = 0;
+  let moved = 0;
+  data.roofs.forEach(roof => (roof.panelGroups || []).forEach(group => {
+    panels += Math.max(0, Math.round((Number(group.rows) || 0) * (Number(group.cols) || 0)));
+    moved += Object.keys(group.panelOverrides || {}).length;
+  }));
+  return panels * 100000 + data.roofs.length * 1000 + moved * 10;
+}
+
+function combinePlannerValues(values = []) {
+  const entries = values
+    .filter(value => value !== undefined && value !== null && value !== '')
+    .map(value => ({ value, data: plannerObject(value) }))
+    .filter(entry => entry.data);
+
+  if (!entries.length) return null;
+
+  entries.sort((a, b) => {
+    const timeDiff = plannerTimestamp(b.data) - plannerTimestamp(a.data);
+    if (timeDiff) return timeDiff;
+    return plannerPanelScore(b.data) - plannerPanelScore(a.data);
+  });
+
+  const base = entries[0].data;
+  const planners = entries.map(entry => entry.data);
+  const mapTrace = mergeMapTraces(planners);
+  const combined = {
+    ...base,
+    roofs: (base.roofs || []).map(roof => mapRoofFields(roof, planners)),
+    ...(mapTrace ? { mapTrace } : {}),
+  };
+
+  return combined;
 }
 
 function mergePlannerPayload(currentProject, nextRaw) {
-  const next = plannerObject(nextRaw);
-  if (!next) return nextRaw;
-
-  const current = currentPlannerPayload(currentProject);
-  if (!current) return typeof nextRaw === 'string' ? JSON.stringify(next) : next;
-
-  const currentRoofs = new Map((current.roofs || []).map(roof => [String(roof.id), roof]));
-  const roofs = next.roofs.map(roof => ({
-    ...(currentRoofs.get(String(roof.id)) || {}),
-    ...roof,
-  }));
-
-  const merged = {
-    ...current,
-    ...next,
-    roofs,
-  };
-
-  return typeof nextRaw === 'string' ? JSON.stringify(merged) : merged;
+  const combined = combinePlannerValues([
+    currentProject?.solar_roof_planner_data,
+    currentProject?.panel_layout_data,
+    nextRaw,
+  ]);
+  if (!combined) return nextRaw;
+  return typeof nextRaw === 'string' ? JSON.stringify(combined) : combined;
 }
 
 function preservePlannerData(currentProject, patch = {}) {
   const next = { ...patch };
   const hasSolar = next.solar_roof_planner_data !== undefined;
   const hasPanel = next.panel_layout_data !== undefined;
+  if (!hasSolar && !hasPanel) return next;
 
-  if (hasSolar) next.solar_roof_planner_data = mergePlannerPayload(currentProject, next.solar_roof_planner_data);
-  if (hasPanel) next.panel_layout_data = mergePlannerPayload(currentProject, next.panel_layout_data);
+  const combined = combinePlannerValues([
+    currentProject?.solar_roof_planner_data,
+    currentProject?.panel_layout_data,
+    next.solar_roof_planner_data,
+    next.panel_layout_data,
+  ]);
 
-  if (hasSolar && !hasPanel) next.panel_layout_data = next.solar_roof_planner_data;
-  if (hasPanel && !hasSolar) next.solar_roof_planner_data = next.panel_layout_data;
-
+  if (!combined) return next;
+  const serialized = JSON.stringify(combined);
+  next.solar_roof_planner_data = serialized;
+  next.panel_layout_data = serialized;
   return next;
 }
 
 function roofData(raw) { const data = plannerObject(raw); return Array.isArray(data?.roofs) ? data : null; }
 function panelScore(raw) {
   const data = roofData(raw); if (!data) return -1;
-  let panels = 0; let moved = 0;
-  data.roofs.forEach(roof => (roof.panelGroups || []).forEach(group => {
-    panels += Math.max(0, Math.round((Number(group.rows) || 0) * (Number(group.cols) || 0)));
-    moved += Object.keys(group.panelOverrides || {}).length;
-  }));
-  const time = new Date(data.savedAt || data.updatedAt || data._local_panel_backup_at || 0).getTime() || 0;
-  return panels * 100000 + data.roofs.length * 1000 + moved * 10 + Math.floor(time / 1000000000);
+  const time = plannerTimestamp(data);
+  return time > 0 ? Math.floor(time / 1000) * 1000000000 + Math.max(0, plannerPanelScore(data)) : plannerPanelScore(data);
 }
 function stringScore(raw) {
   const data = typeof raw === 'string' ? parse(raw) : raw;
@@ -143,10 +226,13 @@ export function writeProjectBackup(project) {
     const key = projectBackupKey(project.id);
     const existing = localJson(key);
     const next = { ...project, _local_backup_at: new Date().toISOString() };
-    if (panelScore(existing?.solar_roof_planner_data || existing?.panel_layout_data) > panelScore(next.solar_roof_planner_data || next.panel_layout_data)) {
-      next.solar_roof_planner_data = existing.solar_roof_planner_data || existing.panel_layout_data;
-      next.panel_layout_data = existing.panel_layout_data || existing.solar_roof_planner_data;
-    }
+    const planner = combinePlannerValues([
+      next.solar_roof_planner_data,
+      next.panel_layout_data,
+      existing?.solar_roof_planner_data,
+      existing?.panel_layout_data,
+    ]);
+    if (planner) next.solar_roof_planner_data = next.panel_layout_data = JSON.stringify(planner);
     if (stringScore(existing?.string_layout_data) > stringScore(next.string_layout_data)) next.string_layout_data = existing.string_layout_data;
     if (batteryScore(existing?.battery_layout_data) > batteryScore(next.battery_layout_data)) next.battery_layout_data = existing.battery_layout_data;
     window.localStorage.setItem(key, JSON.stringify(next));
@@ -163,8 +249,14 @@ export function mergeProjectWithBackup(project) {
   const projectTime = new Date(project.updated_date || project.updated_at || project.modified_date || 0).getTime() || 0;
   const backupTime = new Date(backup?._local_backup_at || backup?.updated_date || backup?.updated_at || 0).getTime() || 0;
   const merged = backupTime > projectTime ? { ...project, ...(backup || {}), id: project.id } : { ...(backup || {}), ...project, id: project.id };
-  const panel = best([project.solar_roof_planner_data,backup?.solar_roof_planner_data,panelLocal,project.panel_layout_data,backup?.panel_layout_data], panelScore);
-  if (panel) merged.solar_roof_planner_data = merged.panel_layout_data = typeof panel === 'string' ? panel : JSON.stringify(panel);
+  const planner = combinePlannerValues([
+    project.solar_roof_planner_data,
+    project.panel_layout_data,
+    backup?.solar_roof_planner_data,
+    backup?.panel_layout_data,
+    panelLocal,
+  ]);
+  if (planner) merged.solar_roof_planner_data = merged.panel_layout_data = JSON.stringify(planner);
   const strings = best([project.string_layout_data,backup?.string_layout_data,stringLocal], stringScore);
   if (strings) merged.string_layout_data = typeof strings === 'string' ? strings : JSON.stringify(strings);
   const battery = best([project.battery_layout_data, backup?.battery_layout_data, batteryLocal], batteryScore);
