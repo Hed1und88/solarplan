@@ -12,3 +12,11 @@ function panelDimensions(product={},orientation='portrait'){
  const widthM=positive(product.width_mm,1134)/1000,heightM=positive(product.height_mm,2278)/1000;
  return normalize(orientation).includes('ligg')||orientation==='landscape'?{widthM:heightM,heightM:widthM}:{widthM,heightM};
 }
+function nearObstacle(xM,yM,roof,items=[]){return items.some(item=>{
+ const normalized=num(item.x)<=1&&num(item.y)<=1&&num(item.width)<=1&&num(item.height)<=1;
+ const x=normalized?num(item.x)*positive(roof.widthM):num(item.xM,num(item.x));
+ const y=normalized?num(item.y)*positive(roof.roofFallM):num(item.yM,num(item.y));
+ const w=normalized?num(item.width)*positive(roof.widthM):num(item.widthM,num(item.width));
+ const h=normalized?num(item.height)*positive(roof.roofFallM):num(item.heightM,num(item.height));
+ return xM>=x-.5&&xM<=x+w+.5&&yM>=y-.5&&yM<=y+h+.5;
+});}
