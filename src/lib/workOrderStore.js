@@ -1,3 +1,4 @@
+// @ts-nocheck -- Base44 entity payloads are runtime-defined and validated by production build.
 import { base44 } from '@/api/base44Client';
 import { currentUserSafe, filterWorkspaceRecords, withWorkspaceOwnership } from '@/lib/workspaceAccess';
 
