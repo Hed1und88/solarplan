@@ -1,0 +1,1 @@
+Normalize dynamic Base44 work order modules before final validation.
