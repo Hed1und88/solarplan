@@ -76,11 +76,13 @@ async function hydrateProjectMap(project) {
   const parsed = plannerPayload(project);
   if (!project?.id || !parsed) return { project, objectUrl: '' };
 
-  const storedTrace = parsed.mapTrace || {};
+  const rawTrace = parsed.mapTrace || {};
+  const storedTrace = {
+    ...rawTrace,
+    imageUrl: String(rawTrace.imageUrl || '').startsWith('blob:') ? '' : rawTrace.imageUrl || '',
+  };
   const imageKey = storedTrace.imageKey || `project-${project.id}-map`;
-  const storedUrl = storedTrace.imageUrl && !String(storedTrace.imageUrl).startsWith('blob:')
-    ? storedTrace.imageUrl
-    : project.roof_image_url || '';
+  const storedUrl = storedTrace.imageUrl || project.roof_image_url || '';
 
   if (storedUrl) {
     const dimensions = Number(storedTrace.naturalWidth) > 0 && Number(storedTrace.naturalHeight) > 0
@@ -101,8 +103,18 @@ async function hydrateProjectMap(project) {
 
   const blob = await getLocalMapImage(imageKey).catch(() => null);
   if (!blob) {
+    const hasStoredMapData = Boolean(
+      storedTrace.imageKey
+      || storedTrace.imageName
+      || Number(storedTrace.naturalWidth) > 0
+      || Number(storedTrace.naturalHeight) > 0
+      || Number(storedTrace.metersPerPixel) > 0
+      || storedTrace.calibration,
+    );
     return {
-      project: projectWithMapTrace(project, { ...storedTrace, imageKey }),
+      project: hasStoredMapData
+        ? projectWithMapTrace(project, { ...storedTrace, imageUrl: '', imageKey: storedTrace.imageKey || imageKey })
+        : project,
       objectUrl: '',
     };
   }
@@ -331,7 +343,7 @@ function MapIntegration({ project, onUpdate }) {
 
   useEffect(() => {
     if (!targets || !mapReady || autoOpenedProjectRef.current === String(project?.id || '')) return;
-    if (!mapTrace.imageUrl && !mapTrace.imageKey) return;
+    if (!mapTrace.imageUrl) return;
 
     let attempts = 0;
     const openMap = () => {
@@ -347,7 +359,7 @@ function MapIntegration({ project, onUpdate }) {
     };
 
     requestAnimationFrame(openMap);
-  }, [targets, mapReady, mapTrace.imageUrl, mapTrace.imageKey, project?.id]);
+  }, [targets, mapReady, mapTrace.imageUrl, project?.id]);
 
   const handlePanelLayoutChange = useCallback(layout => {
     panelLayoutRef.current = layout;
