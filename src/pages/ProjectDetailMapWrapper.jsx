@@ -7,29 +7,129 @@ import InlinePanelMapTools from '@/components/project/InlinePanelMapTools.jsx';
 import MapPanelPlacementLayer from '@/components/project/MapPanelPlacementLayer.jsx';
 import ProjectDetail from './ProjectDetail.jsx';
 
+const MAP_DB_NAME = 'solarplan-map-images';
+const MAP_STORE_NAME = 'images';
+
 function safeJson(raw, fallback = null) {
   try { return JSON.parse(raw || '') || fallback; } catch { return fallback; }
 }
 
-function withLocalMapImageFallback(project, liveImageUrl = '') {
-  if (!project?.id) return project;
+function plannerPayload(project) {
+  for (const raw of [project?.solar_roof_planner_data, project?.panel_layout_data]) {
+    const parsed = safeJson(raw, null);
+    if (parsed && Array.isArray(parsed.roofs)) return parsed;
+  }
+  return null;
+}
 
-  const parsed = safeJson(project.solar_roof_planner_data || project.panel_layout_data, null);
-  if (!Array.isArray(parsed?.roofs)) return project;
+function openMapImageDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(MAP_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(MAP_STORE_NAME)) request.result.createObjectStore(MAP_STORE_NAME);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
 
-  const reusableLiveImageUrl = /^(blob:|data:|https?:)/i.test(liveImageUrl || '') ? liveImageUrl : '';
-  const mapTrace = {
-    ...(parsed.mapTrace || {}),
-    imageKey: parsed.mapTrace?.imageKey || `project-${project.id}-map`,
-    imageUrl: parsed.mapTrace?.imageUrl || reusableLiveImageUrl || '',
-  };
-  const payload = JSON.stringify({ ...parsed, mapTrace });
+async function getLocalMapImage(key) {
+  if (!key || typeof indexedDB === 'undefined') return null;
+  const db = await openMapImageDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = db.transaction(MAP_STORE_NAME, 'readonly');
+      const request = transaction.objectStore(MAP_STORE_NAME).get(key);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  } finally {
+    db.close();
+  }
+}
 
+function readImageDimensions(url) {
+  return new Promise(resolve => {
+    if (!url) {
+      resolve({ width: 0, height: 0 });
+      return;
+    }
+    const image = new Image();
+    image.onload = () => resolve({ width: image.naturalWidth || 0, height: image.naturalHeight || 0 });
+    image.onerror = () => resolve({ width: 0, height: 0 });
+    image.src = url;
+  });
+}
+
+function projectWithMapTrace(project, mapTrace) {
+  const parsed = plannerPayload(project);
+  if (!project?.id || !parsed) return project;
+  const payload = JSON.stringify({ ...parsed, mapTrace: { ...(parsed.mapTrace || {}), ...mapTrace } });
   return {
     ...project,
     solar_roof_planner_data: payload,
     panel_layout_data: payload,
   };
+}
+
+async function hydrateProjectMap(project) {
+  const parsed = plannerPayload(project);
+  if (!project?.id || !parsed) return { project, objectUrl: '' };
+
+  const storedTrace = parsed.mapTrace || {};
+  const imageKey = storedTrace.imageKey || `project-${project.id}-map`;
+  const storedUrl = storedTrace.imageUrl && !String(storedTrace.imageUrl).startsWith('blob:')
+    ? storedTrace.imageUrl
+    : project.roof_image_url || '';
+
+  if (storedUrl) {
+    const dimensions = Number(storedTrace.naturalWidth) > 0 && Number(storedTrace.naturalHeight) > 0
+      ? { width: Number(storedTrace.naturalWidth), height: Number(storedTrace.naturalHeight) }
+      : await readImageDimensions(storedUrl);
+    return {
+      project: projectWithMapTrace(project, {
+        ...storedTrace,
+        imageUrl: storedUrl,
+        imageKey,
+        imageName: storedTrace.imageName || 'Sparad kartbild',
+        naturalWidth: dimensions.width || storedTrace.naturalWidth || 0,
+        naturalHeight: dimensions.height || storedTrace.naturalHeight || 0,
+      }),
+      objectUrl: '',
+    };
+  }
+
+  const blob = await getLocalMapImage(imageKey).catch(() => null);
+  if (!blob) {
+    return {
+      project: projectWithMapTrace(project, { ...storedTrace, imageKey }),
+      objectUrl: '',
+    };
+  }
+
+  const objectUrl = URL.createObjectURL(blob);
+  const dimensions = await readImageDimensions(objectUrl);
+  return {
+    project: projectWithMapTrace(project, {
+      ...storedTrace,
+      imageUrl: objectUrl,
+      imageKey,
+      imageName: storedTrace.imageName || 'Lokalt sparad kartbild',
+      naturalWidth: dimensions.width || storedTrace.naturalWidth || 0,
+      naturalHeight: dimensions.height || storedTrace.naturalHeight || 0,
+    }),
+    objectUrl,
+  };
+}
+
+function withVisibleMapImage(project, liveImageUrl = '') {
+  const parsed = plannerPayload(project);
+  if (!project?.id || !parsed || !liveImageUrl) return project;
+  return projectWithMapTrace(project, {
+    ...(parsed.mapTrace || {}),
+    imageUrl: liveImageUrl,
+    imageKey: parsed.mapTrace?.imageKey || `project-${project.id}-map`,
+  });
 }
 
 function mergePanelGroupsIntoLayout(layout, panelLayout) {
@@ -119,8 +219,40 @@ function hideDuplicatePanelGroupControls(settingsList) {
 function MapIntegration({ project, onUpdate }) {
   const [targets, setTargets] = useState(null);
   const [liveMapLayout, setLiveMapLayout] = useState(null);
+  const [hydratedProject, setHydratedProject] = useState(project);
+  const [mapReady, setMapReady] = useState(false);
   const panelLayoutRef = useRef(null);
   const liveMapImageUrlRef = useRef('');
+  const objectUrlRef = useRef('');
+  const autoOpenedProjectRef = useRef('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setMapReady(false);
+
+    hydrateProjectMap(project).then(result => {
+      if (cancelled) {
+        if (result.objectUrl) URL.revokeObjectURL(result.objectUrl);
+        return;
+      }
+      if (objectUrlRef.current && objectUrlRef.current !== result.objectUrl) URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = result.objectUrl || '';
+      setHydratedProject(result.project || project);
+      setMapReady(true);
+    }).catch(() => {
+      if (!cancelled) {
+        setHydratedProject(project);
+        setMapReady(true);
+      }
+    });
+
+    return () => { cancelled = true; };
+  }, [project?.id, project?.solar_roof_planner_data, project?.panel_layout_data, project?.roof_image_url]);
+
+  useEffect(() => () => {
+    if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+    objectUrlRef.current = '';
+  }, []);
 
   useEffect(() => {
     const handleMapLayout = event => {
@@ -137,6 +269,7 @@ function MapIntegration({ project, onUpdate }) {
     setLiveMapLayout(null);
     panelLayoutRef.current = null;
     liveMapImageUrlRef.current = '';
+    autoOpenedProjectRef.current = '';
   }, [project?.id]);
 
   useEffect(() => {
@@ -192,22 +325,49 @@ function MapIntegration({ project, onUpdate }) {
     };
   }, []);
 
+  const mapProjectBase = hydratedProject?.id === project?.id ? hydratedProject : project;
+  const mapProject = withVisibleMapImage(mapProjectBase, liveMapImageUrlRef.current);
+  const mapTrace = plannerPayload(mapProject)?.mapTrace || {};
+
+  useEffect(() => {
+    if (!targets || !mapReady || autoOpenedProjectRef.current === String(project?.id || '')) return;
+    if (!mapTrace.imageUrl && !mapTrace.imageKey) return;
+
+    let attempts = 0;
+    const openMap = () => {
+      const button = targets.toolbarTarget?.querySelector('button[title="Kartbild"]');
+      if (!button && attempts < 12) {
+        attempts += 1;
+        window.setTimeout(openMap, 50);
+        return;
+      }
+      if (!button) return;
+      if (!String(button.className).includes('bg-orange-50')) button.click();
+      autoOpenedProjectRef.current = String(project.id);
+    };
+
+    requestAnimationFrame(openMap);
+  }, [targets, mapReady, mapTrace.imageUrl, mapTrace.imageKey, project?.id]);
+
   const handlePanelLayoutChange = useCallback(layout => {
     panelLayoutRef.current = layout;
   }, []);
 
-  if (!targets) return null;
+  if (!targets || !mapReady) return null;
 
   const visibleMapImageUrl = targets.canvasTarget?.querySelector('img[alt="Kartbild"]')?.src || '';
   if (visibleMapImageUrl) liveMapImageUrlRef.current = visibleMapImageUrl;
 
   const saveWithPanelPlacement = patch => onUpdate(mergePanelGroupsIntoPatch(patch, panelLayoutRef.current));
-  const mapProject = withLocalMapImageFallback(project, liveMapImageUrlRef.current);
-  const panelProject = liveMapLayout ? {
-    ...project,
-    solar_roof_planner_data: JSON.stringify(liveMapLayout),
-    panel_layout_data: JSON.stringify(liveMapLayout),
-  } : project;
+  const basePayload = plannerPayload(mapProject) || { roofs: [] };
+  const panelPayload = liveMapLayout
+    ? { ...basePayload, ...liveMapLayout, mapTrace: basePayload.mapTrace || liveMapLayout.mapTrace }
+    : basePayload;
+  const panelProject = {
+    ...mapProject,
+    solar_roof_planner_data: JSON.stringify(panelPayload),
+    panel_layout_data: JSON.stringify(panelPayload),
+  };
 
   return (
     <>
