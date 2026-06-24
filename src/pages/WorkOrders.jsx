@@ -11,6 +11,8 @@ import {
   createBlankWorkOrder,
   listWorkOrders,
   saveWorkOrder,
+  subscribeToWorkOrders,
+  syncWorkOrdersFromCloud,
 } from '@/lib/workOrderStore';
 
 const statusName = value => WORK_ORDER_STATUSES.find(item => item.value === value)?.label || value;
@@ -34,10 +36,19 @@ export default function WorkOrders() {
   });
 
   useEffect(() => {
+    let active = true;
     const refresh = () => setOrders(listWorkOrders());
+    const unsubscribe = subscribeToWorkOrders(rows => {
+      if (active) setOrders(rows);
+    });
     window.addEventListener('solarplan:work-orders-change', refresh);
     window.addEventListener('storage', refresh);
+    syncWorkOrdersFromCloud().then(rows => {
+      if (active) setOrders(rows);
+    });
     return () => {
+      active = false;
+      unsubscribe?.();
       window.removeEventListener('solarplan:work-orders-change', refresh);
       window.removeEventListener('storage', refresh);
     };
