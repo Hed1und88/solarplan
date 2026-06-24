@@ -4,6 +4,7 @@ import { calculateFlowGeometry } from './flowGeometry.js';
 import { calculateFlowBallast } from './flowBallast.js';
 const num=(v,f=0)=>Number.isFinite(Number(v))?Number(v):f;
 const positive=(v,f=0)=>num(v,f)>0?num(v,f):f;
+const round=(v,d=2)=>Math.round(num(v)*10**d)/10**d;
 function countPanels(roof){let total=0;(roof?.panelGroups||[]).forEach(g=>{total+=Math.max(0,Math.round(num(g.rows)))*Math.max(0,Math.round(num(g.cols)));});return total;}
 function buildPositions(input,windPa){
  const count=countPanels(input.roof),area=positive(input.panelProduct?.width_mm,1134)*positive(input.panelProduct?.height_mm,2278)/1000000,own=positive(input.panelProduct?.weight_kg,25);
