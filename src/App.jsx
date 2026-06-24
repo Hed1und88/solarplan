@@ -15,6 +15,9 @@ import SalesPipeline from '@/pages/Leads';
 import Products from '@/pages/Products';
 import Settings from '@/pages/SettingsRestoreWrapper.jsx';
 import SolarShadowAnalysis from '@/pages/SolarShadowAnalysis';
+import WorkOrders from '@/pages/WorkOrders.jsx';
+import WorkOrderDetailPage from '@/pages/WorkOrderDetailPage.jsx';
+import Economy from '@/pages/Economy.jsx';
 import PanelMapViewportController from '@/components/project/PanelMapViewportController.jsx';
 import CompactProjectInspector from '@/components/project/CompactProjectInspector.jsx';
 import '@/styles/solarWorkbenchLight.css';
@@ -33,6 +36,9 @@ const AuthenticatedApp = () => {
       <Route path="/projects/:id" element={<ProjectDetail />} />
       <Route path="/calendar" element={<CalendarPage />} />
       <Route path="/leads" element={<SalesPipeline />} />
+      <Route path="/work-orders" element={<WorkOrders />} />
+      <Route path="/work-orders/:id" element={<WorkOrderDetailPage />} />
+      <Route path="/economy" element={<Economy />} />
       <Route path="/solar-shadow" element={<SolarShadowAnalysis />} />
       <Route path="/solanalys" element={<SolarShadowAnalysis />} />
       <Route path="/3d-solanalys" element={<SolarShadowAnalysis />} />
