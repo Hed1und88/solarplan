@@ -8,3 +8,7 @@ const num=(value,fallback=0)=>Number.isFinite(Number(value))?Number(value):fallb
 const positive=(value,fallback=0)=>num(value,fallback)>0?num(value,fallback):fallback;
 const round=(value,decimals=2)=>Math.round(num(value)*10**decimals)/10**decimals;
 const normalize=value=>String(value||'').trim().toLowerCase();
+function panelDimensions(product={},orientation='portrait'){
+ const widthM=positive(product.width_mm,1134)/1000,heightM=positive(product.height_mm,2278)/1000;
+ return normalize(orientation).includes('ligg')||orientation==='landscape'?{widthM:heightM,heightM:widthM}:{widthM,heightM};
+}
