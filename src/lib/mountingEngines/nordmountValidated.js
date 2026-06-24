@@ -4,7 +4,7 @@ import {
   calculateNordmountWindLoad,
   isNordmountProduct,
 } from './nordmountValidatedParallel.js';
-import { FLOW_BRANCHES } from '@/lib/flow/flowConstants.js';
+import { FLOW_BRANCHES, FLOW_PRODUCTS } from '@/lib/flow/flowConstants.js';
 import { calculateFlowRoof } from '@/lib/flow/flowEngine.js';
 
 export { calculateNordmountSnowLoad, calculateNordmountWindLoad, isNordmountProduct };
@@ -18,6 +18,14 @@ const TERRAIN = {
   IV: { z0: 1, zmin: 10 },
 };
 const normalize = value => String(value || '').trim().toLowerCase();
+
+export const UNIT_WEIGHTS_KG = {
+  clamp: 0.176,
+  wing: FLOW_PRODUCTS.wing.kg,
+  tower: FLOW_PRODUCTS.tower.kg,
+  link: FLOW_PRODUCTS.link.kg,
+  flowClamp: FLOW_PRODUCTS.clamp.kg,
+};
 
 export function peakVelocityPressurePa(referenceWindMs, ridgeHeightM, terrainType) {
   const terrain = TERRAIN[String(terrainType)] || TERRAIN.II;
