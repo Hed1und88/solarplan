@@ -20,3 +20,11 @@ function nearObstacle(xM,yM,roof,items=[]){return items.some(item=>{
  const h=normalized?num(item.height)*positive(roof.roofFallM):num(item.heightM,num(item.height));
  return xM>=x-.5&&xM<=x+w+.5&&yM>=y-.5&&yM<=y+h+.5;
 });}
+function buildPositions(input,perZonePa){
+ const roof=input.roof||{},panel=input.panelProduct||{},roofWidth=positive(roof.widthM),roofHeight=positive(roof.roofFallM),edgeX=roofWidth/10,edgeY=roofHeight/10,panelWeightKg=positive(panel.weight_kg,positive(panel.weightKg,25)),positions=[];
+ (roof.panelGroups||[]).forEach(group=>{const rows=Math.max(0,Math.round(num(group.rows))),cols=Math.max(0,Math.round(num(group.cols))),d=panelDimensions(panel,group.orientation),gap=positive(group.panelGapMm,20)/1000;
+  for(let row=0;row<rows;row+=1)for(let col=0;col<cols;col+=1){const xM=num(group.xM)+col*(d.widthM+gap)+d.widthM/2,yM=num(group.yM)+row*(d.heightM+gap)+d.heightM/2,roofEdge=xM<=edgeX||xM>=roofWidth-edgeX||yM<=edgeY||yM>=roofHeight-edgeY,panelEdge=row===0||col===0||row===rows-1||col===cols-1,zoneKey=`${roofEdge?'roofEdge':'roofMid'}_${panelEdge?'panelEdge':'panelMid'}`,obstacle=nearObstacle(xM,yM,roof,roof.obstacles||[]);
+   positions.push({id:`${group.id||'group'}:${row}:${col}`,xM,yM,areaM2:d.widthM*d.heightM,ownWeightKg:panelWeightKg,windPa:perZonePa[zoneKey],priority:roofEdge?'roof_edge':obstacle?'obstacle':'field'});
+  }
+ });return positions;
+}
