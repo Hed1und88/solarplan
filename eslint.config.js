@@ -78,4 +78,10 @@ export default [
       "unused-imports/no-unused-imports": "off",
     },
   },
+  {
+    files: ["src/pages/Settings.jsx"],
+    rules: {
+      "unused-imports/no-unused-imports": "warn",
+    },
+  },
 ];
