@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { RotateCcw } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
 import EmergencyRestorePanel from '@/components/project/EmergencyRestorePanel';
+import PersonnelCostSettings from '@/components/settings/PersonnelCostSettings';
 import { filterProjectsForUser, getUserEmail } from '@/lib/accessControl';
 import { mergeProjectWithBackup, saveProjectPatch, writeProjectBackup } from '@/lib/projectPersistence';
 import { useCompanySession } from '@/lib/CompanySessionContext';
@@ -127,6 +128,7 @@ export default function SettingsRestoreWrapper() {
   return (
     <>
       <Settings />
+      <PersonnelCostSettings />
       <SettingsRestorePortal />
     </>
   );
