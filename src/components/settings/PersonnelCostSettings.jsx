@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Building2, Loader2, Plus, Trash2, UsersRound } from 'lucide-react';
 import { base44 } from '@/api/base44Client';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { resolveAccessContext } from '@/lib/accessControl';
 import { useCompanySession } from '@/lib/CompanySessionContext';
 
@@ -145,9 +143,13 @@ function CostRows({ rows, unit, canEdit, onChange, onAdd, onRemove, addLabel }) 
       ))}
 
       {canEdit && (
-        <Button type="button" variant="outline" size="sm" className="gap-2" onClick={onAdd}>
+        <button
+          type="button"
+          className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-sm font-medium hover:bg-muted"
+          onClick={onAdd}
+        >
           <Plus className="h-4 w-4" />{addLabel}
-        </Button>
+        </button>
       )}
     </div>
   );
@@ -206,7 +208,7 @@ function PersonnelCostSettingsSection() {
     setMountingCosts(costs.mounting);
     setMessage('');
     setError('');
-  }, [selectedCompany?.id, selectedCompany?.personnel_costs_json]);
+  }, [selectedCompany?.id]);
 
   const updateRow = (setter, id, field, value) => setter(current => current.map(row => row.id === id ? { ...row, [field]: value } : row));
   const removeRow = (setter, id) => setter(current => current.filter(row => row.id !== id));
@@ -228,6 +230,8 @@ function PersonnelCostSettingsSection() {
       setCompanies(current => current.map(company => String(company.id) === String(selectedCompany.id)
         ? { ...company, ...(saved || {}), personnel_costs_json: personnelCostsJson }
         : company));
+      setHourlyCosts(payload.hourly.map(row => ({ ...row })));
+      setMountingCosts(payload.mounting.map(row => ({ ...row })));
       setMessage(`Personal- och montagekostnaderna för ${selectedCompany.name} har sparats.`);
     } catch (saveError) {
       setError(saveError?.message || 'Kostnaderna kunde inte sparas.');
@@ -237,12 +241,12 @@ function PersonnelCostSettingsSection() {
   };
 
   return (
-    <Card className="border-0 shadow-sm">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base"><UsersRound className="h-4 w-4 text-primary" />Personal Kostnad</CardTitle>
-        <p className="text-sm text-muted-foreground">Ange företagets timpriser för personal och UE samt fasta priser för solcells- och batterimontage.</p>
-      </CardHeader>
-      <CardContent className="space-y-6">
+    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      <div className="border-b border-border p-6">
+        <h2 className="flex items-center gap-2 text-base font-semibold"><UsersRound className="h-4 w-4 text-primary" />Personal Kostnad</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Ange företagets timpriser för personal och UE samt fasta priser för solcells- och batterimontage.</p>
+      </div>
+      <div className="space-y-6 p-6">
         {loading ? (
           <div className="flex h-32 items-center justify-center"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>
         ) : companies.length === 0 ? (
@@ -305,15 +309,20 @@ function PersonnelCostSettingsSection() {
 
             {canEdit && (
               <div className="flex justify-end border-t border-border pt-5">
-                <Button onClick={saveCosts} disabled={saving || !selectedCompany}>
+                <button
+                  type="button"
+                  onClick={saveCosts}
+                  disabled={saving || !selectedCompany}
+                  className="inline-flex items-center rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
                   {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Sparar...</> : 'Spara kostnader'}
-                </Button>
+                </button>
               </div>
             )}
           </>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
