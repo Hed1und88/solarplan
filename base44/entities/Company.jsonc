@@ -11,6 +11,7 @@
     "city": { "type": "string", "description": "Postort" },
     "website": { "type": "string", "description": "Webbplats" },
     "logo_url": { "type": "string", "description": "Publik URL till företagets logotyp" },
+    "personnel_costs_json": { "type": "string", "description": "Företagets timpriser för personal och fasta montagepriser som JSON" },
     "active": { "type": "boolean", "default": true, "description": "Om företaget är aktivt" },
     "created_by_email": { "type": "string", "description": "E-post för användaren som skapade företaget" }
   },
