@@ -1,1 +1,0 @@
-Andreas Hedlund har uttryckligen godkänt att endast oanvända importer tas bort i Leads.jsx, Projects.jsx och Settings.jsx samt att tillfälliga CI-workflowfiler tas bort. Inga funktionella appändringar är godkända.
