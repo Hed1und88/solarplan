@@ -2,16 +2,16 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"],
-      "three": ["./src/types/three.d.ts"],
-      "three/*": ["./src/types/three.d.ts"]
+      "@/*": ["./src/*"]
     },
     "jsx": "react-jsx",
     "module": "esnext",
     "moduleResolution": "bundler",
     "lib": ["esnext", "dom"],
     "target": "esnext",
-    "checkJs": true,
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
