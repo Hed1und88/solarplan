@@ -230,6 +230,58 @@ function hideDuplicatePanelGroupControls(settingsList) {
   });
 }
 
+function findInspectorSection(settingsList, title) {
+  return Array.from(settingsList?.querySelectorAll('section') || []).find(section => {
+    const headerText = section.firstElementChild?.textContent || '';
+    return headerText.trim().startsWith(title);
+  }) || null;
+}
+
+function activeListIndex(section) {
+  if (!section) return 0;
+  const buttons = Array.from(section.querySelectorAll('button'))
+    .filter(button => Boolean((button.textContent || '').trim()));
+  const active = buttons.find(button => String(button.className).includes('bg-orange-50'));
+  const index = active ? buttons.indexOf(active) : 0;
+  return Math.max(0, index);
+}
+
+function panelGridValue(section, labelText) {
+  const label = Array.from(section?.querySelectorAll('label') || []).find(item => (
+    (item.querySelector(':scope > span')?.textContent || '').trim() === labelText
+  ));
+  const value = Math.round(Number(label?.querySelector('input[type="number"]')?.value));
+  return Number.isFinite(value) ? Math.max(1, Math.min(30, value)) : null;
+}
+
+function updatePanelGridFromInspector(layout, settingsList) {
+  if (!Array.isArray(layout?.roofs)) return layout;
+
+  const roofSection = findInspectorSection(settingsList, 'Tak');
+  const panelSection = findInspectorSection(settingsList, 'Panelgrupp');
+  if (!panelSection) return layout;
+
+  const roofIndex = activeListIndex(roofSection);
+  const groupIndex = activeListIndex(panelSection);
+  const rows = panelGridValue(panelSection, 'Rader');
+  const cols = panelGridValue(panelSection, 'Kolumner');
+  if (rows === null || cols === null) return layout;
+
+  let changed = false;
+  const roofs = layout.roofs.map((roof, currentRoofIndex) => {
+    if (currentRoofIndex !== roofIndex) return roof;
+    const groups = (roof.panelGroups || []).map((group, currentGroupIndex) => {
+      if (currentGroupIndex !== groupIndex) return group;
+      if (Number(group.rows) === rows && Number(group.cols) === cols) return group;
+      changed = true;
+      return { ...group, rows, cols, panelOverrides: {} };
+    });
+    return changed ? { ...roof, panelGroups: groups } : roof;
+  });
+
+  return changed ? { ...layout, roofs } : layout;
+}
+
 function MapIntegration({ project, onUpdate }) {
   const [targets, setTargets] = useState(null);
   const [liveMapLayout, setLiveMapLayout] = useState(null);
@@ -348,6 +400,36 @@ function MapIntegration({ project, onUpdate }) {
   const mapProjectBase = hydratedProject?.id === project?.id ? hydratedProject : project;
   const mapProject = withVisibleMapImage(mapProjectBase, liveMapImageUrlRef.current);
   const mapTrace = plannerPayload(mapProject)?.mapTrace || {};
+
+  useEffect(() => {
+    const settingsList = targets?.settingsTarget?.parentElement;
+    if (!settingsList) return undefined;
+
+    let frame = 0;
+    const syncPanelGrid = event => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement)) return;
+      const labelText = (target.closest('label')?.querySelector(':scope > span')?.textContent || '').trim();
+      if (labelText !== 'Rader' && labelText !== 'Kolumner') return;
+
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const currentLayout = panelLayoutRef.current || plannerPayload(mapProject);
+        const nextLayout = updatePanelGridFromInspector(currentLayout, settingsList);
+        if (nextLayout === currentLayout) return;
+        panelLayoutRef.current = nextLayout;
+        setLiveMapLayout(nextLayout);
+      });
+    };
+
+    settingsList.addEventListener('input', syncPanelGrid, true);
+    settingsList.addEventListener('change', syncPanelGrid, true);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      settingsList.removeEventListener('input', syncPanelGrid, true);
+      settingsList.removeEventListener('change', syncPanelGrid, true);
+    };
+  }, [targets, mapProject?.id, mapProject?.solar_roof_planner_data, mapProject?.panel_layout_data]);
 
   useEffect(() => {
     if (!targets || !mapReady || autoOpenedTargetRef.current === targets.toolbarTarget) return;
