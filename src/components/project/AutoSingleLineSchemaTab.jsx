@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import AutoSingleLineSchemaTab from './AutoSingleLineSchemaTab.jsx';
+import AutoSingleLineSchemaView from './AutoSingleLineSchemaView.jsx';
 import { normalizeStringProductContext } from '@/lib/stringProductContext';
 
 export default function AutoSingleLineSchemaEntry(props) {
@@ -7,5 +7,5 @@ export default function AutoSingleLineSchemaEntry(props) {
     () => normalizeStringProductContext(props.project || {}, props.products || []),
     [props.project?.string_layout_data, props.project?.solar_roof_planner_data, props.project?.panel_layout_data, props.products],
   );
-  return React.createElement(AutoSingleLineSchemaTab, { ...props, project: context.project, products: context.products });
+  return React.createElement(AutoSingleLineSchemaView, { ...props, project: context.project, products: context.products });
 }
