@@ -69,4 +69,13 @@ export default [
       "unused-imports/no-unused-imports": "off",
     },
   },
+  {
+    files: [
+      "src/components/project/PanelMapTraceWorkspace.jsx",
+      "src/components/project/StringMarkingTabV7.jsx",
+    ],
+    rules: {
+      "unused-imports/no-unused-imports": "off",
+    },
+  },
 ];
