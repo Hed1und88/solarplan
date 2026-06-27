@@ -1,4 +1,5 @@
 import { createProductSnapshot, productMeta } from '@/lib/productDocuments';
+import { calculateMountingRoof, resolveMountingEngine } from '@/lib/mountingEngines';
 
 const safeJson = (raw, fallback = null) => { try { return JSON.parse(raw || '') || fallback; } catch { return fallback; } };
 const num = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -6,6 +7,8 @@ const byId = (products, id) => products.find(product => String(product.id) === S
 const planner = project => safeJson(project.solar_roof_planner_data || project.panel_layout_data, { roofs: [] }) || { roofs: [] };
 const batteryPlanner = project => safeJson(project.battery_layout_data, { devices: [] }) || { devices: [] };
 const countGroup = group => Math.max(0, Math.round(num(group.rows))) * Math.max(0, Math.round(num(group.cols)));
+const countRoofPanels = roof => (roof.panelGroups || []).reduce((sum, group) => sum + countGroup(group), 0);
+const productLabel = product => [product?.brand, product?.model].filter(Boolean).join(' ') || product?.name || 'Produkt';
 
 function snapshotDocuments(snapshot = {}) {
   if (Array.isArray(snapshot.documents_snapshot)) return snapshot.documents_snapshot;
@@ -113,12 +116,104 @@ function batteryRoomProducts(project, products) {
   }).filter(Boolean);
 }
 
+function storedMountingSelection(project, roof, roofIndex) {
+  if (typeof window === 'undefined' || !project?.id) return null;
+  try {
+    const data = JSON.parse(window.localStorage.getItem(`solarplan:mounting-selection:${project.id}`) || '{}');
+    const direct = data[`${roofIndex}:${roof.name || 'tak'}`];
+    if (direct) return direct;
+    return Object.values(data).find(item => item?.roofName === roof.name || Number(item?.roofIndex) === Number(roofIndex)) || null;
+  } catch {
+    return null;
+  }
+}
+
+function mountingWithAutomaticCalculations(project, products, mounting) {
+  const roofs = planner(project).roofs || [];
+  const existing = Array.isArray(mounting.perRoofSystems) ? mounting.perRoofSystems : [];
+  const perRoofSystems = roofs.map((roof, roofIndex) => {
+    const saved = existing.find(item => String(item.roofId) === String(roof.id)) || {};
+    const stored = storedMountingSelection(project, roof, roofIndex) || {};
+    const mountingProductId = roof.mountingSystemProductId || saved.mountingSystemProductId || mounting.selectedMountingProductId || '';
+    const system = byId(products, mountingProductId) || roof.mountingSystemProductSnapshot || mounting.selectedMountingProductSnapshot || null;
+    const panel = byId(products, roof.panelProductId) || roof.panelProductSnapshot || null;
+    const systemVariant = roof.mountingSystemVariant || stored.systemVariant || saved.systemVariant || 'parallel';
+    const attachmentMethod = stored.attachmentMethod || saved.attachmentMethod || roof.roofType || roof.material || '';
+    const config = {
+      ...saved,
+      mountingProductId,
+      systemVariant,
+      terrainCategory: saved.terrainCategory || roof.terrainCategory || 'II',
+      ridgeHeightM: saved.ridgeHeightM ?? roof.ridgeHeightM ?? '',
+      attachmentMethod,
+      panelGapMm: saved.panelGapMm ?? roof.panelGapMm ?? 20,
+      clampedFrameSide: saved.clampedFrameSide || 'long',
+      railDirectionRelativeToLongFrame: saved.railDirectionRelativeToLongFrame || 'cross',
+    };
+
+    let calculation = saved.calculation || null;
+    const calculationMatches = calculation
+      && String(saved.mountingSystemProductId || '') === String(mountingProductId || '')
+      && String(saved.systemVariant || '') === String(systemVariant || '')
+      && String(saved.attachmentMethod || '') === String(attachmentMethod || '');
+
+    if (!calculationMatches && countRoofPanels(roof) > 0 && system) {
+      try {
+        calculation = calculateMountingRoof({ project, roof, panelProduct: panel || {}, mountingProduct: system, config });
+      } catch (error) {
+        calculation = {
+          engineId: resolveMountingEngine(system || {})?.id || null,
+          state: 'blocked',
+          status: { loadsValidated: false, capacityValidated: false },
+          errors: [error?.message || 'Montageberäkningen kunde inte genomföras.'],
+          warnings: [],
+          materials: null,
+        };
+      }
+    }
+
+    return {
+      ...saved,
+      roofId: roof.id,
+      roofName: roof.name,
+      panelCount: countRoofPanels(roof),
+      panelProductId: roof.panelProductId || '',
+      panelProductName: productLabel(panel),
+      mountingSystemProductId: mountingProductId,
+      mountingSystemProductName: productLabel(system),
+      engineId: resolveMountingEngine(system || {})?.id || calculation?.engineId || null,
+      ...config,
+      calculation,
+    };
+  });
+
+  const primary = perRoofSystems.find(item => item.panelCount > 0 && item.mountingSystemProductId) || perRoofSystems[0];
+  const primarySystem = primary ? byId(products, primary.mountingSystemProductId) : null;
+  const primaryRoof = primary ? roofs.find(roof => String(roof.id) === String(primary.roofId)) : null;
+  const primaryPanel = primaryRoof ? byId(products, primaryRoof.panelProductId) || primaryRoof.panelProductSnapshot : null;
+
+  return {
+    ...mounting,
+    source: 'paneler-automatic-mounting',
+    engineId: primary?.engineId || mounting.engineId || null,
+    selectedMountingProductId: primary?.mountingSystemProductId || mounting.selectedMountingProductId || '',
+    selectedMountingProductName: primary?.mountingSystemProductName || mounting.selectedMountingProductName || '',
+    selectedMountingProductSnapshot: primarySystem ? createProductSnapshot(primarySystem) : mounting.selectedMountingProductSnapshot || null,
+    selectedPanelId: primaryRoof?.panelProductId || mounting.selectedPanelId || '',
+    selectedPanelName: productLabel(primaryPanel),
+    selectedPanelSnapshot: primaryPanel?.id ? createProductSnapshot(primaryPanel) : mounting.selectedPanelSnapshot || null,
+    panelCount: roofs.reduce((sum, roof) => sum + countRoofPanels(roof), 0),
+    perRoofSystems,
+    calculatedAt: new Date().toISOString(),
+  };
+}
+
 function engineMaterials(mounting) {
   const grouped = new Map();
   let hasEngineResult = false;
   (mounting.perRoofSystems || []).forEach(system => {
     const calculation = system?.calculation;
-    if (calculation?.status === 'blocked' || !Array.isArray(calculation?.materials?.materials)) return;
+    if (calculation?.status === 'blocked' || calculation?.state === 'blocked' || !Array.isArray(calculation?.materials?.materials)) return;
     hasEngineResult = true;
     calculation.materials.materials.forEach(material => {
       const id = material.productId || `${calculation.engineId}:${material.articleNumber || material.name}`;
@@ -162,13 +257,13 @@ function genericMountingMaterials(project, products, mounting) {
       (roof.panelGroups || []).forEach(group => {
         const rows = Math.max(0, Math.round(num(group.rows)));
         const cols = Math.max(0, Math.round(num(group.cols)));
-        const rails = group.threeRails ? 3 : 2;
+        const railCount = group.threeRails ? 3 : 2;
         const gapM = num(group.panelGapMm, num(roof.panelGapMm, 20)) / 1000;
         const runM = cols * panelWidthM + Math.max(0, cols - 1) * gapM + 0.3;
-        railLengthM += runM * rows * rails;
-        railRuns += rows * rails;
-        endClamps += rows * rails * 2;
-        midClamps += Math.max(0, cols - 1) * rows * rails;
+        railLengthM += runM * rows * railCount;
+        railRuns += rows * railCount;
+        endClamps += rows * railCount * 2;
+        midClamps += Math.max(0, cols - 1) * rows * railCount;
       });
     });
 
@@ -177,19 +272,25 @@ function genericMountingMaterials(project, products, mounting) {
     const hookSpacingM = num(meta.max_hook_spacing_mm || meta.hook_spacing_mm || meta.hookSpacingMM || mounting.hookSpacing) / 1000;
     const rails = railPieceM > 0 ? Math.ceil(railLengthM / railPieceM) : 0;
     const hooks = hookSpacingM > 0 ? Math.ceil(railLengthM / hookSpacingM) + railRuns : 0;
+    const railJoints = rails > 0 ? Math.max(0, rails - railRuns) : 0;
+    const screwsPerFastener = Math.max(1, Math.round(num(meta.screws_per_fastener || meta.screwsPerFastener, 2)));
+    const screwsPerJoint = Math.max(0, Math.round(num(meta.screws_per_rail_joint || meta.screwsPerRailJoint, 4)));
+    const screws = hooks > 0 ? hooks * screwsPerFastener + railJoints * screwsPerJoint : 0;
     const prefix = `auto:mounting:${String(key).replace(/[^a-zA-Z0-9_-]+/g, '-').toLowerCase()}`;
     result.push(virtualProduct({ productId: `${prefix}:rail-length`, name: `Skenlängd – ${systemName}`, quantity: Math.ceil(railLengthM), unit: 'm' }, snapshot));
     result.push(virtualProduct({ productId: `${prefix}:end-clamps`, name: `Ändklämmor – ${systemName}`, quantity: endClamps, unit: 'st' }, snapshot));
     result.push(virtualProduct({ productId: `${prefix}:mid-clamps`, name: `Mittklämmor – ${systemName}`, quantity: midClamps, unit: 'st' }, snapshot));
     if (rails) result.push(virtualProduct({ productId: `${prefix}:rails`, name: `Skenor – ${systemName}`, quantity: rails, unit: 'st' }, snapshot));
     if (hooks) result.push(virtualProduct({ productId: `${prefix}:hooks`, name: `Fästen/krokar – ${systemName}`, quantity: hooks, unit: 'st' }, snapshot));
+    if (screws) result.push(virtualProduct({ productId: `${prefix}:screws`, name: `Skruv – ${systemName}`, quantity: screws, unit: 'st' }, snapshot));
   });
 
   return result.filter(item => item.quantity > 0);
 }
 
 function mountingProducts(project, products) {
-  const mounting = safeJson(project.mounting_data, {}) || {};
+  const rawMounting = safeJson(project.mounting_data, {}) || {};
+  const mounting = mountingWithAutomaticCalculations(project, products, rawMounting);
   const exact = engineMaterials(mounting);
   if (exact) {
     const system = byId(products, mounting.selectedMountingProductId);
