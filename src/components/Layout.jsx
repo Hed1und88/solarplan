@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useCompanySession } from '@/lib/CompanySessionContext';
 
 const ROOT_ROUTES = ['/', '/projects', '/calendar', '/leads', '/work-orders', '/economy', '/products', '/settings', '/solar-shadow', '/solarplan-3d-projektering'];
+const HIDDEN_NAV_PATHS = new Set(['/solarplan-3d-projektering']);
 
 const navItems = [
   { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -15,6 +16,8 @@ const navItems = [
   { path: '/products', icon: Package, label: 'Produkter' },
   { path: '/settings', icon: Settings, label: 'Inställningar' },
 ];
+
+const visibleNavItems = navItems.filter(({ path }) => !HIDDEN_NAV_PATHS.has(path));
 
 function isRootRoute(pathname) { return ROOT_ROUTES.includes(pathname); }
 
@@ -29,6 +32,7 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
+      <style>{'a[href="/solarplan-3d-projektering"]{display:none!important;}'}</style>
       <aside className="hidden lg:flex fixed inset-y-0 left-0 z-50 w-64 bg-sidebar flex-col">
         <div className="flex items-center gap-3 px-4 py-4 border-b border-sidebar-border bg-slate-950/40">
           <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white/95 p-1 ring-1 ring-sky-400/25"><img src={logoSrc} alt={`${companyName} logotyp`} className="h-full w-full object-contain" /></div>
@@ -37,7 +41,7 @@ export default function Layout() {
           </div>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {navItems.map(({ path, icon: Icon, label }) => {
+          {visibleNavItems.map(({ path, icon: Icon, label }) => {
             const active = location.pathname === path || (path !== '/' && location.pathname.startsWith(path));
             return <Link key={path} to={path} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${active ? 'bg-primary text-white shadow-md shadow-primary/30' : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-white'}`}><Icon className="w-4 h-4 flex-shrink-0" />{label}</Link>;
           })}
@@ -51,7 +55,7 @@ export default function Layout() {
           <div className="w-20" />
         </header>
         <main className="flex-1 overflow-y-auto pb-20 lg:pb-0"><AnimatePresence mode="wait" initial={false}><motion.div key={location.pathname} initial={{ x: 24, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -24, opacity: 0 }} transition={{ duration: 0.18, ease: 'easeInOut' }} className="h-full"><Outlet /></motion.div></AnimatePresence></main>
-        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-card/80 backdrop-blur-md border-t border-border overflow-x-auto" style={{ paddingBottom: 'env(safe-area-inset-bottom)', paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}><div className="flex min-w-max">{navItems.map(({ path, icon: Icon, label }) => { const active = location.pathname === path || (path !== '/' && path !== '/settings' && location.pathname.startsWith(path)); return <Link key={path} to={path} className={`flex w-[78px] flex-none flex-col items-center justify-center pt-2 pb-1 gap-0.5 transition-colors ${active ? 'text-primary' : 'text-muted-foreground'}`}><Icon className={`w-5 h-5 transition-transform ${active ? 'scale-110' : ''}`} /><span className="max-w-[74px] truncate text-[10px] font-medium">{label}</span></Link>; })}</div></nav>
+        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-card/80 backdrop-blur-md border-t border-border overflow-x-auto" style={{ paddingBottom: 'env(safe-area-inset-bottom)', paddingLeft: 'env(safe-area-inset-left)', paddingRight: 'env(safe-area-inset-right)' }}><div className="flex min-w-max">{visibleNavItems.map(({ path, icon: Icon, label }) => { const active = location.pathname === path || (path !== '/' && path !== '/settings' && location.pathname.startsWith(path)); return <Link key={path} to={path} className={`flex w-[78px] flex-none flex-col items-center justify-center pt-2 pb-1 gap-0.5 transition-colors ${active ? 'text-primary' : 'text-muted-foreground'}`}><Icon className={`w-5 h-5 transition-transform ${active ? 'scale-110' : ''}`} /><span className="max-w-[74px] truncate text-[10px] font-medium">{label}</span></Link>; })}</div></nav>
       </div>
     </div>
   );
