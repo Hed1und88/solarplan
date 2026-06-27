@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useCompanySession } from '@/lib/CompanySessionContext';
 
 const ROOT_ROUTES = ['/', '/projects', '/calendar', '/leads', '/work-orders', '/economy', '/products', '/settings', '/solar-shadow', '/solarplan-3d-projektering'];
-const HIDDEN_NAV_PATHS = new Set(['/solarplan-3d-projektering']);
+const HIDDEN_NAV_PATHS = new Set(['/solar-shadow', '/solanalys', '/3d-solanalys', '/solarplan-3d-projektering']);
 
 const navItems = [
   { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -32,7 +32,7 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
-      <style>{'a[href="/solarplan-3d-projektering"]{display:none!important;}'}</style>
+      <style>{'aside a[href*="solar-shadow"],nav a[href*="solar-shadow"],aside a[href*="solanalys"],nav a[href*="solanalys"],aside a[href*="3d-solanalys"],nav a[href*="3d-solanalys"],aside a[href*="3d-projektering"],nav a[href*="3d-projektering"]{display:none!important;}'}</style>
       <aside className="hidden lg:flex fixed inset-y-0 left-0 z-50 w-64 bg-sidebar flex-col">
         <div className="flex items-center gap-3 px-4 py-4 border-b border-sidebar-border bg-slate-950/40">
           <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white/95 p-1 ring-1 ring-sky-400/25"><img src={logoSrc} alt={`${companyName} logotyp`} className="h-full w-full object-contain" /></div>
