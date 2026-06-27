@@ -1,5 +1,5 @@
 import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, FolderOpen, CalendarDays, UsersRound, Package, Settings, ChevronLeft, Sun, ClipboardList, Banknote } from 'lucide-react';
+import { LayoutDashboard, FolderOpen, CalendarDays, UsersRound, Package, Settings, ChevronLeft, ClipboardList, Banknote } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCompanySession } from '@/lib/CompanySessionContext';
 
@@ -12,7 +12,6 @@ const navItems = [
   { path: '/leads', icon: UsersRound, label: 'Leads' },
   { path: '/work-orders', icon: ClipboardList, label: 'Arbetsorder' },
   { path: '/economy', icon: Banknote, label: 'Ekonomi' },
-  { path: '/solarplan-3d-projektering', icon: Sun, label: '3D Projektering' },
   { path: '/products', icon: Package, label: 'Produkter' },
   { path: '/settings', icon: Settings, label: 'Inställningar' },
 ];
