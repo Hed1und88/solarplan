@@ -2,20 +2,137 @@
   "name": "Customer",
   "type": "object",
   "properties": {
-    "customer_type": { "type": "string", "enum": ["private", "company"], "default": "private", "description": "Privatkund eller företagskund" },
-    "name": { "type": "string", "description": "Kundens namn eller företagsnamn" },
-    "organization_number": { "type": "string", "description": "Organisationsnummer eller personnummer" },
-    "contact_name": { "type": "string", "description": "Kontaktperson" },
-    "email": { "type": "string", "description": "E-postadress" },
-    "phone": { "type": "string", "description": "Telefonnummer" },
-    "address": { "type": "string", "description": "Gatuadress" },
-    "postal_code": { "type": "string", "description": "Postnummer" },
-    "city": { "type": "string", "description": "Ort" },
-    "status": { "type": "string", "enum": ["active", "inactive"], "default": "active", "description": "Kundstatus" },
-    "notes": { "type": "string", "description": "Interna anteckningar" },
-    "company_id": { "type": "string", "description": "Företagstillhörighet" },
-    "owner_email": { "type": "string", "description": "Ägarens e-postadress" },
-    "owner_role": { "type": "string", "description": "Ägarens roll" }
+    "customer_type": {
+      "type": "string",
+      "enum": [
+        "private",
+        "company"
+      ],
+      "default": "private",
+      "description": "Privatkund eller f\u00f6retagskund"
+    },
+    "name": {
+      "type": "string",
+      "description": "Kundens namn eller f\u00f6retagsnamn"
+    },
+    "organization_number": {
+      "type": "string",
+      "description": "Organisationsnummer eller personnummer"
+    },
+    "contact_name": {
+      "type": "string",
+      "description": "Kontaktperson"
+    },
+    "email": {
+      "type": "string",
+      "description": "E-postadress"
+    },
+    "phone": {
+      "type": "string",
+      "description": "Telefonnummer"
+    },
+    "address": {
+      "type": "string",
+      "description": "Gatuadress"
+    },
+    "postal_code": {
+      "type": "string",
+      "description": "Postnummer"
+    },
+    "city": {
+      "type": "string",
+      "description": "Ort"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "active",
+        "inactive"
+      ],
+      "default": "active",
+      "description": "Kundstatus"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Interna anteckningar"
+    },
+    "company_id": {
+      "type": "string",
+      "description": "F\u00f6retagstillh\u00f6righet"
+    },
+    "owner_email": {
+      "type": "string",
+      "description": "\u00c4garens e-postadress"
+    },
+    "owner_role": {
+      "type": "string",
+      "description": "\u00c4garens roll"
+    }
   },
-  "required": ["name"]
+  "required": [
+    "name"
+  ],
+  "rls": {
+    "create": true,
+    "read": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "data.owner_email": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "data.access_role": "superadmin"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "data.owner_email": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "data.access_role": "superadmin"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "data.owner_email": "{{user.email}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "data.access_role": "superadmin"
+          }
+        }
+      ]
+    }
+  }
 }
