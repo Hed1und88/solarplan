@@ -175,5 +175,51 @@
     "name",
     "category",
     "price"
-  ]
+  ],
+  "rls": {
+    "create": {
+      "$or": [
+        {
+          "$and": [
+            { "data.company_id": "{{user.data.company_id}}" },
+            { "data.is_standard": false }
+          ]
+        },
+        { "user_condition": { "role": "admin" } },
+        { "user_condition": { "data.access_role": "superadmin" } }
+      ]
+    },
+    "read": {
+      "$or": [
+        { "data.is_standard": true },
+        { "data.company_id": "{{user.data.company_id}}" },
+        { "user_condition": { "role": "admin" } },
+        { "user_condition": { "data.access_role": "superadmin" } }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "$and": [
+            { "data.company_id": "{{user.data.company_id}}" },
+            { "data.is_standard": false }
+          ]
+        },
+        { "user_condition": { "role": "admin" } },
+        { "user_condition": { "data.access_role": "superadmin" } }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "$and": [
+            { "data.company_id": "{{user.data.company_id}}" },
+            { "data.is_standard": false }
+          ]
+        },
+        { "user_condition": { "role": "admin" } },
+        { "user_condition": { "data.access_role": "superadmin" } }
+      ]
+    }
+  }
 }

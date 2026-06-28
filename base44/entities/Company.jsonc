@@ -15,5 +15,45 @@
     "active": { "type": "boolean", "default": true, "description": "Om företaget är aktivt" },
     "created_by_email": { "type": "string", "description": "E-post för användaren som skapade företaget" }
   },
-  "required": ["name"]
+  "required": ["name"],
+  "rls": {
+    "create": {
+      "$or": [
+        { "user_condition": { "role": "admin" } },
+        { "user_condition": { "data.access_role": "superadmin" } }
+      ]
+    },
+    "read": {
+      "$or": [
+        { "id": "{{user.data.company_id}}" },
+        { "data.company_id": "{{user.data.company_id}}" },
+        { "user_condition": { "role": "admin" } },
+        { "user_condition": { "data.access_role": "superadmin" } }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "$and": [
+            { "id": "{{user.data.company_id}}" },
+            { "user_condition": { "data.access_role": "company_admin" } }
+          ]
+        },
+        {
+          "$and": [
+            { "data.company_id": "{{user.data.company_id}}" },
+            { "user_condition": { "data.access_role": "company_admin" } }
+          ]
+        },
+        { "user_condition": { "role": "admin" } },
+        { "user_condition": { "data.access_role": "superadmin" } }
+      ]
+    },
+    "delete": {
+      "$or": [
+        { "user_condition": { "role": "admin" } },
+        { "user_condition": { "data.access_role": "superadmin" } }
+      ]
+    }
+  }
 }
