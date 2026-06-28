@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { base44 } from '@/api/base44Client';
+import { listVisibleProducts } from '@/lib/tenantQueries';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -229,7 +230,7 @@ export default function ProjectDetail() {
   const [activeTab, setActiveTab] = useState('panels');
   const [compactTabs, setCompactTabs] = useState(false);
 
-  const { data: products = [] } = useQuery({ queryKey: ['products-all'], queryFn: () => base44.entities.Product.list() });
+  const { data: products = [] } = useQuery({ queryKey: ['products-all'], queryFn: () => listVisibleProducts() });
   const { data: serverProject, isLoading } = useQuery({ queryKey: ['project', id], queryFn: () => fetchProjectById(base44, id), enabled: !!id });
 
   useEffect(() => {

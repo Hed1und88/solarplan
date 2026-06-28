@@ -3,9 +3,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { ClipboardList, Filter, Plus, Search } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { listTenantProjects } from '@/lib/tenantQueries';
 import {
   WORK_ORDER_STATUSES,
   WORK_ORDER_TYPES,
@@ -33,7 +33,7 @@ export default function WorkOrders() {
   const [type, setType] = useState('all');
   const { data: projects = [] } = useQuery({
     queryKey: ['projects-for-work-orders'],
-    queryFn: () => base44.entities.Project.list('-updated_date'),
+    queryFn: () => listTenantProjects('-updated_date'),
   });
 
   useEffect(() => {

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { base44 } from '@/api/base44Client';
 import { AlertTriangle, Battery, Box, Building2, Cable, CheckCircle2, FileText, Package, Pencil, Plus, Search, Sun, ToggleLeft, Trash2, Wrench, Zap } from 'lucide-react';
 import ProductFormModal from '@/components/products/ProductFormModal';
 import ProductCatalogImporter from '@/components/products/ProductCatalogImporter';
@@ -8,6 +7,8 @@ import { productDocuments, productMeta, resolveProductClampZone } from '@/lib/pr
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { canEditProduct, isStandardProduct, resolveAccessContext } from '@/lib/accessControl';
+import { deleteTenantProduct, getTenantUser, listVisibleProducts } from '@/lib/tenantQueries';
 
 const PENDING_META_KEY = 'solarplan:pending-mounting-product-meta';
 const CATEGORY_CONFIG = {
@@ -100,11 +101,16 @@ export default function ProductsV2() {
   const [quality, setQuality] = useState('all');
   const [search, setSearch] = useState('');
   const [mountingMeta, setMountingMeta] = useState({ mounting_item_type: 'mounting', mounting_system_name: '' });
+  const [user, setUser] = useState(null);
 
   const load = async () => {
     setLoading(true);
     try {
-      const rows = await base44.entities.Product.list('-created_date');
+      const [rows, tenantUser] = await Promise.all([
+        listVisibleProducts('-created_date'),
+        getTenantUser(),
+      ]);
+      setUser(tenantUser);
       setProducts(rows || []);
       return rows || [];
     } finally {
@@ -159,10 +165,11 @@ export default function ProductsV2() {
   };
   const closeModal = () => { setShowModal(false); setEditProduct(null); setFixMode(false); window.sessionStorage.removeItem(PENDING_META_KEY); };
 
-  const deleteProduct = async id => {
+  const deleteProduct = async product => {
+    if (!canEditProduct(user || {}, product)) return;
     if (!window.confirm('Ta bort produkten?')) return;
-    await base44.entities.Product.delete(id);
-    setProducts(current => current.filter(product => product.id !== id));
+    await deleteTenantProduct(product);
+    setProducts(current => current.filter(item => item.id !== product.id));
   };
 
   const afterSave = async ({ continueToNext = false, savedProductId } = {}) => {
@@ -178,17 +185,21 @@ export default function ProductsV2() {
   };
 
   const openFirstIncomplete = () => {
-    const first = rows.find(row => !row.status.complete);
+    const first = rows.find(row => !row.status.complete && canEditProduct(user || {}, row.raw));
     if (!first) { setMessage('Inga ofullständiga produkter hittades.'); return; }
     openEdit(first.raw);
     setFixMode(true);
   };
 
+  const access = resolveAccessContext(user || {});
+  const canCreateProduct = access.isSuperadmin || access.isCompanyAdmin;
+  const canFixIncomplete = rows.some(row => !row.status.complete && canEditProduct(user || {}, row.raw));
+
   return (
     <div className="mx-auto max-w-7xl p-4 sm:p-6">
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div><h1 className="text-2xl font-bold">Produktsortiment</h1><p className="mt-1 text-sm text-muted-foreground">{products.length} produkter totalt</p></div>
-        <div className="flex flex-wrap gap-2"><ProductCatalogImporter products={products} onDone={load} /><Button variant="outline" onClick={openFirstIncomplete} disabled={!stats.incomplete} className="gap-2"><Wrench className="h-4 w-4" />Fixa ofullständig</Button><Button onClick={openNew} className="gap-2"><Plus className="h-4 w-4" />Lägg till produkt</Button></div>
+        <div className="flex flex-wrap gap-2"><ProductCatalogImporter products={products} onDone={load} /><Button variant="outline" onClick={openFirstIncomplete} disabled={!canFixIncomplete} className="gap-2"><Wrench className="h-4 w-4" />Fixa ofullständig</Button>{canCreateProduct && <Button onClick={openNew} className="gap-2"><Plus className="h-4 w-4" />Lägg till produkt</Button>}</div>
       </div>
 
       {message && <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">{message}</div>}
@@ -213,7 +224,7 @@ export default function ProductsV2() {
 
       <div className="mb-4 text-xs text-muted-foreground">Visar {filteredRows.length} av {products.length} produkter.</div>
       {loading ? <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{[1,2,3,4,5,6].map(index => <div key={index} className="h-44 animate-pulse rounded-2xl bg-muted" />)}</div> : filteredRows.length === 0 ? <div className="rounded-2xl border bg-card py-16 text-center"><Package className="mx-auto mb-3 h-12 w-12 text-muted-foreground/30" /><p className="text-muted-foreground">Inga produkter matchar filtren.</p></div> : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{filteredRows.map(({ raw, product, status }) => <ProductCard key={product.id} raw={raw} product={product} status={status} onEdit={() => openEdit(raw)} onDelete={() => deleteProduct(product.id)} />)}</div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{filteredRows.map(({ raw, product, status }) => <ProductCard key={product.id} raw={raw} product={product} status={status} canEdit={canEditProduct(user || {}, raw)} onEdit={() => openEdit(raw)} onDelete={() => deleteProduct(raw)} />)}</div>
       )}
 
       {showModal && <>
@@ -237,11 +248,11 @@ function Stat({ value, label, tone = 'neutral' }) {
   return <div className={`rounded-2xl border p-3 ${cls}`}><div className="text-2xl font-bold">{value}</div><div className="text-xs">{label}</div></div>;
 }
 
-function ProductCard({ raw, product, status, onEdit, onDelete }) {
+function ProductCard({ raw, product, status, canEdit, onEdit, onDelete }) {
   const config = CATEGORY_CONFIG[product.category] || CATEGORY_CONFIG.ovrigt;
   const Icon = config.icon;
   return <article className={`rounded-2xl border bg-card p-4 transition-shadow hover:shadow-md ${status.complete ? 'border-green-200' : 'border-amber-200'}`}>
-    <div className="mb-3 flex items-start justify-between gap-2"><div className="flex flex-wrap gap-1.5"><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${config.color}`}><Icon className="h-3 w-3" />{config.label}</span>{product.category === 'montagesystem' && <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${product.mounting_item_type === 'accessory' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{product.mounting_item_type === 'accessory' ? 'Tillbehör' : 'Montage'}</span>}</div><div className="flex items-center gap-1"><span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold ${status.complete ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{status.complete ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}{status.complete ? 'Komplett' : 'Ofullständig'}</span><button type="button" onClick={onEdit} className="rounded-lg p-1.5 hover:bg-muted"><Pencil className="h-3.5 w-3.5" /></button><button type="button" onClick={onDelete} className="rounded-lg p-1.5 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button></div></div>
+    <div className="mb-3 flex items-start justify-between gap-2"><div className="flex flex-wrap gap-1.5"><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${config.color}`}><Icon className="h-3 w-3" />{config.label}</span>{isStandardProduct(raw) && <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">Standard</span>}{product.category === 'montagesystem' && <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${product.mounting_item_type === 'accessory' ? 'bg-violet-100 text-violet-700' : 'bg-blue-100 text-blue-700'}`}>{product.mounting_item_type === 'accessory' ? 'Tillbehör' : 'Montage'}</span>}</div><div className="flex items-center gap-1"><span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold ${status.complete ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{status.complete ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}{status.complete ? 'Komplett' : 'Ofullständig'}</span>{canEdit && <><button type="button" onClick={onEdit} className="rounded-lg p-1.5 hover:bg-muted"><Pencil className="h-3.5 w-3.5" /></button><button type="button" onClick={onDelete} className="rounded-lg p-1.5 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button></>}</div></div>
     <ProductVisual product={raw} className="mb-3 h-28 w-full" />
     <h3 className="text-sm font-semibold">{product.name}</h3><p className="mt-0.5 text-xs text-muted-foreground">{[product.brand, product.model].filter(Boolean).join(' ')}</p>{product.category === 'montagesystem' && <p className="mt-1 text-xs font-medium text-amber-800">System: {product.mounting_system_name}</p>}
     <div className="mt-3 flex items-center justify-between"><span className="text-lg font-bold text-primary">{Number(product.price || 0).toLocaleString('sv-SE')} kr</span><span className="text-xs text-muted-foreground">/{product.unit || 'st'}</span></div>

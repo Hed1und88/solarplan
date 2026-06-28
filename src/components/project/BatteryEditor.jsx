@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
+import { filterVisibleProducts } from '@/lib/tenantQueries';
 import { Upload, Loader2, Trash2, Battery, Info } from 'lucide-react';
 import { useEffect } from 'react';
 
@@ -13,7 +14,7 @@ export default function BatteryEditor({ project, onUpdate }) {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    base44.entities.Product.filter({ category: 'batteri' }).then(data => {
+    filterVisibleProducts({ category: 'batteri' }).then(data => {
       setProducts(data);
       if (data.length > 0) setSelectedProduct(data[0]);
     });

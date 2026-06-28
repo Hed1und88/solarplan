@@ -17,10 +17,10 @@ import {
 } from 'lucide-react';
 import {
   canEditWorkspaceRecord,
-  currentUserSafe,
   filterWorkspaceRecords,
   withWorkspaceOwnership,
 } from '@/lib/workspaceAccess';
+import { getTenantUser, listTenantEntity } from '@/lib/tenantQueries';
 
 const INPUT = 'w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30';
 
@@ -192,8 +192,8 @@ export default function Customers() {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['customers'],
     queryFn: async () => {
-      const user = await currentUserSafe(base44);
-      const rows = await base44.entities.Customer.list('-created_date');
+      const user = await getTenantUser();
+      const rows = await listTenantEntity('Customer', '-created_date');
       return { user, customers: filterWorkspaceRecords(rows, user || {}) };
     },
   });

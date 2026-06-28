@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
+import { filterVisibleProducts } from '@/lib/tenantQueries';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -194,7 +194,7 @@ export default function PanelPlacementTab({ project, onUpdate }) {
 
   const { data: products = [] } = useQuery({
     queryKey: ['products-panels'],
-    queryFn: () => base44.entities.Product.filter({ category: 'solpanel' }),
+    queryFn: () => filterVisibleProducts({ category: 'solpanel' }),
   });
 
   // Determine active product

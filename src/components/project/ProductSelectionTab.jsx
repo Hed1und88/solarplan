@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { listVisibleProducts } from '@/lib/tenantQueries';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -79,7 +79,7 @@ function autoLabel(source) {
 export default function ProductSelectionTab({ project, onUpdate }) {
   const { data: products = [] } = useQuery({
     queryKey: ['products-all'],
-    queryFn: () => base44.entities.Product.list(),
+    queryFn: () => listVisibleProducts(),
   });
   const mergedProject = useMemo(() => mergeProjectAutoProducts(project || {}, products), [project, products]);
   const [selectedProducts, setSelectedProducts] = useState(() => normalize(mergedProject.selected_products));

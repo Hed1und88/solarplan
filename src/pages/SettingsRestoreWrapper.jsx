@@ -9,6 +9,7 @@ import { filterProjectsForUser, getUserEmail } from '@/lib/accessControl';
 import { mergeProjectWithBackup, saveProjectPatch, writeProjectBackup } from '@/lib/projectPersistence';
 import { useCompanySession } from '@/lib/CompanySessionContext';
 import Settings from './Settings.jsx';
+import { listTenantProjects } from '@/lib/tenantQueries';
 
 function findSettingsRoot() {
   const heading = Array.from(document.querySelectorAll('h1')).find(element => (element.textContent || '').trim() === 'Inställningar');
@@ -38,7 +39,7 @@ function RestoreSettingsSection() {
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['settings-restore-projects', getUserEmail(user || {})],
-    queryFn: () => base44.entities.Project.list('-updated_date'),
+    queryFn: () => listTenantProjects('-updated_date'),
   });
 
   const projects = useMemo(

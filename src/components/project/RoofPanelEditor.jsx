@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { base44 } from '@/api/base44Client';
+import { filterVisibleProducts } from '@/lib/tenantQueries';
 import { Upload, Trash2, Loader2, Info } from 'lucide-react';
 
 export default function RoofPanelEditor({ project, onUpdate }) {
@@ -17,7 +18,7 @@ export default function RoofPanelEditor({ project, onUpdate }) {
   const imageRef = useRef(null);
 
   useEffect(() => {
-    base44.entities.Product.filter({ category: 'solpanel' }).then(data => {
+    filterVisibleProducts({ category: 'solpanel' }).then(data => {
       setProducts(data);
       if (data.length > 0) setSelectedProduct(data[0]);
     });

@@ -200,7 +200,7 @@ const client = createClient({
   token,
   functionsVersion,
   serverUrl: '',
-  requiresAuth: false,
+  requiresAuth: true,
   appBaseUrl,
 });
 

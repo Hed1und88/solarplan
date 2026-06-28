@@ -3,6 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { X, Upload, Loader2, Sparkles, FileText, Trash2, AlertTriangle, CheckCircle2, Ruler, Zap, Battery } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { buildProductDescription, DOCUMENT_TYPE_LABELS, productDescription, productDocuments, productMeta } from '@/lib/productDocuments';
+import { createTenantProduct, updateTenantProduct } from '@/lib/tenantQueries';
 
 const categories = [
   { value: 'solpanel', label: 'Solpanel' },
@@ -251,7 +252,7 @@ export default function ProductFormModal({ product, onSave, onClose, fixMode = f
       ['power_watts','capacity_kwh','width_mm','height_mm','weight_kg','voc_v','isc_a','vmp_v','imp_a','temp_coeff_pmax_percent_c','temp_coeff_voc_percent_c','temp_coeff_isc_percent_c','noct_c','max_dc_power_kw','max_dc_voltage_v','startup_voltage_v','mppt_voltage_min_v','mppt_voltage_max_v','nominal_dc_voltage_v','mppt_count','strings_per_mppt','max_input_current_a','max_short_circuit_current_a'].forEach(k => { data[k] = numOrNull(form[k]); });
       [...PANEL_META_FIELDS, ...BATTERY_FIELDS].forEach(k => delete data[k]);
       data.bifacial = Boolean(form.bifacial); data.battery_supported = Boolean(form.battery_supported); Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
-      if (product?.id) await base44.entities.Product.update(product.id, data); else await base44.entities.Product.create(data);
+      if (product?.id) await updateTenantProduct(product, data); else await createTenantProduct(data);
       await onSave?.({ continueToNext, savedProductId: product?.id });
     } catch (err) {
       console.error('Sparande misslyckades:', err);

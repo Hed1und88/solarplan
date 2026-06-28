@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { filterVisibleProducts } from '@/lib/tenantQueries';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -326,7 +326,7 @@ export default function SolarRoofPlanner({ project, onUpdate }) {
   const savingRef = useRef(false);
   const { data: products = [] } = useQuery({
     queryKey: ['products-panels-roof-planner'],
-    queryFn: () => base44.entities.Product.filter({ category: 'solpanel' }),
+    queryFn: () => filterVisibleProducts({ category: 'solpanel' }),
   });
   const panelProducts = products.filter((product) => product.is_active !== false);
   const [roofs, setRoofs] = useState(() => {

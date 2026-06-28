@@ -7,6 +7,7 @@ import { ArrowRight, MapPin, Pencil, Plus, Shield, Sun, User } from 'lucide-reac
 import NewProjectModal from '@/components/projects/NewProjectModal';
 import { attachCompanyOwnership, canEditProject, filterProjectsForUser, resolveAccessContext } from '@/lib/accessControl';
 import { saveProjectPatch } from '@/lib/projectPersistence';
+import { getTenantUser, listTenantProjects } from '@/lib/tenantQueries';
 
 const statusConfig = {
   planering: { label: 'Planering', color: 'bg-blue-100 text-blue-700' },
@@ -16,14 +17,6 @@ const statusConfig = {
   klart: { label: 'Klart', color: 'bg-green-100 text-green-700' },
 };
 
-async function currentUserSafe() {
-  try {
-    if (base44?.auth?.me) return await base44.auth.me();
-    if (base44?.auth?.currentUser) return await base44.auth.currentUser();
-  } catch {}
-  return null;
-}
-
 export default function Projects() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingProject, setEditingProject] = useState(null);
@@ -31,8 +24,8 @@ export default function Projects() {
   const { data, isLoading: loading, refetch } = useQuery({
     queryKey: ['projects'],
     queryFn: async () => {
-      const user = await currentUserSafe();
-      const rows = await base44.entities.Project.list('-created_date');
+      const user = await getTenantUser();
+      const rows = await listTenantProjects('-created_date');
       return { user, projects: filterProjectsForUser(rows || [], user || {}) };
     },
   });

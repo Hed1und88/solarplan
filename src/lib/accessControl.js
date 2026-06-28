@@ -120,7 +120,7 @@ export function canViewProduct(user, product = {}, context = {}) {
   if (access.isSuperadmin) return true;
   if (access.isCompanyUser) {
     const productCompany = getEntityCompanyId(product);
-    return !productCompany || sameCompany(access, product);
+    return product.is_standard === true || !productCompany || sameCompany(access, product);
   }
   if (access.isWholesaler) return Boolean(context.wholesaleRequest || product.wholesale_visible || wholesalerAllowed(access, context.project || {}));
   return false;
@@ -131,7 +131,7 @@ export function canEditProduct(user, product = {}) {
   if (access.isSuperadmin) return true;
   if (access.isCompanyAdmin) {
     const productCompany = getEntityCompanyId(product);
-    return Boolean(productCompany && sameCompany(access, product));
+    return product.is_standard !== true && Boolean(productCompany && sameCompany(access, product));
   }
   return false;
 }
@@ -141,10 +141,16 @@ export function canViewProductPrice(user, product = {}, context = {}) {
   if (access.isSuperadmin) return true;
   if (access.isCompanyUser) {
     const productCompany = getEntityCompanyId(product);
-    return !productCompany || sameCompany(access, product);
+    return product.is_standard === true || !productCompany || sameCompany(access, product);
   }
   if (access.isWholesaler) return Boolean(context.wholesaleRequest || wholesalerAllowed(access, context.project || {}));
   return false;
+}
+
+export function isStandardProduct(product = {}) {
+  if (product.is_standard === true) return true;
+  if (product.is_standard === false) return false;
+  return !getEntityCompanyId(product);
 }
 
 const PRICE_FIELDS = ['price', 'cost_price', 'purchase_price', 'supplier_price', 'company_purchase_price', 'margin_percent', 'margin', 'purchasePrice', 'costPrice'];

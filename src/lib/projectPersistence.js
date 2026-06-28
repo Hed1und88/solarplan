@@ -1,4 +1,5 @@
 import { attachCompanyOwnership, canEditProject, canViewProject, filterProjectsForUser, resolveAccessContext } from '@/lib/accessControl';
+import { listTenantProjects } from '@/lib/tenantQueries';
 
 const BACKUP_PREFIX = 'solarplan:project-backup:';
 const SERVER_FIELDS = new Set([
@@ -270,7 +271,7 @@ export async function fetchProjectById(base44, projectId) {
   let project = null;
   try { project = await base44?.entities?.Project?.get?.(projectId); } catch {}
   if (!project?.id) {
-    const rows = await base44.entities.Project.list('-updated_date');
+    const rows = await listTenantProjects('-updated_date');
     project = filterProjectsForUser(rows || [], user || {}).find(item => item.id === projectId) || null;
   }
   if (!project) return null;

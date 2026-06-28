@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { listVisibleProducts } from '@/lib/tenantQueries';
 import { AlertTriangle, CheckCircle2, CloudRain, Cpu, Info, Loader2, PanelTop, RefreshCw, Sun, ThermometerSun, Zap } from 'lucide-react';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 
@@ -264,7 +264,7 @@ export default function AdvancedStringCalculator() {
     setLoadingProducts(true);
     setLoadError(null);
     try {
-      const data = await base44.entities.Product.list('-created_date');
+      const data = await listVisibleProducts('-created_date');
       setProducts(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Could not load products', error);
