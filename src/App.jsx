@@ -12,6 +12,7 @@ import Projects from '@/pages/Projects';
 import ProjectDetail from '@/pages/ProjectDetailMapWrapper.jsx';
 import CalendarPage from '@/pages/Calendar';
 import SalesPipeline from '@/pages/Leads';
+import Customers from '@/pages/Customers.jsx';
 import Products from '@/pages/Products';
 import Settings from '@/pages/SettingsRestoreWrapper.jsx';
 import SolarShadowAnalysis from '@/pages/SolarShadowAnalysis';
@@ -36,6 +37,7 @@ const AuthenticatedApp = () => {
       <Route path="/projects/:id" element={<ProjectDetail />} />
       <Route path="/calendar" element={<CalendarPage />} />
       <Route path="/leads" element={<SalesPipeline />} />
+      <Route path="/customers" element={<Customers />} />
       <Route path="/work-orders" element={<WorkOrders />} />
       <Route path="/work-orders/:id" element={<WorkOrderDetailPage />} />
       <Route path="/economy" element={<Economy />} />
