@@ -16,5 +16,51 @@
     "invited_at": { "type": "string", "description": "Tidpunkt då användaren kopplades eller bjöds in" },
     "assigned_by_email": { "type": "string", "description": "Administratören som skapade kopplingen" }
   },
-  "required": ["company_id", "user_email", "access_role"]
+  "required": ["company_id", "user_email", "access_role"],
+  "rls": {
+    "create": {
+      "$or": [
+        {
+          "$and": [
+            { "data.company_id": "{{user.data.company_id}}" },
+            { "user_condition": { "data.access_role": "company_admin" } }
+          ]
+        },
+        { "user_condition": { "role": "admin" } },
+        { "user_condition": { "data.access_role": "superadmin" } }
+      ]
+    },
+    "read": {
+      "$or": [
+        { "data.company_id": "{{user.data.company_id}}" },
+        { "data.user_email": "{{user.email}}" },
+        { "user_condition": { "role": "admin" } },
+        { "user_condition": { "data.access_role": "superadmin" } }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "$and": [
+            { "data.company_id": "{{user.data.company_id}}" },
+            { "user_condition": { "data.access_role": "company_admin" } }
+          ]
+        },
+        { "user_condition": { "role": "admin" } },
+        { "user_condition": { "data.access_role": "superadmin" } }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "$and": [
+            { "data.company_id": "{{user.data.company_id}}" },
+            { "user_condition": { "data.access_role": "company_admin" } }
+          ]
+        },
+        { "user_condition": { "role": "admin" } },
+        { "user_condition": { "data.access_role": "superadmin" } }
+      ]
+    }
+  }
 }

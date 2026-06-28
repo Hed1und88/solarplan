@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { listVisibleProducts } from '@/lib/tenantQueries';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -97,7 +97,7 @@ function StringCountControl({ countValue, strings, activeId, setCountValue, sele
 
 export default function StringMarkingTabV7External({ project, onUpdate, selectedProduct: selectedProductProp }) {
   const save = saved(project); const plan = useMemo(() => planner(project), [project]);
-  const { data: products = [], refetch } = useQuery({ queryKey: ['products-for-string-marking'], queryFn: () => base44.entities.Product.list('-created_date') });
+  const { data: products = [], refetch } = useQuery({ queryKey: ['products-for-string-marking'], queryFn: () => listVisibleProducts('-created_date') });
   const panelProducts = products.filter(x => x.category === 'solpanel' && x.is_active !== false);
   const inverterProducts = products.filter(x => x.category === 'vaxelriktare' && x.is_active !== false);
   const initialInv = (save.inverterConfigs?.length ? save.inverterConfigs : [{ productId: save.inverterProductId || '' }]).map((x, i) => makeInv(i, x)); const firstInv = initialInv[0]?.id || '';

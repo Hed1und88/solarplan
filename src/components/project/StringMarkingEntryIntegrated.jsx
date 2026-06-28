@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, Plus, Trash2, Zap } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { filterVisibleProducts } from '@/lib/tenantQueries';
 import { productMeta } from '@/lib/productDocuments';
 import { Button } from '@/components/ui/button';
 import StringMarkingCanvasWorkspace from './StringMarkingCanvasWorkspace.jsx';
@@ -215,7 +215,7 @@ export default function StringMarkingEntryIntegrated({ project, onUpdate, ...res
 
   const { data: products = [] } = useQuery({
     queryKey: ['products-inverters-string-entry'],
-    queryFn: () => base44.entities.Product.filter({ category: 'vaxelriktare' }),
+    queryFn: () => filterVisibleProducts({ category: 'vaxelriktare' }),
   });
   const inverters = products.filter(product => product.is_active !== false);
   const activeConfig = configs.find(config => config.id === activeConfigId) || configs[0];

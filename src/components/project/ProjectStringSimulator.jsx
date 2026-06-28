@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { listVisibleProducts } from '@/lib/tenantQueries';
 import { useQuery } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, Cpu, Loader2, PanelTop, RefreshCw, Sun, CloudRain, Zap, Info } from 'lucide-react';
 
@@ -207,7 +207,7 @@ function NativeInput({ type = 'number', value, onChange, min, max, step, placeho
 export default function ProjectStringSimulator({ project, onUpdate, preselectedPanelId }) {
   const { data: allProducts = [], isLoading, refetch } = useQuery({
     queryKey: ['products-for-simulator'],
-    queryFn: () => base44.entities.Product.list(),
+    queryFn: () => listVisibleProducts(),
   });
 
   const panels = useMemo(() => allProducts.filter(p => p.category === 'solpanel' && p.is_active !== false), [allProducts]);

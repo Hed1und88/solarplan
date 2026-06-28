@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Building2, Plus, ToggleLeft } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { createTenantProduct } from '@/lib/tenantQueries';
 import { buildProductDescription } from '@/lib/productDocuments';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -45,7 +45,7 @@ export default function ElectricalProductQuickAdd() {
     setSaving(true);
     setMessage('');
     try {
-      await base44.entities.Product.create({
+      await createTenantProduct({
         category: form.category,
         name: form.name.trim(),
         brand: form.brand.trim(),

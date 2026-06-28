@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { createTenantProduct, updateTenantProduct } from '@/lib/tenantQueries';
 
 const categories = [
   { value: 'solpanel', label: 'Solpanel' },
@@ -43,9 +43,9 @@ export default function ProductForm({ product, onSaved, onCancel }) {
       height_mm: form.height_mm ? Number(form.height_mm) : undefined,
     };
     if (product?.id) {
-      await base44.entities.Product.update(product.id, data);
+      await updateTenantProduct(product, data);
     } else {
-      await base44.entities.Product.create(data);
+      await createTenantProduct(data);
     }
     setSaving(false);
     onSaved();

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { filterVisibleProducts } from '@/lib/tenantQueries';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -311,7 +311,7 @@ function Canvas({ map, strings, activeId, activeString, tool, scale, onPanelClic
 export default function StringMarkingTabV7({ project, onUpdate }) {
   const saved = readSaved(project);
   const [plannerData, setPlannerData] = useState(() => readPlanner(project));
-  const { data: products = [] } = useQuery({ queryKey: ['products-panels'], queryFn: () => base44.entities.Product.filter({ category: 'solpanel' }) });
+  const { data: products = [] } = useQuery({ queryKey: ['products-panels'], queryFn: () => filterVisibleProducts({ category: 'solpanel' }) });
   
   const [scale, setScale] = useState(DEFAULT_SCALE);
   const [tool, setTool] = useState('string');

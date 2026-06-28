@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Image, Sparkles } from 'lucide-react';
 import { PRODUCT_SEED_CATALOG } from '@/data/productSeedCatalog';
 import { SWEDEN_EXTRA_PRODUCT_CATALOG } from '@/data/productSeedCatalogSwedenExtra';
+import { resolveAccessContext } from '@/lib/accessControl';
+import { createStandardProduct, getTenantUser, updateTenantProduct } from '@/lib/tenantQueries';
 
 const ALL_PRODUCTS = [...PRODUCT_SEED_CATALOG, ...SWEDEN_EXTRA_PRODUCT_CATALOG];
 
@@ -11,6 +13,8 @@ function clean(item) {
   result.price = Number(result.price) || 0;
   result.unit = result.unit || 'st';
   result.is_active = true;
+  result.is_standard = true;
+  result.company_id = '';
   result.image_url = result.image_url || '';
   Object.keys(result).forEach((key) => {
     if (result[key] === null || result[key] === undefined) delete result[key];
@@ -39,27 +43,40 @@ export default function ProductCatalogImporter({ products = [], onDone }) {
   const [running, setRunning] = useState(false);
   const [imageRunning, setImageRunning] = useState(false);
   const [status, setStatus] = useState('');
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    getTenantUser().then(setUser).catch(() => setUser(null));
+  }, []);
+
+  if (!resolveAccessContext(user || {}).isSuperadmin) return null;
 
   const run = async () => {
     if (!confirm(`Lägg in ${ALL_PRODUCTS.length} färdiga produkter i produktsortimentet?`)) return;
     setRunning(true);
     let created = 0;
     let skipped = 0;
-    const existing = new Set(products.map((product) => `${product.category}|${product.brand}|${product.model}`.toLowerCase()));
+    let backfilled = 0;
+    const existing = new Map(products.map((product) => [`${product.category}|${product.brand}|${product.model}`.toLowerCase(), product]));
 
     try {
       for (let i = 0; i < ALL_PRODUCTS.length; i++) {
         const item = ALL_PRODUCTS[i];
         const key = `${item.category}|${item.brand}|${item.model}`.toLowerCase();
         setStatus(`${i + 1}/${ALL_PRODUCTS.length}: ${item.brand} ${item.model}`);
-        if (existing.has(key)) {
+        const existingProduct = existing.get(key);
+        if (existingProduct) {
+          if (existingProduct.is_standard !== true || existingProduct.company_id) {
+            await updateTenantProduct(existingProduct, { is_standard: true, company_id: '' });
+            backfilled++;
+          }
           skipped++;
           continue;
         }
-        await base44.entities.Product.create(clean(item));
+        await createStandardProduct(clean(item));
         created++;
       }
-      setStatus(`Klar. Skapade ${created}, hoppade över ${skipped}.`);
+      setStatus(`Klar. Skapade ${created}, backfillade ${backfilled}, hoppade över ${skipped}.`);
       await onDone?.();
     } finally {
       setRunning(false);
@@ -98,13 +115,13 @@ export default function ProductCatalogImporter({ products = [], onDone }) {
         }
 
         if (imageUrl.startsWith('https://')) {
-          await base44.entities.Product.update(product.id, {
+          await updateTenantProduct(product, {
             image_url: imageUrl,
             image_source_url: sourceUrl,
           });
           updated++;
         } else {
-          await base44.entities.Product.update(product.id, {
+          await updateTenantProduct(product, {
             image_url: '',
             image_source_url: '',
           });

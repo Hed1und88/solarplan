@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
+import { listVisibleProducts } from '@/lib/tenantQueries';
 import { AlertTriangle, Calculator, CheckCircle2, PackageCheck, Save, Snowflake, Wind, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -132,7 +132,7 @@ function Result({ value, selectedVariant }) {
 }
 
 export default function PanelMountingSystemSelector({ project, onUpdate }) {
-  const { data: products = [] } = useQuery({ queryKey: ['products-panel-mounting-selector'], queryFn: () => base44.entities.Product.list('-created_date') });
+  const { data: products = [] } = useQuery({ queryKey: ['products-panel-mounting-selector'], queryFn: () => listVisibleProducts('-created_date') });
   const planner = useMemo(() => parse(project?.solar_roof_planner_data || project?.panel_layout_data, { roofs: [] }), [project?.solar_roof_planner_data, project?.panel_layout_data]);
   const mounting = useMemo(() => parse(project?.mounting_data, {}), [project?.mounting_data]);
   const roofs = planner.roofs || [];

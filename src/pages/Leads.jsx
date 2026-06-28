@@ -18,10 +18,10 @@ import {
 } from 'lucide-react';
 import {
   canEditWorkspaceRecord,
-  currentUserSafe,
   filterWorkspaceRecords,
   withWorkspaceOwnership,
 } from '@/lib/workspaceAccess';
+import { getTenantUser, listTenantEntity } from '@/lib/tenantQueries';
 
 const INPUT = 'w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30';
 const STATUS_CONFIG = {
@@ -184,8 +184,8 @@ export default function Leads() {
   const { data, isLoading: loading, error: queryError, refetch } = useQuery({
     queryKey: ['sales-leads'],
     queryFn: async () => {
-      const user = await currentUserSafe(base44);
-      const rows = await base44.entities.SalesLead.list('-created_date');
+      const user = await getTenantUser();
+      const rows = await listTenantEntity('SalesLead', '-created_date');
       return { user, prospects: filterWorkspaceRecords(rows, user || {}) };
     },
   });

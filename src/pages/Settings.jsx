@@ -78,12 +78,19 @@ function CompanyModal({ company, currentUser, onClose, onSaved }) {
       postal_code: form.postal_code.trim(),
       city: form.city.trim(),
       website: form.website.trim(),
+      company_id: company?.id || form.company_id || '',
       created_by_email: company?.created_by_email || getUserEmail(currentUser),
     };
     try {
       const saved = company?.id
         ? await base44.entities.Company.update(company.id, payload)
         : await base44.entities.Company.create(payload);
+      if (!company?.id && saved?.id && !saved.company_id) {
+        try {
+          await base44.entities.Company.update(saved.id, { company_id: saved.id });
+          saved.company_id = saved.id;
+        } catch {}
+      }
       onSaved(saved || { ...company, ...payload });
     } catch (saveError) {
       setError(saveError?.message || 'Företaget kunde inte sparas.');

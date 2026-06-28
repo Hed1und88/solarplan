@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, PanelTop, Plus, Trash2 } from 'lucide-react';
-import { base44 } from '@/api/base44Client';
+import { filterVisibleProducts } from '@/lib/tenantQueries';
 import { Button } from '@/components/ui/button';
 import { groupSizeM, panelPositions } from '@/lib/panelLayout.js';
 
@@ -297,7 +297,7 @@ export default function MapPanelPlacementLayer({
 
   const { data: products = [] } = useQuery({
     queryKey: ['products-panels-map-placement'],
-    queryFn: () => base44.entities.Product.filter({ category: 'solpanel' }),
+    queryFn: () => filterVisibleProducts({ category: 'solpanel' }),
   });
 
   const panelProducts = products.filter(product => product.is_active !== false);

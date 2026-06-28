@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { base44 } from '@/api/base44Client';
 import { Loader2, RefreshCw, X } from 'lucide-react';
 import { preloadProjectClimateLookup, resolveProjectClimateLoads } from '@/lib/projectClimateLoads';
+import { createTenantProject } from '@/lib/tenantQueries';
 
 const INPUT = 'w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30';
 const STATUSES = [['planering','Planering'],['projektering','Projektering'],['offert','Offert'],['installation','Installation'],['klart','Klart']];
@@ -142,7 +143,7 @@ export default function NewProjectModal({ onSave, onClose, initialValues = {}, p
         ? await onSubmit(payload)
         : editing
           ? await base44.entities.Project.update(project.id, payload)
-          : await base44.entities.Project.create(payload);
+          : await createTenantProject(payload);
       onSave?.(saved || { ...project, ...payload });
     } catch (saveError) {
       setError(saveError?.message || 'Projektet kunde inte sparas.');

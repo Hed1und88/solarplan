@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { useQuery } from '@tanstack/react-query';
 import { base44 } from '@/api/base44Client';
+import { listVisibleProducts } from '@/lib/tenantQueries';
 import { hydrateProductWithMeta } from '@/lib/productDocuments';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -733,7 +734,7 @@ export default function BatteryPlannerV3({ project, onUpdate }) {
 
   const { data: products = [] } = useQuery({
     queryKey: ['products-battery-room-v3'],
-    queryFn: () => base44.entities.Product.list('-created_date'),
+    queryFn: () => listVisibleProducts('-created_date'),
   });
 
   const catalog = useMemo(() => products

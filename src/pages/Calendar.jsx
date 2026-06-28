@@ -21,10 +21,10 @@ import { sv } from 'date-fns/locale';
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3, MapPin, Plus, Trash2, X } from 'lucide-react';
 import {
   canEditWorkspaceRecord,
-  currentUserSafe,
   filterWorkspaceRecords,
   withWorkspaceOwnership,
 } from '@/lib/workspaceAccess';
+import { getTenantUser, listTenantEntity, listTenantProjects } from '@/lib/tenantQueries';
 
 const INPUT = 'w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30';
 const TYPE_CONFIG = {
@@ -165,11 +165,11 @@ export default function Calendar() {
   const { data, isLoading: loading, error: queryError, refetch } = useQuery({
     queryKey: ['calendar-data'],
     queryFn: async () => {
-      const user = await currentUserSafe(base44);
+      const user = await getTenantUser();
       const [eventRows, projectRows, prospectRows] = await Promise.all([
-        base44.entities.CalendarEvent.list('-start_time'),
-        base44.entities.Project.list('-created_date'),
-        base44.entities.SalesLead.list('-created_date'),
+        listTenantEntity('CalendarEvent', '-start_time'),
+        listTenantProjects('-created_date'),
+        listTenantEntity('SalesLead', '-created_date'),
       ]);
       return {
         user,

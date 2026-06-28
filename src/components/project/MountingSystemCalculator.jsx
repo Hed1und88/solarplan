@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { filterVisibleProducts } from '@/lib/tenantQueries';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -73,7 +73,7 @@ export default function MountingSystemCalculator({ project, onUpdate }) {
     setShowDrawing(false);
   }, [project?.id, project?.mounting_data]);
 
-  const { data: products = [] } = useQuery({ queryKey: ['products-panels-mounting'], queryFn: () => base44.entities.Product.filter({ category: 'solpanel' }) });
+  const { data: products = [] } = useQuery({ queryKey: ['products-panels-mounting'], queryFn: () => filterVisibleProducts({ category: 'solpanel' }) });
   const selectedProduct = products.find(p => p.id === selectedPanelId);
   const selectedClampZone = resolveProductClampZone(selectedProduct || {});
 
