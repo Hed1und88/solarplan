@@ -1,11 +1,11 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { base44 } from '@/api/base44Client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { AlertTriangle, Home, Maximize2, MousePointer2, PanelTop, Plus, Trash2, ZoomIn, ZoomOut } from 'lucide-react';
 import ProductSearchSelect from '@/components/products/ProductSearchSelect';
+import { filterVisibleProducts } from '@/lib/tenantQueries';
 
 const DEFAULT_PANEL = { id: 'standard', name: 'Standardpanel 500 W', model: 'Standardpanel 500 W', width_mm: 1134, height_mm: 1953, power_watts: 500 };
 const PANEL_GAP_M = 0.03;
@@ -326,7 +326,7 @@ export default function SolarRoofPlanner({ project, onUpdate }) {
   const savingRef = useRef(false);
   const { data: products = [] } = useQuery({
     queryKey: ['products-panels-roof-planner'],
-    queryFn: () => base44.entities.Product.filter({ category: 'solpanel' }),
+    queryFn: () => filterVisibleProducts({ category: 'solpanel' }),
   });
   const panelProducts = products.filter((product) => product.is_active !== false);
   const [roofs, setRoofs] = useState(() => {

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { createTenantProject } from '@/lib/tenantQueries';
 import { X, Loader2 } from 'lucide-react';
 
 export default function NewProjectModal({ onSave, onClose }) {
@@ -10,7 +10,7 @@ export default function NewProjectModal({ onSave, onClose }) {
 
   const handleSave = async () => {
     setSaving(true);
-    await base44.entities.Project.create(form);
+    await createTenantProject(form);
     setSaving(false);
     onSave();
   };

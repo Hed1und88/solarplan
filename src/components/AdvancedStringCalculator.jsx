@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { base44 } from '@/api/base44Client';
 import { AlertTriangle, CheckCircle2, CloudRain, Cpu, Info, Loader2, PanelTop, RefreshCw, Sun, ThermometerSun, Zap } from 'lucide-react';
+import { listVisibleProducts } from '@/lib/tenantQueries';
 
 const WEATHER_FACTORS = {
   Soligt: { factor: 1, icon: Sun, description: 'Klar himmel och hög instrålning.' },
@@ -267,7 +267,7 @@ export default function AdvancedStringCalculator() {
     setLoadingProducts(true);
     setLoadError(null);
     try {
-      const data = await base44.entities.Product.list('-created_date');
+      const data = await listVisibleProducts('-created_date');
       setProducts(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Could not load products', error);

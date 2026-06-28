@@ -1,11 +1,11 @@
 import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Trash2, Save, Plus, Zap, LayoutGrid, AlertTriangle, MousePointer, Eraser, Info } from 'lucide-react';
+import { filterVisibleProducts } from '@/lib/tenantQueries';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 function parseLayoutData(raw) {
@@ -194,7 +194,7 @@ export default function PanelPlacementTab({ project, onUpdate }) {
 
   const { data: products = [] } = useQuery({
     queryKey: ['products-panels'],
-    queryFn: () => base44.entities.Product.filter({ category: 'solpanel' }),
+    queryFn: () => filterVisibleProducts({ category: 'solpanel' }),
   });
 
   // Determine active product

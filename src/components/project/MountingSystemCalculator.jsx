@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Wind, Snowflake, AlertTriangle, CheckCircle2, Ruler, Save } from 'lucide-react';
 import MountingDrawing from './MountingDrawing';
 import { resolveProductClampZone } from '@/lib/productDocuments';
+import { filterVisibleProducts } from '@/lib/tenantQueries';
 
 const SYSTEMS = {
   weland: { label: 'Weland', models: [ { name: 'Weland TakFot', maxSnow: 3.5, maxWind: 1.2, hookSpacingMM: 900 }, { name: 'Weland ByggelBalk', maxSnow: 4.0, maxWind: 1.3, hookSpacingMM: 1000 }, { name: 'Weland Krok S', maxSnow: 3.0, maxWind: 1.1, hookSpacingMM: 800 }, { name: 'Weland Krok L', maxSnow: 4.2, maxWind: 1.4, hookSpacingMM: 1100 } ], description: 'Svensk tillverkare, passar plåttak och tegelpannor' },
@@ -73,7 +73,7 @@ export default function MountingSystemCalculator({ project, onUpdate }) {
     setShowDrawing(false);
   }, [project?.id, project?.mounting_data]);
 
-  const { data: products = [] } = useQuery({ queryKey: ['products-panels-mounting'], queryFn: () => base44.entities.Product.filter({ category: 'solpanel' }) });
+  const { data: products = [] } = useQuery({ queryKey: ['products-panels-mounting'], queryFn: () => filterVisibleProducts({ category: 'solpanel' }) });
   const selectedProduct = products.find(p => p.id === selectedPanelId);
   const selectedClampZone = resolveProductClampZone(selectedProduct || {});
 

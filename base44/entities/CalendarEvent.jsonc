@@ -1,0 +1,49 @@
+{
+  "name": "CalendarEvent",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "description": "Företag som äger kalenderhändelsen"
+    },
+    "title": {
+      "type": "string",
+      "description": "Titel"
+    },
+    "project_id": {
+      "type": "string",
+      "description": "Kopplat projekt"
+    },
+    "start": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Starttid"
+    },
+    "end": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Sluttid"
+    },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "site_visit",
+        "installation",
+        "service",
+        "meeting",
+        "other"
+      ],
+      "default": "other",
+      "description": "Typ av händelse"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Anteckningar"
+    }
+  },
+  "required": [
+    "company_id",
+    "title",
+    "start"
+  ]
+}

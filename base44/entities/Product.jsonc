@@ -6,6 +6,15 @@
       "type": "string",
       "description": "Produktnamn"
     },
+    "company_id": {
+      "type": "string",
+      "description": "Företag som äger produkten. Tomt för standardprodukter."
+    },
+    "is_standard": {
+      "type": "boolean",
+      "default": false,
+      "description": "Delad standardprodukt som är läsbar för alla företag men bara redigerbar av superadmin."
+    },
     "category": {
       "type": "string",
       "enum": [

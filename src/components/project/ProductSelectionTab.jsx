@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -7,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Plus, Minus, Save, Trash2, ShieldCheck, RefreshCw } from 'lucide-react';
 import ProductVisual from '@/components/products/ProductVisual';
 import { createProductSnapshot, productDocuments } from '@/lib/productDocuments';
+import { listVisibleProducts } from '@/lib/tenantQueries';
 
 const categoryLabels = { solpanel: 'Solpanel', batteri: 'Batteri', vaxelriktare: 'Växelriktare', optimerare: 'Optimerare', kabel: 'Kabel', montagesystem: 'Montagesystem', ovrigt: 'Övrigt' };
 const categoryOrder = ['solpanel', 'vaxelriktare', 'batteri', 'optimerare', 'montagesystem', 'kabel', 'ovrigt'];
@@ -66,7 +66,7 @@ export default function ProductSelectionTab({ project, onUpdate }) {
 
   const { data: products = [] } = useQuery({
     queryKey: ['products'],
-    queryFn: () => base44.entities.Product.list(),
+    queryFn: () => listVisibleProducts(),
   });
 
   const addProduct = (product) => {

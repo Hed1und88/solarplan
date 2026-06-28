@@ -1,8 +1,15 @@
+import { fetchTenantProjectById, listTenantProjects } from '@/lib/tenantQueries';
+
 const PROJECT_BACKUP_PREFIX = 'solarplan:project-backup:';
 
 const PROJECT_SERVER_FIELDS = new Set([
+  'company_id',
   'name',
   'customer_name',
+  'owner_email',
+  'guest_emails',
+  'wholesaler_emails',
+  'allowed_wholesaler_emails',
   'address',
   'status',
   'roof_width_m',
@@ -202,11 +209,11 @@ export async function fetchProjectById(base44, projectId) {
   if (!projectId) return null;
   if (base44?.entities?.Project?.get) {
     try {
-      const project = await base44.entities.Project.get(projectId);
+      const project = await fetchTenantProjectById(projectId);
       if (project?.id) return project;
     } catch {}
   }
-  const rows = await base44.entities.Project.list('-updated_date');
+  const rows = await listTenantProjects('-updated_date');
   return (rows || []).find(project => project.id === projectId) || null;
 }
 

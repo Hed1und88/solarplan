@@ -6,9 +6,42 @@
       "type": "string",
       "description": "Projektnamn"
     },
+    "company_id": {
+      "type": "string",
+      "description": "Företag som äger projektet"
+    },
     "customer_name": {
       "type": "string",
       "description": "Kundnamn"
+    },
+    "owner_email": {
+      "type": "string",
+      "format": "email",
+      "description": "Projektägare"
+    },
+    "guest_emails": {
+      "type": "array",
+      "description": "Inbjudna gäster",
+      "items": {
+        "type": "string",
+        "format": "email"
+      }
+    },
+    "wholesaler_emails": {
+      "type": "array",
+      "description": "Grossister kopplade till projektet",
+      "items": {
+        "type": "string",
+        "format": "email"
+      }
+    },
+    "allowed_wholesaler_emails": {
+      "type": "array",
+      "description": "Grossister som senare får offertåtkomst",
+      "items": {
+        "type": "string",
+        "format": "email"
+      }
     },
     "address": {
       "type": "string",

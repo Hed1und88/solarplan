@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { listVisibleProducts } from '@/lib/tenantQueries';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -268,7 +268,7 @@ function PvInputPanel({ selectedPv, setSelectedPv, pvInputs, strings, activeInve
 export default function StringMarkingTabV7({ project, onUpdate, selectedProduct: selectedProductProp }) {
   const saved = readStored(project);
   const layout = useMemo(() => parseLayout(project), [project]);
-  const { data: products = [], refetch } = useQuery({ queryKey: ['products-for-string-marking'], queryFn: () => base44.entities.Product.list('-created_date') });
+  const { data: products = [], refetch } = useQuery({ queryKey: ['products-for-string-marking'], queryFn: () => listVisibleProducts('-created_date') });
   const panels = products.filter(product => product.category === 'solpanel' && product.is_active !== false);
   const inverters = products.filter(product => product.category === 'vaxelriktare' && product.is_active !== false);
   const initialInverters = (Array.isArray(saved.inverterConfigs) && saved.inverterConfigs.length ? saved.inverterConfigs : [{ productId: saved.inverterProductId || '' }]).map((cfg, index) => makeInverterConfig(index, cfg));

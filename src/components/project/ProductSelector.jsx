@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { base44 } from '@/api/base44Client';
 import { Plus, Minus, Trash2, ShoppingCart, Loader2, Sun, Battery, Zap, Package } from 'lucide-react';
+import { listVisibleProducts } from '@/lib/tenantQueries';
 
 const categoryIcons = {
   solpanel: Sun,
@@ -20,7 +20,7 @@ export default function ProductSelector({ project, onUpdate }) {
   const [filterCat, setFilterCat] = useState('alla');
 
   useEffect(() => {
-    base44.entities.Product.list('-name').then(data => {
+    listVisibleProducts('-name').then(data => {
       setAllProducts(data);
       setLoading(false);
     });

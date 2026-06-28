@@ -1,0 +1,47 @@
+{
+  "name": "SalesLead",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "description": "Företag som äger leadet"
+    },
+    "customer_name": {
+      "type": "string",
+      "description": "Kundnamn"
+    },
+    "email": {
+      "type": "string",
+      "format": "email",
+      "description": "Kundens e-postadress"
+    },
+    "phone": {
+      "type": "string",
+      "description": "Kundens telefonnummer"
+    },
+    "address": {
+      "type": "string",
+      "description": "Adress"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "ny",
+        "kontaktad",
+        "offert",
+        "vunnen",
+        "forlorad"
+      ],
+      "default": "ny",
+      "description": "Leadstatus"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Anteckningar"
+    }
+  },
+  "required": [
+    "company_id",
+    "customer_name"
+  ]
+}

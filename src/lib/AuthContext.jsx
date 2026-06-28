@@ -2,6 +2,7 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 import { base44 } from '@/api/base44Client';
 import { appParams } from '@/lib/app-params';
 import { createAxiosClient } from '@base44/sdk/dist/utils/axios-client';
+import { clearCompanyContextCache } from '@/lib/companyContext';
 
 const AuthContext = createContext();
 
@@ -111,6 +112,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = (shouldRedirect = true) => {
+    clearCompanyContextCache();
     setUser(null);
     setIsAuthenticated(false);
     

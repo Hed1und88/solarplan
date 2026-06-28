@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
-import { base44 } from '@/api/base44Client';
 import { Plus, Package, Pencil, Trash2, Sun, Battery, Zap, Cable, Box, CheckCircle2, AlertTriangle, FileText, Ruler, Layers, Move3D, ListChecks, Wrench } from 'lucide-react';
 import ProductFormModal from '@/components/products/ProductFormModal';
 import ProductCatalogImporter from '@/components/products/ProductCatalogImporter';
 import ProductVisual from '@/components/products/ProductVisual';
 import { productDocuments, productMeta, resolveProductClampZone } from '@/lib/productDocuments';
+import { canEditProduct, isStandardProduct } from '@/lib/accessControl';
+import { getCompanyContext } from '@/lib/companyContext';
+import { deleteTenantProduct, listVisibleProducts } from '@/lib/tenantQueries';
 
 const categoryConfig = {
   solpanel: { label: 'Solpanel', icon: Sun, color: 'bg-orange-100 text-orange-700' },
@@ -58,14 +60,18 @@ function hydrateProduct(product = {}) {
   return { ...product, ...fromMeta, _productMeta: meta };
 }
 
-function hasValue(value) {
+function hasValue(value, { allowZero = false } = {}) {
   if (value === null || value === undefined || value === '') return false;
-  if (typeof value === 'number') return Number.isFinite(value) && value > 0;
+  if (typeof value === 'number') return Number.isFinite(value) && (allowZero ? value >= 0 : value > 0);
   if (typeof value === 'string') {
     const number = Number(value);
-    return Number.isFinite(number) ? number > 0 : value.trim().length > 0;
+    return Number.isFinite(number) ? (allowZero ? number >= 0 : number > 0) : value.trim().length > 0;
   }
   return true;
+}
+
+function hasTechnicalValue(key, value) {
+  return hasValue(value, { allowZero: String(key).startsWith('clearance_') });
 }
 
 function requiredTechnicalFields(product = {}) {
@@ -122,7 +128,7 @@ function productCompleteness(rawProduct = {}) {
   const hasManual = docs.some(doc => doc.type === 'manual');
   const hasDatasheet = docs.some(doc => doc.type === 'datasheet');
   const technicalFields = requiredTechnicalFields(product);
-  const missingTechnical = technicalFields.filter(([key]) => !hasValue(product[key])).map(([, label]) => label);
+  const missingTechnical = technicalFields.filter(([key]) => !hasTechnicalValue(key, product[key])).map(([, label]) => label);
   const clamp = resolveProductClampZone(product);
   const needsClamp = product.category === 'solpanel';
   const technicalOk = missingTechnical.length === 0;
@@ -173,9 +179,14 @@ export default function Products() {
   const [filterQuality, setFilterQuality] = useState('alla');
   const [fixMode, setFixMode] = useState(false);
   const [fixMessage, setFixMessage] = useState('');
+  const [tenantContext, setTenantContext] = useState(null);
 
   const load = async () => {
-    const data = await base44.entities.Product.list('-created_date');
+    const [data, context] = await Promise.all([
+      listVisibleProducts('-created_date'),
+      getCompanyContext(),
+    ]);
+    setTenantContext(context);
     setProducts(data);
     setLoading(false);
     return data;
@@ -183,10 +194,11 @@ export default function Products() {
 
   useEffect(() => { load(); }, []);
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (product) => {
+    if (!canEditProduct(product, tenantContext || {})) return;
     if (!confirm('Ta bort produkt?')) return;
-    await base44.entities.Product.delete(id);
-    setProducts(p => p.filter(x => x.id !== id));
+    await deleteTenantProduct(product);
+    setProducts(p => p.filter(x => x.id !== product.id));
   };
 
   const buildRows = (items) => items.map(rawProduct => {
@@ -260,6 +272,7 @@ export default function Products() {
     missingClamp: countBy(productRows, row => row.status.needsClamp && !row.status.clampOk),
     missingBatteryData: countBy(productRows, row => row.product.category === 'batteri' && !row.status.technicalOk),
   };
+  const canCreateProduct = Boolean(tenantContext?.isSuperAdmin || tenantContext?.isCompanyAdmin);
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -268,7 +281,7 @@ export default function Products() {
         <div className="flex flex-wrap justify-end gap-2">
           <ProductCatalogImporter products={products} onDone={load} />
           <button onClick={openFirstFixProduct} disabled={!fixRows.length} className="flex items-center gap-2 border border-amber-300 bg-amber-50 text-amber-800 px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-amber-100 transition-colors disabled:opacity-50"><Wrench className="w-4 h-4" /> Fixa första ofullständiga</button>
-          <button onClick={() => { setEditProduct(null); setFixMode(false); setShowModal(true); }} className="flex items-center gap-2 bg-primary text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-primary/90 transition-colors shadow-md shadow-primary/20"><Plus className="w-4 h-4" /> Lägg till produkt</button>
+          {canCreateProduct && <button onClick={() => { setEditProduct(null); setFixMode(false); setShowModal(true); }} className="flex items-center gap-2 bg-primary text-white px-4 py-2.5 rounded-xl text-sm font-medium hover:bg-primary/90 transition-colors shadow-md shadow-primary/20"><Plus className="w-4 h-4" /> Lägg till produkt</button>}
         </div>
       </div>
 
@@ -302,16 +315,17 @@ export default function Products() {
             const cat = categoryConfig[product.category] || categoryConfig.ovrigt;
             const Icon = cat.icon;
             const usableKwh = product.category === 'batteri' ? usableBatteryKwh(product) : null;
+            const editable = canEditProduct(rawProduct, tenantContext || {});
             return <div key={product.id} className={`bg-card rounded-2xl border p-4 hover:shadow-md transition-shadow group ${status.complete ? 'border-green-200' : 'border-amber-200'}`}>
-              <div className="flex items-start justify-between mb-3 gap-2"><span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${cat.color}`}><Icon className="w-3 h-3" />{cat.label}</span><div className="flex items-center gap-2"><span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold ${status.complete ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{status.complete ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}{status.complete ? 'Komplett' : 'Ofullständig'}</span><div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity"><button onClick={() => { setEditProduct(rawProduct); setFixMode(false); setShowModal(true); }} className="p-1.5 hover:bg-muted rounded-lg transition-colors"><Pencil className="w-3.5 h-3.5 text-muted-foreground" /></button><button onClick={() => handleDelete(product.id)} className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"><Trash2 className="w-3.5 h-3.5 text-red-500" /></button></div></div></div>
+              <div className="flex items-start justify-between mb-3 gap-2"><span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${cat.color}`}><Icon className="w-3 h-3" />{cat.label}</span><div className="flex items-center gap-2">{isStandardProduct(rawProduct) && <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">Standard</span>}<span className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold ${status.complete ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{status.complete ? <CheckCircle2 className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />}{status.complete ? 'Komplett' : 'Ofullständig'}</span>{editable && <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity"><button onClick={() => { setEditProduct(rawProduct); setFixMode(false); setShowModal(true); }} className="p-1.5 hover:bg-muted rounded-lg transition-colors"><Pencil className="w-3.5 h-3.5 text-muted-foreground" /></button><button onClick={() => handleDelete(rawProduct)} className="p-1.5 hover:bg-red-50 rounded-lg transition-colors"><Trash2 className="w-3.5 h-3.5 text-red-500" /></button></div>}</div></div>
               <ProductVisual product={rawProduct} className="w-full h-28 mb-3" />
               <h3 className="font-semibold text-sm text-foreground leading-snug">{product.name}</h3>
               {product.brand && <p className="text-xs text-muted-foreground mt-0.5">{product.brand} {product.model}</p>}
               <div className="mt-3 flex items-center justify-between"><p className="text-lg font-bold text-primary">{product.price?.toLocaleString('sv-SE')} kr</p><p className="text-xs text-muted-foreground">/{product.unit || 'st'}</p></div>
               {(product.power_watts || product.capacity_kwh) && <div className="mt-2 flex flex-wrap gap-3">{product.power_watts && <span className="text-xs text-muted-foreground">{product.power_watts}W</span>}{product.capacity_kwh && <span className="text-xs text-muted-foreground">{product.capacity_kwh}kWh nominellt</span>}{usableKwh && <span className="text-xs text-green-700">{usableKwh}kWh vid {product.dod_percent || 90}% DoD</span>}</div>}
-              {product.category === 'batteri' && <div className="mt-2 grid grid-cols-2 gap-1 text-[11px] text-muted-foreground">{product.module_capacity_kwh && <span>Modul: {product.module_capacity_kwh} kWh</span>}{product.max_modules_per_stack && <span>Max stapel: {product.max_modules_per_stack} moduler</span>}{(product.width_mm || product.height_mm || product.depth_mm) && <span className="col-span-2">Mått: {[product.width_mm, product.height_mm, product.depth_mm].filter(Boolean).join(' × ')} mm</span>}{(product.clearance_side_mm || product.clearance_top_mm) && <span className="col-span-2">Avstånd: sida {product.clearance_side_mm || '-'} mm, ovan {product.clearance_top_mm || '-'} mm</span>}</div>}
-              <div className="mt-4 flex flex-wrap gap-1.5"><StatusPill ok={status.hasDatasheet} icon={FileText}>Datablad</StatusPill><StatusPill ok={status.hasManual} icon={FileText}>Manual</StatusPill><StatusPill ok={status.technicalOk} icon={Zap}>Teknisk data</StatusPill>{product.category === 'batteri' && <StatusPill ok={hasValue(product.max_modules_per_stack)} icon={Layers}>Stapel</StatusPill>}{product.category === 'batteri' && <StatusPill ok={hasValue(product.clearance_side_mm) || hasValue(product.clearance_top_mm)} icon={Move3D}>Avstånd</StatusPill>}{status.needsClamp && <StatusPill ok={status.clampOk} icon={Ruler}>Klämzon</StatusPill>}</div>
-              {!status.complete && <div className="mt-3 rounded-xl bg-muted/40 p-2 text-[11px] text-muted-foreground">{!status.hasDatasheet && <div>• Datablad saknas</div>}{!status.hasManual && <div>• Manual saknas</div>}{!status.technicalOk && <div>• Teknisk data saknas: {status.missingTechnical.join(', ')}</div>}{status.needsClamp && !status.clampOk && <div>• Klämzon saknas från manual/datablad</div>}<button onClick={() => openFixProduct({ rawProduct, product, status })} className="mt-2 inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-100"><Wrench className="h-3 w-3" /> Fixa</button></div>}
+              {product.category === 'batteri' && <div className="mt-2 grid grid-cols-2 gap-1 text-[11px] text-muted-foreground">{product.module_capacity_kwh && <span>Modul: {product.module_capacity_kwh} kWh</span>}{product.max_modules_per_stack && <span>Max stapel: {product.max_modules_per_stack} moduler</span>}{(product.width_mm || product.height_mm || product.depth_mm) && <span className="col-span-2">Mått: {[product.width_mm, product.height_mm, product.depth_mm].filter(Boolean).join(' × ')} mm</span>}{(product.clearance_side_mm != null || product.clearance_top_mm != null) && <span className="col-span-2">Avstånd: sida {product.clearance_side_mm ?? '-'} mm, ovan {product.clearance_top_mm ?? '-'} mm</span>}</div>}
+              <div className="mt-4 flex flex-wrap gap-1.5"><StatusPill ok={status.hasDatasheet} icon={FileText}>Datablad</StatusPill><StatusPill ok={status.hasManual} icon={FileText}>Manual</StatusPill><StatusPill ok={status.technicalOk} icon={Zap}>Teknisk data</StatusPill>{product.category === 'batteri' && <StatusPill ok={hasValue(product.max_modules_per_stack)} icon={Layers}>Stapel</StatusPill>}{product.category === 'batteri' && <StatusPill ok={hasTechnicalValue('clearance_side_mm', product.clearance_side_mm) || hasTechnicalValue('clearance_top_mm', product.clearance_top_mm)} icon={Move3D}>Avstånd</StatusPill>}{status.needsClamp && <StatusPill ok={status.clampOk} icon={Ruler}>Klämzon</StatusPill>}</div>
+              {!status.complete && <div className="mt-3 rounded-xl bg-muted/40 p-2 text-[11px] text-muted-foreground">{!status.hasDatasheet && <div>• Datablad saknas</div>}{!status.hasManual && <div>• Manual saknas</div>}{!status.technicalOk && <div>• Teknisk data saknas: {status.missingTechnical.join(', ')}</div>}{status.needsClamp && !status.clampOk && <div>• Klämzon saknas från manual/datablad</div>}{editable && <button onClick={() => openFixProduct({ rawProduct, product, status })} className="mt-2 inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-800 hover:bg-amber-100"><Wrench className="h-3 w-3" /> Fixa</button>}</div>}
             </div>;
           })}
         </div>

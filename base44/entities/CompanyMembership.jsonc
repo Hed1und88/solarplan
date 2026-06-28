@@ -1,0 +1,40 @@
+{
+  "name": "CompanyMembership",
+  "type": "object",
+  "properties": {
+    "company_id": {
+      "type": "string",
+      "description": "Företagets id"
+    },
+    "email": {
+      "type": "string",
+      "format": "email",
+      "description": "Användarens e-postadress"
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "company-admin",
+        "company-user",
+        "sales",
+        "projector",
+        "installer",
+        "electrician",
+        "subcontractor",
+        "wholesaler"
+      ],
+      "default": "company-user",
+      "description": "Roll inom företaget"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Om medlemskapet är aktivt"
+    }
+  },
+  "required": [
+    "company_id",
+    "email",
+    "role"
+  ]
+}

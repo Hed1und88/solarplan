@@ -3,6 +3,7 @@ import { base44 } from '@/api/base44Client';
 import { X, Upload, Loader2, Sparkles, FileText, Trash2, AlertTriangle, CheckCircle2, Ruler, Zap, Battery } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { buildProductDescription, DOCUMENT_TYPE_LABELS, productDescription, productDocuments, productMeta } from '@/lib/productDocuments';
+import { createTenantProduct, updateTenantProduct } from '@/lib/tenantQueries';
 
 const categories = [
   { value: 'solpanel', label: 'Solpanel' },
@@ -52,14 +53,18 @@ function normalizeKey(...parts) {
   return parts.filter(Boolean).join(' ').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-function hasValue(value) {
+function hasValue(value, { allowZero = false } = {}) {
   if (value === null || value === undefined || value === '') return false;
-  if (typeof value === 'number') return Number.isFinite(value) && value > 0;
+  if (typeof value === 'number') return Number.isFinite(value) && (allowZero ? value >= 0 : value > 0);
   if (typeof value === 'string') {
     const n = Number(value);
-    return Number.isFinite(n) ? n > 0 : value.trim().length > 0;
+    return Number.isFinite(n) ? (allowZero ? n >= 0 : n > 0) : value.trim().length > 0;
   }
   return true;
+}
+
+function hasTechnicalValue(key, value) {
+  return hasValue(value, { allowZero: String(key).startsWith('clearance_') });
 }
 
 function numValue(value) {
@@ -117,7 +122,7 @@ function requiredTechnicalFields(form = {}) {
 function completenessFor(form = {}, documents = []) {
   const hasDatasheet = documents.some(doc => doc.type === 'datasheet');
   const hasManual = documents.some(doc => doc.type === 'manual');
-  const missingTechnical = requiredTechnicalFields(form).filter(([key]) => !hasValue(form[key])).map(([, label]) => label);
+  const missingTechnical = requiredTechnicalFields(form).filter(([key]) => !hasTechnicalValue(key, form[key])).map(([, label]) => label);
   const needsClamp = form.category === 'solpanel';
   const needsBatteryInstallationData = form.category === 'batteri';
   const clampOk = !needsClamp || (hasValue(form.clampZoneMinMm) && hasValue(form.clampZoneMaxMm));
@@ -355,8 +360,8 @@ export default function ProductFormModal({ product, onSave, onClose, fixMode = f
     data.battery_supported = Boolean(form.battery_supported);
     Object.keys(data).forEach(k => data[k] === undefined && delete data[k]);
 
-    if (product?.id) await base44.entities.Product.update(product.id, data);
-    else await base44.entities.Product.create(data);
+    if (product?.id) await updateTenantProduct(product, data);
+    else await createTenantProduct(data);
     setSaving(false);
     await onSave?.({ continueToNext, savedProductId: product?.id });
   };

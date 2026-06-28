@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { base44 } from '@/api/base44Client';
 import { Sun, FolderOpen, Package, TrendingUp, Plus, ArrowRight } from 'lucide-react';
+import { listTenantProjects, listVisibleProducts } from '@/lib/tenantQueries';
 
 const statusColors = {
   planering: 'bg-blue-100 text-blue-700',
@@ -18,8 +18,8 @@ export default function Dashboard() {
 
   useEffect(() => {
     Promise.all([
-      base44.entities.Project.list('-created_date', 5),
-      base44.entities.Product.list('-created_date', 50),
+      listTenantProjects('-created_date', 5),
+      listVisibleProducts('-created_date', 50),
     ]).then(([p, pr]) => {
       setProjects(p);
       setProducts(pr);

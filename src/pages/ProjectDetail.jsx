@@ -19,6 +19,7 @@ import ProjectDocumentsTab from '@/components/project/ProjectDocumentsTab.jsx';
 import MountingSystemCalculator from '@/components/project/MountingSystemCalculator';
 import SolarRoofPlannerV2 from '@/components/project/SolarRoofPlannerV2';
 import { fetchProjectById, mergeProjectWithBackup, saveProjectPatch, writeProjectBackup } from '@/lib/projectPersistence';
+import { listVisibleProducts } from '@/lib/tenantQueries';
 
 const statusLabels = { planering: 'Planering', projektering: 'Projektering', offert: 'Offert', installation: 'Installation', klart: 'Klart' };
 const statusColors = { planering: 'bg-blue-100 text-blue-700', projektering: 'bg-amber-100 text-amber-700', offert: 'bg-purple-100 text-purple-700', installation: 'bg-orange-100 text-orange-700', klart: 'bg-green-100 text-green-700' };
@@ -58,7 +59,7 @@ export default function ProjectDetail() {
   const [workingProject, setWorkingProject] = useState(null);
   const [saveMessage, setSaveMessage] = useState('');
 
-  const { data: products = [] } = useQuery({ queryKey: ['products-all'], queryFn: () => base44.entities.Product.list() });
+  const { data: products = [] } = useQuery({ queryKey: ['products-all'], queryFn: () => listVisibleProducts() });
   const { data: serverProject, isLoading } = useQuery({ queryKey: ['project', id], queryFn: () => fetchProjectById(base44, id), enabled: !!id });
 
   useEffect(() => {

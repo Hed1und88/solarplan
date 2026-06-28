@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Plus, Trash2, Save, Battery } from 'lucide-react';
 import ImageCanvas from './ImageCanvas';
+import { filterVisibleProducts } from '@/lib/tenantQueries';
 
 function parseBatteryLayout(raw) {
   try {
@@ -30,7 +31,7 @@ export default function BatteryTab({ project, onUpdate }) {
 
   const { data: products = [] } = useQuery({
     queryKey: ['products-batteries'],
-    queryFn: () => base44.entities.Product.filter({ category: 'batteri' }),
+    queryFn: () => filterVisibleProducts({ category: 'batteri' }),
   });
 
   const handleImageUpload = async (dataUrl, file) => {

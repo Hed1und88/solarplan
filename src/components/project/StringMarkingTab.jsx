@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { base44 } from '@/api/base44Client';
+import { listVisibleProducts } from '@/lib/tenantQueries';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -288,7 +288,7 @@ function mpptParallelKey(string) {
 export default function StringMarkingTab({ project, onUpdate, selectedProduct: selectedProductProp }) {
   const saved = stored(project);
   const layout = useMemo(() => parseLayout(project), [project]);
-  const { data: products = [], refetch } = useQuery({ queryKey: ['products-for-string-marking'], queryFn: () => base44.entities.Product.list('-created_date') });
+  const { data: products = [], refetch } = useQuery({ queryKey: ['products-for-string-marking'], queryFn: () => listVisibleProducts('-created_date') });
   const panels = products.filter(p => p.category === 'solpanel' && p.is_active !== false);
   const inverters = products.filter(p => p.category === 'vaxelriktare' && p.is_active !== false);
   const [panelId, setPanelId] = useState(saved.panelProductId || selectedProductProp?.id || '');

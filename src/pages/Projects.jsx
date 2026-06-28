@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { base44 } from '@/api/base44Client';
 import { Plus, Sun, MapPin, User, ArrowRight } from 'lucide-react';
 import NewProjectModal from '@/components/projects/NewProjectModal';
+import { listTenantProjects } from '@/lib/tenantQueries';
 
 const statusConfig = {
   planering: { label: 'Planering', color: 'bg-blue-100 text-blue-700' },
@@ -18,7 +18,7 @@ export default function Projects() {
   const [showModal, setShowModal] = useState(false);
 
   const load = async () => {
-    const data = await base44.entities.Project.list('-created_date');
+    const data = await listTenantProjects('-created_date');
     setProjects(data);
     setLoading(false);
   };
