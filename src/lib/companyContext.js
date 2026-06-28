@@ -50,6 +50,39 @@ function mergeCompanyIntoUser(user, membership, company) {
   };
 }
 
+function membershipClaims(user, membership, company = {}) {
+  const access = resolveAccessContext(user || {});
+  const claims = {
+    company_id: membership.company_id || '',
+    company_name: company.name || membership.company_name || '',
+    company_logo_url: company.logo_url || '',
+    company_membership_id: membership.id,
+    company_membership_managed: true,
+    access_role: access.isSuperadmin ? access.role : membership.access_role || 'employee',
+  };
+  if (company.id || company.name) {
+    Object.assign(claims, {
+      company_organization_number: company.organization_number || '',
+      company_email: company.email || '',
+      company_phone: company.phone || '',
+      company_address: company.address || '',
+      company_postal_code: company.postal_code || '',
+      company_city: company.city || '',
+    });
+  }
+  return claims;
+}
+
+function claimsChanged(user = {}, claims = {}) {
+  return Object.entries(claims).some(([key, value]) => String(user?.[key] ?? '') !== String(value ?? ''));
+}
+
+async function updateUserClaims(base44, claims) {
+  try {
+    await base44.auth.updateMe(claims);
+  } catch {}
+}
+
 export async function resolveUserCompanyContext(base44, user = {}) {
   const email = getUserEmail(user);
   if (!email) return user;
@@ -82,26 +115,28 @@ export async function resolveUserCompanyContext(base44, user = {}) {
     return user;
   }
 
-  const company = await getCompany(base44, membership.company_id);
-  if (!company || company.active === false) return user;
-  const merged = mergeCompanyIntoUser(user, membership, company);
+  const bootstrapClaims = membershipClaims(user, membership);
+  const bootstrappedUser = { ...user, ...bootstrapClaims };
+  if (claimsChanged(user, bootstrapClaims)) {
+    await updateUserClaims(base44, bootstrapClaims);
+  }
 
-  const changed = String(user.company_id || '') !== String(company.id)
-    || user.company_logo_url !== (company.logo_url || '')
-    || user.company_name !== (company.name || '')
-    || (!resolveAccessContext(user).isSuperadmin && user.access_role !== membership.access_role);
+  const company = await getCompany(base44, membership.company_id);
+  if (!company) return bootstrappedUser;
+  if (company.active === false) return user;
+  const merged = mergeCompanyIntoUser(bootstrappedUser, membership, company);
+
+  const fullClaims = membershipClaims(bootstrappedUser, membership, company);
+  const changed = claimsChanged(bootstrappedUser, fullClaims)
+    || bootstrappedUser.company_organization_number !== (company.organization_number || '')
+    || bootstrappedUser.company_email !== (company.email || '')
+    || bootstrappedUser.company_phone !== (company.phone || '')
+    || bootstrappedUser.company_address !== (company.address || '')
+    || bootstrappedUser.company_postal_code !== (company.postal_code || '')
+    || bootstrappedUser.company_city !== (company.city || '');
 
   if (changed) {
-    try {
-      await base44.auth.updateMe({
-        company_id: company.id,
-        company_name: company.name || '',
-        company_logo_url: company.logo_url || '',
-        company_membership_id: membership.id,
-        company_membership_managed: true,
-        access_role: resolveAccessContext(user).isSuperadmin ? resolveAccessContext(user).role : membership.access_role || 'employee',
-      });
-    } catch {}
+    await updateUserClaims(base44, fullClaims);
   }
 
   return merged;

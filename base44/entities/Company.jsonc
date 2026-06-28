@@ -2,57 +2,148 @@
   "name": "Company",
   "type": "object",
   "properties": {
-    "name": { "type": "string", "description": "Företagsnamn" },
-    "organization_number": { "type": "string", "description": "Organisationsnummer" },
-    "email": { "type": "string", "description": "Företagets e-postadress" },
-    "phone": { "type": "string", "description": "Företagets telefonnummer" },
-    "address": { "type": "string", "description": "Gatuadress" },
-    "postal_code": { "type": "string", "description": "Postnummer" },
-    "city": { "type": "string", "description": "Postort" },
-    "website": { "type": "string", "description": "Webbplats" },
-    "logo_url": { "type": "string", "description": "Publik URL till företagets logotyp" },
-    "personnel_costs_json": { "type": "string", "description": "Företagets timpriser för personal och fasta montagepriser som JSON" },
-    "active": { "type": "boolean", "default": true, "description": "Om företaget är aktivt" },
-    "created_by_email": { "type": "string", "description": "E-post för användaren som skapade företaget" }
+    "name": {
+      "type": "string",
+      "description": "Företagsnamn"
+    },
+    "organization_number": {
+      "type": "string",
+      "description": "Organisationsnummer"
+    },
+    "email": {
+      "type": "string",
+      "description": "Företagets e-postadress"
+    },
+    "phone": {
+      "type": "string",
+      "description": "Företagets telefonnummer"
+    },
+    "address": {
+      "type": "string",
+      "description": "Gatuadress"
+    },
+    "postal_code": {
+      "type": "string",
+      "description": "Postnummer"
+    },
+    "city": {
+      "type": "string",
+      "description": "Postort"
+    },
+    "website": {
+      "type": "string",
+      "description": "Webbplats"
+    },
+    "logo_url": {
+      "type": "string",
+      "description": "Publik URL till företagets logotyp"
+    },
+    "personnel_costs_json": {
+      "type": "string",
+      "description": "Företagets timpriser för personal och fasta montagepriser som JSON"
+    },
+    "active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Om företaget är aktivt"
+    },
+    "created_by_email": {
+      "type": "string",
+      "description": "E-post för användaren som skapade företaget"
+    },
+    "company_id": {
+      "type": "string",
+      "description": "Samma id som foretagsposten, for RLS och backfill"
+    }
   },
-  "required": ["name"],
+  "required": [
+    "name"
+  ],
   "rls": {
     "create": {
       "$or": [
-        { "user_condition": { "role": "admin" } },
-        { "user_condition": { "data.access_role": "superadmin" } }
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "data.access_role": "superadmin"
+          }
+        }
       ]
     },
     "read": {
       "$or": [
-        { "id": "{{user.data.company_id}}" },
-        { "data.company_id": "{{user.data.company_id}}" },
-        { "user_condition": { "role": "admin" } },
-        { "user_condition": { "data.access_role": "superadmin" } }
+        {
+          "id": "{{user.data.company_id}}"
+        },
+        {
+          "data.company_id": "{{user.data.company_id}}"
+        },
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "data.access_role": "superadmin"
+          }
+        }
       ]
     },
     "update": {
       "$or": [
         {
           "$and": [
-            { "id": "{{user.data.company_id}}" },
-            { "user_condition": { "data.access_role": "company_admin" } }
+            {
+              "id": "{{user.data.company_id}}"
+            },
+            {
+              "user_condition": {
+                "data.access_role": "company_admin"
+              }
+            }
           ]
         },
         {
           "$and": [
-            { "data.company_id": "{{user.data.company_id}}" },
-            { "user_condition": { "data.access_role": "company_admin" } }
+            {
+              "data.company_id": "{{user.data.company_id}}"
+            },
+            {
+              "user_condition": {
+                "data.access_role": "company_admin"
+              }
+            }
           ]
         },
-        { "user_condition": { "role": "admin" } },
-        { "user_condition": { "data.access_role": "superadmin" } }
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "data.access_role": "superadmin"
+          }
+        }
       ]
     },
     "delete": {
       "$or": [
-        { "user_condition": { "role": "admin" } },
-        { "user_condition": { "data.access_role": "superadmin" } }
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "data.access_role": "superadmin"
+          }
+        }
       ]
     }
   }
