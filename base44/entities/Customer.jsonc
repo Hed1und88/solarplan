@@ -1,0 +1,21 @@
+{
+  "name": "Customer",
+  "type": "object",
+  "properties": {
+    "customer_type": { "type": "string", "enum": ["private", "company"], "default": "private", "description": "Privatkund eller företagskund" },
+    "name": { "type": "string", "description": "Kundens namn eller företagsnamn" },
+    "organization_number": { "type": "string", "description": "Organisationsnummer eller personnummer" },
+    "contact_name": { "type": "string", "description": "Kontaktperson" },
+    "email": { "type": "string", "description": "E-postadress" },
+    "phone": { "type": "string", "description": "Telefonnummer" },
+    "address": { "type": "string", "description": "Gatuadress" },
+    "postal_code": { "type": "string", "description": "Postnummer" },
+    "city": { "type": "string", "description": "Ort" },
+    "status": { "type": "string", "enum": ["active", "inactive"], "default": "active", "description": "Kundstatus" },
+    "notes": { "type": "string", "description": "Interna anteckningar" },
+    "company_id": { "type": "string", "description": "Företagstillhörighet" },
+    "owner_email": { "type": "string", "description": "Ägarens e-postadress" },
+    "owner_role": { "type": "string", "description": "Ägarens roll" }
+  },
+  "required": ["name"]
+}
