@@ -1,9 +1,9 @@
 import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, FolderOpen, CalendarDays, UsersRound, Package, Settings, ChevronLeft, ClipboardList, Banknote } from 'lucide-react';
+import { LayoutDashboard, FolderOpen, CalendarDays, UsersRound, Package, Settings, ChevronLeft, ClipboardList, Banknote, ContactRound } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useCompanySession } from '@/lib/CompanySessionContext';
 
-const ROOT_ROUTES = ['/', '/projects', '/calendar', '/leads', '/work-orders', '/economy', '/products', '/settings', '/solar-shadow', '/solarplan-3d-projektering'];
+const ROOT_ROUTES = ['/', '/projects', '/calendar', '/leads', '/customers', '/work-orders', '/economy', '/products', '/settings', '/solar-shadow', '/solarplan-3d-projektering'];
 const HIDDEN_NAV_PATHS = new Set(['/solar-shadow', '/solanalys', '/3d-solanalys', '/solarplan-3d-projektering']);
 
 const navItems = [
@@ -11,6 +11,7 @@ const navItems = [
   { path: '/projects', icon: FolderOpen, label: 'Projekt' },
   { path: '/calendar', icon: CalendarDays, label: 'Kalender' },
   { path: '/leads', icon: UsersRound, label: 'Leads' },
+  { path: '/customers', icon: ContactRound, label: 'Kunder' },
   { path: '/work-orders', icon: ClipboardList, label: 'Arbetsorder' },
   { path: '/economy', icon: Banknote, label: 'Ekonomi' },
   { path: '/products', icon: Package, label: 'Produkter' },
