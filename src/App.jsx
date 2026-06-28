@@ -17,7 +17,7 @@ import Products from '@/pages/Products';
 import Settings from '@/pages/SettingsRestoreWrapper.jsx';
 import SolarShadowAnalysis from '@/pages/SolarShadowAnalysis';
 import WorkOrders from '@/pages/WorkOrders.jsx';
-import WorkOrderDetailPage from '@/pages/WorkOrderDetailPage.jsx';
+import WorkOrderDetailPage from '@/pages/WorkOrderDetailCustomerSearchPage.jsx';
 import Economy from '@/pages/Economy.jsx';
 import PanelMapViewportController from '@/components/project/PanelMapViewportController.jsx';
 import CompactProjectInspector from '@/components/project/CompactProjectInspector.jsx';
