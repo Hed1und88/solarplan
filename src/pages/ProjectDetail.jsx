@@ -22,7 +22,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import SolarDataPanelV2 from '@/components/project/SolarDataPanelV2';
-import ProjectPDFExport from '@/components/project/ProjectPDFExport';
+import ProjectPDFExport from '@/components/project/ProjectPDFExportV2.jsx';
 import ProjectInfoEditor from '@/components/project/ProjectInfoEditor';
 import EmergencyRestorePanel from '@/components/project/EmergencyRestorePanel';
 import StringMarkingTabV7 from '@/components/project/StringMarkingTabV7';
@@ -308,7 +308,7 @@ export default function ProjectDetail() {
         <div className="flex flex-wrap items-center gap-2">
           <Button onClick={saveEntireProject} disabled={updateMutation.isPending} className="gap-2"><Save className="h-4 w-4" />{updateMutation.isPending ? 'Sparar...' : 'Spara allt'}</Button>
           {project.status === 'projektering' && <Button onClick={() => updateMutation.mutate({ status: 'offert' })} disabled={hasIncompleteProjectProducts} title={hasIncompleteProjectProducts ? 'Projektet har ofullständiga produkter och kan inte skickas som offert ännu.' : ''} className="gap-2 bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50">Skicka som offert</Button>}
-          <ProjectPDFExport project={project} products={products} />
+          <ProjectPDFExport project={project} products={products} activeTab={activeTab} onSelectTab={setActiveTab} onBeforeExport={saveEntireProject} />
         </div>
       </div>
 
@@ -365,14 +365,14 @@ export default function ProjectDetail() {
           <Menu className="hidden h-4 w-4 text-slate-300 sm:block" />
         </div>
 
-        <TabsContent value="panels" className="mt-0"><SolarRoofPlannerV2 project={project} onUpdate={saveProject} /></TabsContent>
-        <TabsContent value="strings" className="mt-0 space-y-4"><StringMarkingTabV7 project={project} onUpdate={saveProject} selectedProduct={selectedPanelProduct} /><InverterFullSummary project={project} products={products} /></TabsContent>
-        <TabsContent value="battery" className="mt-0"><BatteryTab project={project} onUpdate={saveProject} /></TabsContent>
-        <TabsContent value="products" className="mt-0"><ProductSelectionTab project={project} onUpdate={saveProject} /></TabsContent>
-        <TabsContent value="solar" className="mt-0"><SolarDataPanelV2 project={project} onUpdate={saveProject} /></TabsContent>
-        <TabsContent value="singleline" className="mt-0"><AutoSingleLineSchemaTab project={project} onUpdate={saveProject} products={products} /></TabsContent>
-        <TabsContent value="mounting" className="mt-0 space-y-4"><PanelMountingSystemSelector project={project} onUpdate={saveProject} /><SolarRoofPlannerV2 project={project} onUpdate={saveProject} /><MountingSystemCalculator project={project} onUpdate={saveProject} /></TabsContent>
-        <TabsContent value="documents" className="mt-0"><ProjectDocumentsTab project={project} products={products} onUpdate={saveProject} /></TabsContent>
+        <TabsContent value="panels" className="mt-0" data-project-pdf-section="panels"><SolarRoofPlannerV2 project={project} onUpdate={saveProject} /></TabsContent>
+        <TabsContent value="strings" className="mt-0 space-y-4" data-project-pdf-section="strings"><StringMarkingTabV7 project={project} onUpdate={saveProject} selectedProduct={selectedPanelProduct} /><InverterFullSummary project={project} products={products} /></TabsContent>
+        <TabsContent value="battery" className="mt-0" data-project-pdf-section="battery"><BatteryTab project={project} onUpdate={saveProject} /></TabsContent>
+        <TabsContent value="products" className="mt-0" data-project-pdf-section="products"><ProductSelectionTab project={project} onUpdate={saveProject} /></TabsContent>
+        <TabsContent value="solar" className="mt-0" data-project-pdf-section="solar"><SolarDataPanelV2 project={project} onUpdate={saveProject} /></TabsContent>
+        <TabsContent value="singleline" className="mt-0" data-project-pdf-section="singleline"><AutoSingleLineSchemaTab project={project} onUpdate={saveProject} products={products} /></TabsContent>
+        <TabsContent value="mounting" className="mt-0 space-y-4" data-project-pdf-section="mounting"><PanelMountingSystemSelector project={project} onUpdate={saveProject} /><SolarRoofPlannerV2 project={project} onUpdate={saveProject} /><MountingSystemCalculator project={project} onUpdate={saveProject} /></TabsContent>
+        <TabsContent value="documents" className="mt-0" data-project-pdf-section="documents"><ProjectDocumentsTab project={project} products={products} onUpdate={saveProject} /></TabsContent>
       </Tabs>
     </div>
   );
