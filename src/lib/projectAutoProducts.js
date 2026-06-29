@@ -65,8 +65,6 @@ function virtualProduct(item, systemSnapshot = null) {
       unit: item.unit || 'st',
       price: 0,
       mounting_system_snapshot: systemSnapshot,
-      mounting_engine_id: item.engineId || '',
-      mounting_calculation_version: item.engineVersion || '',
       snapshot_created_at: new Date().toISOString(),
       auto_generated: true,
     },
@@ -87,9 +85,11 @@ function addProductQuantity(quantities, snapshots, rawId, quantity = 1, snapshot
   if (snapshot) snapshots.set(key, snapshot);
 }
 
-function mapSelectedProducts(quantities, snapshots, products, source) {
+function mapSelectedProducts(quantities, snapshots, products, source, allowedCategories = null) {
   return [...quantities.entries()].map(([id, quantity]) => {
     const product = byId(products, id);
+    if (allowedCategories && product && !allowedCategories.includes(product.category)) return null;
+    if (allowedCategories && !product) return null;
     return product ? selectedProduct(product, quantity, source) : selectedSnapshot(snapshots.get(id), quantity, source, id);
   }).filter(Boolean);
 }
@@ -102,50 +102,42 @@ function panelProducts(project, products) {
     const id = roof.panelProductId || snapshot?.product_id || snapshot?.id;
     addProductQuantity(quantities, snapshots, id, countRoofPanels(roof), snapshot);
   });
-  return mapSelectedProducts(quantities, snapshots, products, 'panels');
+  return mapSelectedProducts(quantities, snapshots, products, 'panels', ['solpanel']);
 }
 
 function batteryRoomProducts(project, products) {
   const layout = batteryPlanner(project);
   const quantities = new Map();
   const snapshots = new Map();
-  const devices = [
-    ...(Array.isArray(layout.devices) ? layout.devices : []),
-    ...(Array.isArray(layout.batteries) ? layout.batteries : []),
-    ...(Array.isArray(layout.inverters) ? layout.inverters : []),
-    ...(Array.isArray(layout.switches) ? layout.switches : []),
-    ...(Array.isArray(layout.switchboards) ? layout.switchboards : []),
-  ];
+  const devices = Array.isArray(layout.devices) ? layout.devices : [];
 
   devices.forEach(device => {
     const snapshot = device?.productSnapshot || device?.product_snapshot || null;
     const id = device?.productId || device?.product_id || snapshot?.product_id || snapshot?.id;
+    const product = byId(products, id);
+    const category = product?.category || device?.category || snapshot?.category || '';
+    if (!['batteri', 'brytare', 'elcentral'].includes(category)) return;
     addProductQuantity(quantities, snapshots, id, device?.quantity || 1, snapshot);
   });
 
-  return mapSelectedProducts(quantities, snapshots, products, 'battery-room');
+  return mapSelectedProducts(quantities, snapshots, products, 'battery-room', ['batteri', 'brytare', 'elcentral']);
 }
 
 function stringProducts(project, products) {
   const data = safeJson(project.string_layout_data, {}) || {};
   const quantities = new Map();
   const snapshots = new Map();
-  const candidates = [
-    ...(Array.isArray(data.inverterConfigs) ? data.inverterConfigs : []),
-    ...(Array.isArray(data.inverters) ? data.inverters : []),
-    ...(Array.isArray(data.devices) ? data.devices : []),
-    data.selectedInverter,
-    data.inverter,
-    data.settings,
-  ].filter(Boolean);
+  const candidates = Array.isArray(data.inverterConfigs) ? data.inverterConfigs : [];
 
   candidates.forEach(item => {
-    const snapshot = item?.productSnapshot || item?.product_snapshot || item?.inverterProductSnapshot || item?.inverter_product_snapshot || null;
-    const id = item?.productId || item?.product_id || item?.inverterProductId || item?.inverter_product_id || item?.selectedInverterId || snapshot?.product_id || snapshot?.id;
-    addProductQuantity(quantities, snapshots, id, item?.quantity || item?.count || 1, snapshot);
+    const snapshot = item?.productSnapshot || item?.product_snapshot || null;
+    const id = item?.productId || item?.product_id || snapshot?.product_id || snapshot?.id;
+    const product = byId(products, id);
+    if (!product || product.category !== 'vaxelriktare') return;
+    addProductQuantity(quantities, snapshots, id, item?.quantity || 1, snapshot);
   });
 
-  return mapSelectedProducts(quantities, snapshots, products, 'strings');
+  return mapSelectedProducts(quantities, snapshots, products, 'strings', ['vaxelriktare']);
 }
 
 function storedMountingSelection(project, roof, roofIndex) {
@@ -239,26 +231,7 @@ function mountingWithAutomaticCalculations(project, products, mounting) {
     selectedPanelSnapshot: primaryPanel?.id ? createProductSnapshot(primaryPanel) : mounting.selectedPanelSnapshot || null,
     panelCount: roofs.reduce((sum, roof) => sum + countRoofPanels(roof), 0),
     perRoofSystems,
-    calculatedAt: new Date().toISOString(),
   };
-}
-
-function engineMaterials(mounting) {
-  const grouped = new Map();
-  let hasEngineResult = false;
-  (mounting.perRoofSystems || []).forEach(system => {
-    const calculation = system?.calculation;
-    if (calculation?.status === 'blocked' || calculation?.state === 'blocked' || !Array.isArray(calculation?.materials?.materials)) return;
-    hasEngineResult = true;
-    calculation.materials.materials.forEach(material => {
-      const id = material.productId || `${calculation.engineId}:${material.articleNumber || material.name}`;
-      const current = grouped.get(id) || { ...material, productId: id, quantity: 0, engineId: calculation.engineId, engineVersion: calculation.engineVersion };
-      current.quantity += Number(material.quantity || 0);
-      grouped.set(id, current);
-    });
-  });
-  if (!hasEngineResult) return null;
-  return [...grouped.values()].map(item => virtualProduct(item, mounting.selectedMountingProductSnapshot || null));
 }
 
 function genericMountingMaterials(project, products, mounting) {
@@ -324,11 +297,8 @@ function genericMountingMaterials(project, products, mounting) {
 }
 
 function mountingProducts(project, products, mounting) {
-  const exact = engineMaterials(mounting);
-  if (exact) {
-    const system = byId(products, mounting.selectedMountingProductId);
-    return [...(system ? [selectedProduct(system, 1, 'mounting-system')] : []), ...exact];
-  }
+  // Do not push raw engine material rows into Products yet. Some Flow/Nordmount engine
+  // outputs are design primitives and can explode into hundreds of product rows.
   return genericMountingMaterials(project, products, mounting);
 }
 
@@ -336,17 +306,9 @@ function deduplicate(items = []) {
   const result = [];
   items.forEach(item => {
     if (!item?.product_id) return;
-    const index = result.findIndex(existing => String(existing.product_id) === String(item.product_id));
-    if (index === -1) {
-      result.push(item);
-      return;
-    }
-    const existing = result[index];
-    if (existing.auto_generated && item.auto_generated && existing.auto_source === item.auto_source) {
-      result[index] = { ...item, quantity: Number(existing.quantity || 0) + Number(item.quantity || 0) };
-    } else if (item.auto_generated && existing.auto_generated) {
-      result.push(item);
-    }
+    const index = result.findIndex(existing => String(existing.product_id) === String(item.product_id) && String(existing.auto_source || '') === String(item.auto_source || ''));
+    if (index === -1) result.push(item);
+    else result[index] = { ...item, quantity: Number(result[index].quantity || 0) + Number(item.quantity || 0) };
   });
   return result;
 }
