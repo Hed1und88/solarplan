@@ -65,12 +65,13 @@ function sameSelection(a = [], b = []) {
     auto: Boolean(item.auto_generated),
     source: item.auto_source || '',
     docs: (item.documents_snapshot || []).map(doc => doc.file_url || doc.url || doc.name).sort(),
-  })).sort((x, y) => x.id.localeCompare(y.id));
+  })).sort((x, y) => `${x.id}:${x.source}`.localeCompare(`${y.id}:${y.source}`));
   return JSON.stringify(compact(a)) === JSON.stringify(compact(b));
 }
 
 function autoLabel(source) {
   if (source === 'battery-room') return 'Auto från Batteri';
+  if (source === 'strings') return 'Auto från Slingor';
   if (source === 'panels') return 'Auto från Paneler';
   if (source === 'mounting' || source === 'mounting-system') return 'Auto från Montage';
   return 'Automatisk';
@@ -95,12 +96,16 @@ export default function ProductSelectionTab({ project, onUpdate }) {
 
   useEffect(() => {
     if (!products.length || !onUpdate) return;
-    if (sameSelection(project?.selected_products, mergedProject.selected_products)) return;
-    const signature = JSON.stringify(normalize(mergedProject.selected_products).map(item => [item.product_id, item.quantity, item.auto_source]));
+    const mountingChanged = (project?.mounting_data || '') !== (mergedProject.mounting_data || '');
+    if (!mountingChanged && sameSelection(project?.selected_products, mergedProject.selected_products)) return;
+    const signature = JSON.stringify({
+      products: normalize(mergedProject.selected_products).map(item => [item.product_id, item.quantity, item.auto_source]),
+      mounting: mergedProject.mounting_data || '',
+    });
     if (autoSaveRef.current === signature) return;
     autoSaveRef.current = signature;
-    onUpdate({ selected_products: mergedProject.selected_products, total_cost: mergedProject.total_cost });
-  }, [products.length, project?.battery_layout_data, project?.solar_roof_planner_data, project?.panel_layout_data, project?.mounting_data, project?.selected_products, mergedProject.selected_products, mergedProject.total_cost, onUpdate]);
+    onUpdate({ selected_products: mergedProject.selected_products, total_cost: mergedProject.total_cost, mounting_data: mergedProject.mounting_data });
+  }, [products.length, project?.battery_layout_data, project?.solar_roof_planner_data, project?.panel_layout_data, project?.string_layout_data, project?.mounting_data, project?.selected_products, mergedProject.selected_products, mergedProject.total_cost, mergedProject.mounting_data, onUpdate]);
 
   const filtered = products.filter(product => {
     const text = [product.name, product.brand, product.model, product.article_number].filter(Boolean).join(' ').toLowerCase();
@@ -153,9 +158,9 @@ export default function ProductSelectionTab({ project, onUpdate }) {
 
   const save = async () => {
     setSaving(true);
-    await onUpdate({ selected_products: selectedProducts, total_cost: total });
+    await onUpdate({ selected_products: selectedProducts, total_cost: total, mounting_data: mergedProject.mounting_data });
     setSaving(false);
-    setMessage('Produktlistan är sparad. Batterier och växelriktare från Batteri-sidan synkas automatiskt.');
+    setMessage('Produktlistan är sparad. Paneler, slingor, batterier och montage synkas automatiskt.');
   };
 
   return (
@@ -164,7 +169,7 @@ export default function ProductSelectionTab({ project, onUpdate }) {
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <div>
             <CardTitle className="text-lg">Valda produkter</CardTitle>
-            <p className="mt-1 text-xs text-muted-foreground">Paneler, batterier, växelriktare, brytare, elcentraler och montageprodukter läggs till automatiskt från respektive projektsida.</p>
+            <p className="mt-1 text-xs text-muted-foreground">Paneler, slingor, batterier, växelriktare, brytare, elcentraler och montageprodukter läggs till automatiskt från respektive projektsida.</p>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" onClick={refreshSnapshots} disabled={!selectedProducts.length}><RefreshCw className="mr-2 h-4 w-4" />Uppdatera snapshots</Button>
