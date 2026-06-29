@@ -8,7 +8,7 @@ const planner = project => safeJson(project.solar_roof_planner_data || project.p
 const batteryPlanner = project => safeJson(project.battery_layout_data, { devices: [] }) || { devices: [] };
 const countGroup = group => Math.max(0, Math.round(num(group.rows))) * Math.max(0, Math.round(num(group.cols)));
 const countRoofPanels = roof => (roof.panelGroups || []).reduce((sum, group) => sum + countGroup(group), 0);
-const productLabel = product => [product?.brand, product?.model].filter(Boolean).join(' ') || product?.name || 'Produkt';
+const productLabel = product => [product?.brand, product?.model].filter(Boolean).join(' ') || product?.name || product?.product_name || 'Produkt';
 
 function snapshotDocuments(snapshot = {}) {
   if (Array.isArray(snapshot.documents_snapshot)) return snapshot.documents_snapshot;
@@ -78,42 +78,74 @@ function virtualProduct(item, systemSnapshot = null) {
   };
 }
 
+function addProductQuantity(quantities, snapshots, rawId, quantity = 1, snapshot = null) {
+  const id = rawId || snapshot?.product_id || snapshot?.id;
+  const amount = Math.max(0, Math.round(num(quantity, 0)));
+  if (!id || !amount) return;
+  const key = String(id);
+  quantities.set(key, (quantities.get(key) || 0) + amount);
+  if (snapshot) snapshots.set(key, snapshot);
+}
+
+function mapSelectedProducts(quantities, snapshots, products, source) {
+  return [...quantities.entries()].map(([id, quantity]) => {
+    const product = byId(products, id);
+    return product ? selectedProduct(product, quantity, source) : selectedSnapshot(snapshots.get(id), quantity, source, id);
+  }).filter(Boolean);
+}
+
 function panelProducts(project, products) {
   const quantities = new Map();
   const snapshots = new Map();
   (planner(project).roofs || []).forEach(roof => {
     const snapshot = roof.panelProductSnapshot || null;
     const id = roof.panelProductId || snapshot?.product_id || snapshot?.id;
-    const quantity = (roof.panelGroups || []).reduce((sum, group) => sum + countGroup(group), 0);
-    if (!id || !quantity) return;
-    const key = String(id);
-    quantities.set(key, (quantities.get(key) || 0) + quantity);
-    if (snapshot) snapshots.set(key, snapshot);
+    addProductQuantity(quantities, snapshots, id, countRoofPanels(roof), snapshot);
   });
-  return [...quantities.entries()].map(([id, quantity]) => {
-    const product = byId(products, id);
-    return product ? selectedProduct(product, quantity, 'panels') : selectedSnapshot(snapshots.get(id), quantity, 'panels', id);
-  }).filter(Boolean);
+  return mapSelectedProducts(quantities, snapshots, products, 'panels');
 }
 
 function batteryRoomProducts(project, products) {
   const layout = batteryPlanner(project);
   const quantities = new Map();
   const snapshots = new Map();
+  const devices = [
+    ...(Array.isArray(layout.devices) ? layout.devices : []),
+    ...(Array.isArray(layout.batteries) ? layout.batteries : []),
+    ...(Array.isArray(layout.inverters) ? layout.inverters : []),
+    ...(Array.isArray(layout.switches) ? layout.switches : []),
+    ...(Array.isArray(layout.switchboards) ? layout.switchboards : []),
+  ];
 
-  (Array.isArray(layout.devices) ? layout.devices : []).forEach(device => {
+  devices.forEach(device => {
     const snapshot = device?.productSnapshot || device?.product_snapshot || null;
     const id = device?.productId || device?.product_id || snapshot?.product_id || snapshot?.id;
-    if (!id) return;
-    const key = String(id);
-    quantities.set(key, (quantities.get(key) || 0) + 1);
-    if (snapshot) snapshots.set(key, snapshot);
+    addProductQuantity(quantities, snapshots, id, device?.quantity || 1, snapshot);
   });
 
-  return [...quantities.entries()].map(([id, quantity]) => {
-    const product = byId(products, id);
-    return product ? selectedProduct(product, quantity, 'battery-room') : selectedSnapshot(snapshots.get(id), quantity, 'battery-room', id);
-  }).filter(Boolean);
+  return mapSelectedProducts(quantities, snapshots, products, 'battery-room');
+}
+
+function stringProducts(project, products) {
+  const data = safeJson(project.string_layout_data, {}) || {};
+  const quantities = new Map();
+  const snapshots = new Map();
+  const candidates = [
+    ...(Array.isArray(data.inverterConfigs) ? data.inverterConfigs : []),
+    ...(Array.isArray(data.inverters) ? data.inverters : []),
+    ...(Array.isArray(data.devices) ? data.devices : []),
+    data.selectedInverter,
+    data.inverter,
+    data.settings,
+  ].filter(Boolean);
+
+  candidates.forEach(item => {
+    const snapshot = item?.productSnapshot || item?.product_snapshot || item?.inverterProductSnapshot || item?.inverter_product_snapshot || null;
+    const id = item?.productId || item?.product_id || item?.inverterProductId || item?.inverter_product_id || item?.selectedInverterId || snapshot?.product_id || snapshot?.id;
+    addProductQuantity(quantities, snapshots, id, item?.quantity || item?.count || 1, snapshot);
+  });
+
+  return mapSelectedProducts(quantities, snapshots, products, 'strings');
 }
 
 function storedMountingSelection(project, roof, roofIndex) {
@@ -139,6 +171,7 @@ function mountingWithAutomaticCalculations(project, products, mounting) {
     const panel = byId(products, roof.panelProductId) || roof.panelProductSnapshot || null;
     const systemVariant = roof.mountingSystemVariant || stored.systemVariant || saved.systemVariant || 'parallel';
     const attachmentMethod = stored.attachmentMethod || saved.attachmentMethod || roof.roofType || roof.material || '';
+    const panelCount = countRoofPanels(roof);
     const config = {
       ...saved,
       mountingProductId,
@@ -152,12 +185,14 @@ function mountingWithAutomaticCalculations(project, products, mounting) {
     };
 
     let calculation = saved.calculation || null;
+    const calculationPanelCount = Number(saved.panelCount || 0);
     const calculationMatches = calculation
       && String(saved.mountingSystemProductId || '') === String(mountingProductId || '')
       && String(saved.systemVariant || '') === String(systemVariant || '')
-      && String(saved.attachmentMethod || '') === String(attachmentMethod || '');
+      && String(saved.attachmentMethod || '') === String(attachmentMethod || '')
+      && calculationPanelCount === panelCount;
 
-    if (!calculationMatches && countRoofPanels(roof) > 0 && system) {
+    if (!calculationMatches && panelCount > 0 && system) {
       try {
         calculation = calculateMountingRoof({ project, roof, panelProduct: panel || {}, mountingProduct: system, config });
       } catch (error) {
@@ -176,7 +211,7 @@ function mountingWithAutomaticCalculations(project, products, mounting) {
       ...saved,
       roofId: roof.id,
       roofName: roof.name,
-      panelCount: countRoofPanels(roof),
+      panelCount,
       panelProductId: roof.panelProductId || '',
       panelProductName: productLabel(panel),
       mountingSystemProductId: mountingProductId,
@@ -288,9 +323,7 @@ function genericMountingMaterials(project, products, mounting) {
   return result.filter(item => item.quantity > 0);
 }
 
-function mountingProducts(project, products) {
-  const rawMounting = safeJson(project.mounting_data, {}) || {};
-  const mounting = mountingWithAutomaticCalculations(project, products, rawMounting);
+function mountingProducts(project, products, mounting) {
   const exact = engineMaterials(mounting);
   if (exact) {
     const system = byId(products, mounting.selectedMountingProductId);
@@ -304,21 +337,32 @@ function deduplicate(items = []) {
   items.forEach(item => {
     if (!item?.product_id) return;
     const index = result.findIndex(existing => String(existing.product_id) === String(item.product_id));
-    if (index === -1) result.push(item);
-    else if (item.auto_generated && result[index].auto_generated) result[index] = item;
+    if (index === -1) {
+      result.push(item);
+      return;
+    }
+    const existing = result[index];
+    if (existing.auto_generated && item.auto_generated && existing.auto_source === item.auto_source) {
+      result[index] = { ...item, quantity: Number(existing.quantity || 0) + Number(item.quantity || 0) };
+    } else if (item.auto_generated && existing.auto_generated) {
+      result.push(item);
+    }
   });
   return result;
 }
 
 export function mergeProjectAutoProducts(project = {}, products = []) {
+  const rawMounting = safeJson(project.mounting_data, {}) || {};
+  const mounting = mountingWithAutomaticCalculations(project, products, rawMounting);
   const manual = (Array.isArray(project.selected_products) ? project.selected_products : [])
-    .filter(item => !item.auto_generated && !['panels', 'battery-room', 'mounting', 'mounting-system'].includes(item.auto_source));
+    .filter(item => !item.auto_generated && !['panels', 'strings', 'battery-room', 'mounting', 'mounting-system'].includes(item.auto_source));
   const selected_products = deduplicate([
     ...manual,
     ...panelProducts(project, products),
+    ...stringProducts(project, products),
     ...batteryRoomProducts(project, products),
-    ...mountingProducts(project, products),
+    ...mountingProducts(project, products, mounting),
   ]);
   const total_cost = selected_products.reduce((sum, item) => sum + (Number(item.unit_price) || 0) * (Number(item.quantity) || 0), 0);
-  return { ...project, selected_products, total_cost };
+  return { ...project, mounting_data: JSON.stringify(mounting), selected_products, total_cost };
 }
